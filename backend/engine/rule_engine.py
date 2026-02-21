@@ -8,7 +8,7 @@ Phase 2 AI modules feed data INTO this engine; they never bypass it.
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import dataclass, asdict
 from typing import Optional, List
 from backend.engine.constants import KSERC, KSERCConstants
@@ -155,7 +155,7 @@ class RuleEngine:
 
         # Build result dict for checksum generation
         result_data = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "sbu_code": input_data.sbu_code,
             "scenario": f"{input_data.head} {'Gain' if is_gain else 'Loss'} Sharing",
             "cost_head": input_data.head,
