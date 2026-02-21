@@ -1,6 +1,14 @@
 """
-Main FastAPI application entry point.
-Wires together all API routes for the ARR Truing-Up Decision Support System.
+DEVELOPMENT ENTRY POINT — main.py
+=====================================
+⚠️  This is the minimal development server. Swagger is always-on and there is
+    no authentication, rate-limiting, or security middleware.
+
+For any real usage (demo, staging, production), use main_secure.py instead:
+    uvicorn backend.main_secure:app --reload --port 8000
+
+main_secure.py adds: JWT auth, RBAC, rate-limiting, security headers,
+                     environment-gated Swagger, and lifespan hooks.
 """
 
 from fastapi import FastAPI

@@ -15,8 +15,15 @@ from backend.engine.constants import KSERC, KSERCConstants
 
 
 def generate_checksum(data: dict) -> str:
-    """Generate SHA-256 checksum for audit integrity verification."""
-    canonical = json.dumps(data, sort_keys=True, default=str, separators=(',', ':'))
+    """
+    Generate SHA-256 checksum for audit integrity verification.
+    IMPORTANT: Timestamp is intentionally excluded from the hash so that
+    identical computation inputs always produce the identical checksum.
+    This upholds the 100% reproducibility guarantee of the Rule Engine.
+    """
+    # Exclude volatile fields that change across identical runs
+    stable_data = {k: v for k, v in data.items() if k not in ("timestamp",)}
+    canonical = json.dumps(stable_data, sort_keys=True, default=str, separators=(',', ':'))
     return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
 
 
@@ -85,10 +92,14 @@ class RuleEngine:
         Controllable Losses: 100% borne by Utility (disallowed).
         Uncontrollable: 100% passed through to Consumer.
         """
-        if not input_data.is_human_verified and input_data.actual is not None:
+        # Zero-hallucination enforcement:
+        # Block ONLY when actual value exists but has NOT been human-verified.
+        # Allows None actuals through (they are flagged in the output, not blocked).
+        if input_data.actual is not None and not input_data.is_human_verified:
             raise ValueError(
-                f"ZERO-HALLUCINATION VIOLATION: Actual value for {input_data.head} "
-                f"has not been human-verified. Cannot proceed."
+                f"ZERO-HALLUCINATION VIOLATION: Actual value for '{input_data.head}' "
+                f"({input_data.actual:,.2f}) has not been human-verified. "
+                f"Use the /mapping/confirm endpoint to verify before computation."
             )
 
         variance = input_data.approved - input_data.actual
@@ -175,23 +186,16 @@ class RuleEngine:
     def get_td_loss_target(self, financial_year: str) -> float:
         """
         Retrieves the T&D loss target for a specific financial year.
-        Uses the 2022-27 MYT Control Period trajectory.
-        
+        Delegates to KSERCConstants.get_td_loss_target() which reads
+        the module-level T_AND_D_LOSS_TRAJECTORY dict.
+
         Args:
             financial_year: Financial year string (e.g., "FY_2024-25" or "2024-25")
-        
+
         Returns:
-            Normative T&D loss target as a decimal (e.g., 0.14 for 14%)
+            Normative T&D loss target as a decimal (e.g., 0.145 for 14.5%)
         """
-        # Normalize format: "2024-25" -> "FY_2024-25"
-        if not financial_year.startswith("FY_"):
-            financial_year = f"FY_{financial_year}"
-        
-        target = self.constants.T_AND_D_LOSS_TRAJECTORY.get(financial_year)
-        if target is None:
-            # Fallback to default if year not in trajectory
-            target = 0.14
-        return target
+        return self.constants.get_td_loss_target(financial_year)
 
     # ─── O&M Normative Escalation ───
 

@@ -172,9 +172,15 @@ python -m venv venv
 # macOS/Linux
 source venv/bin/activate
 
-pip install fastapi uvicorn sqlalchemy pydantic python-multipart
-pip install pandas numpy scikit-learn openpyxl pyyaml
+pip install -r requirements.txt
 ```
+
+> [!IMPORTANT]
+> `camelot-py` (used for PDF table extraction) requires **Ghostscript** as a system dependency.
+> Install it before `pip install`:
+> - **Windows**: Download from [ghostscript.com](https://www.ghostscript.com/download/gsdnld.html) and add to PATH.
+> - **Ubuntu/Debian**: `sudo apt-get install ghostscript`
+> - **macOS**: `brew install ghostscript`
 
 ### 3. Frontend Setup (TypeScript)
 
