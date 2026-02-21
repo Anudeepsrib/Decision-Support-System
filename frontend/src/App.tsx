@@ -8,7 +8,6 @@ import { Dashboard } from './components/dashboard/Dashboard';
 import { PDFUploader } from './components/extraction/PDFUploader';
 import { MappingWorkbench } from './components/mapping/MappingWorkbench';
 import { ReportDashboard } from './components/reports/ReportDashboard';
-import { ExtractionResponse } from './services/types';
 
 function App() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -26,7 +25,7 @@ function App() {
       <Layout>
         <Routes>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/upload" element={<PDFUploader onUploadComplete={(r: ExtractionResponse) => console.log(r)} />} />
+          <Route path="/upload" element={<PDFUploader onUploadComplete={(r) => console.log(r)} />} />
           <Route path="/mapping" element={<MappingWorkbench />} />
           <Route path="/reports" element={<ReportDashboard />} />
           <Route path="*" element={<Navigate to="/" replace />} />

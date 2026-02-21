@@ -12,7 +12,6 @@ import {
   ExtractionResponse,
   MappingSuggestion,
   MappingConfirmRequest,
-  AuditResult,
   AnalyticalReport
 } from './types';
 

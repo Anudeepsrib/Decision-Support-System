@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ReportsService } from '../../services/api';
 import { AnalyticalReport, SBUCode } from '../../services/types';
 import { toast } from 'react-toastify';
