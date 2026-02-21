@@ -101,6 +101,37 @@ To execute the Phase 1 Rule Engine with sample data:
 
 This will run three discrete scenarios simulating Gains, Losses, and AI anomaly flagging, outputting the respective Audit JSON traces to your console.
 
+## Phase 2: AI-Augmented Workflow
+
+The DSS is designed to foster **AI-Human Collaboration**. Every AI suggestion can be overridden by the regulatory officer, with AI acting strictly as a co-pilot.
+
+### Module A: RAG System Prompt
+When processing unstructured PDF Petitions (e.g., the 30.06.2025 Order) into the Phase 1 Rule Engine typings, the LLM utilizes the following strict prompt:
+
+```text
+You are a Senior Regulatory Analyst extracting financial data for the Annual Revenue Requirement (ARR) Truing-Up Phase. 
+Analyze the provided unstructured PDF petition or audited account text.
+Your strictly defined task is to locate the "Approved vs. Actual" variance tables for all cost heads.
+
+Extraction Rules:
+1. Map extracted figures strictly to this JSON format:
+   { "head": "<O&M|Power_Purchase|Interest>", "category": "<Controllable|Uncontrollable>", "approved": <number>, "actual": <number> }
+2. Do not hallucinate values. If a value is missing, return null.
+3. Provide a 'confidence_score' (0.0 to 1.0) based on extraction clarity.
+```
+
+### Module B: The "Red-Flag" Engine
+A Scikit-Learn `IsolationForest` continuously monitors datasets (like 15-minute power purchase blocks). Sudden spikes exceeding historical standard deviations trigger an anomaly flag. 
+- *Crucially, every flag generates a **Reasoning Block*** explaining why the data point was marked as an outlier (e.g., "The analyzed price instance (12.5) is an outlier outside the 95th percentile boundary").
+
+### Demo User Journey
+1. **Upload:** User drops the Unstructured PDF Petition into the Dashboard.
+2. **Extraction & RAG:** The LLM parses the PDF, rendering a "Regulatory Fact-Sheet". The UI displays **Confidence Scores** next to every extracted value.
+3. **Prudence Check:** `AnomalyDetection.py` scans the structured data.
+4. **Validation view:** User reviews the **Comparative Heatmap** (Approved vs. Actual vs. AI-Predicted trends). Any "Red-Flags" are highlighted with Reasoning Blocks. Evaluator confirms or overrides the AI findings.
+5. **Phase 1 Execution:** The structured data passes through the Deterministic Engine, slicing variances via the 2/3:1/3 logic.
+6. **Draft Generation:** The LLM-powered **Draft Generator** produces the final Truing-Up Statement draft, citing the deterministic clauses and anomalous justifications in formal regulatory prose.
+
 
 ## Directory Structure
 
