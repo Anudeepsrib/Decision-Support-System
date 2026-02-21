@@ -38,6 +38,13 @@ class MappingStatus(PyEnum):
     REJECTED = "Rejected"
 
 
+class SBUType(PyEnum):
+    """Strategic Business Unit types for data isolation (SBU Partitioning constraint)."""
+    SBU_GENERATION = "SBU-G"
+    SBU_TRANSMISSION = "SBU-T"
+    SBU_DISTRIBUTION = "SBU-D"
+
+
 # ─── Core Models ───
 
 class ARRComponent(Base):
@@ -49,6 +56,7 @@ class ARRComponent(Base):
     __tablename__ = "arr_components"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    sbu_code = Column(Enum(SBUType), nullable=False, index=True)  # SBU Partitioning: SBU-G, SBU-T, SBU-D
     financial_year = Column(String(10), nullable=False, index=True)  # e.g., "2024-25"
     cost_head = Column(Enum(CostHeadType), nullable=False)
     category = Column(Enum(VarianceCategory), nullable=False)
@@ -65,12 +73,12 @@ class ARRComponent(Base):
     evidence = relationship("ExtractionEvidence", back_populates="arr_component")
 
     __table_args__ = (
-        UniqueConstraint("financial_year", "cost_head", name="uq_fy_costhead"),
-        Index("ix_arr_fy_head", "financial_year", "cost_head"),
+        UniqueConstraint("sbu_code", "financial_year", "cost_head", name="uq_sbu_fy_costhead"),
+        Index("ix_arr_sbu_fy_head", "sbu_code", "financial_year", "cost_head"),
     )
 
     def __repr__(self):
-        return f"<ARRComponent(fy={self.financial_year}, head={self.cost_head.value}, approved={self.approved_amount})>"
+        return f"<ARRComponent(sbu={self.sbu_code.value}, fy={self.financial_year}, head={self.cost_head.value}, approved={self.approved_amount})>"
 
 
 class RuleSet(Base):
@@ -106,6 +114,8 @@ class AuditTrail(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    checksum = Column(String(64), nullable=False, unique=True, index=True)  # SHA-256 for integrity
+    sbu_code = Column(Enum(SBUType), nullable=False, index=True)  # SBU Partitioning
     rule_set_id = Column(Integer, ForeignKey("rule_sets.id"), nullable=False)
     arr_component_id = Column(Integer, ForeignKey("arr_components.id"), nullable=True)
     scenario_label = Column(String(100), nullable=False)
@@ -116,6 +126,7 @@ class AuditTrail(Base):
     variance_amount = Column(Float, nullable=False)
     disallowed_variance = Column(Float, nullable=False, default=0.0)
     passed_through_variance = Column(Float, nullable=False, default=0.0)
+    disallowance_reason = Column(Text, nullable=True)  # Explicit reason for disallowance
     logic_applied = Column(Text, nullable=False)
     regulatory_clause = Column(String(200), nullable=False)
     regulatory_description = Column(Text, nullable=True)
@@ -127,7 +138,7 @@ class AuditTrail(Base):
     rule_set = relationship("RuleSet", back_populates="audit_trails")
 
     def __repr__(self):
-        return f"<AuditTrail(scenario={self.scenario_label}, head={self.cost_head})>"
+        return f"<AuditTrail(sbu={self.sbu_code.value}, scenario={self.scenario_label}, head={self.cost_head}, checksum={self.checksum[:8]}...)>"
 
 
 class MappingRecord(Base):
@@ -139,6 +150,7 @@ class MappingRecord(Base):
     __tablename__ = "mapping_records"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    sbu_code = Column(Enum(SBUType), nullable=False, index=True)  # SBU Partitioning
     arr_component_id = Column(Integer, ForeignKey("arr_components.id"), nullable=False)
     ai_suggested_head = Column(String(100), nullable=False)
     ai_suggested_category = Column(String(50), nullable=False)
@@ -154,7 +166,7 @@ class MappingRecord(Base):
     arr_component = relationship("ARRComponent", back_populates="mappings")
 
     def __repr__(self):
-        return f"<MappingRecord(ai={self.ai_suggested_head}, status={self.officer_decision.value})>"
+        return f"<MappingRecord(sbu={self.sbu_code.value}, ai={self.ai_suggested_head}, status={self.officer_decision.value})>"
 
 
 class ExtractionEvidence(Base):
@@ -166,6 +178,7 @@ class ExtractionEvidence(Base):
     __tablename__ = "extraction_evidence"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    sbu_code = Column(Enum(SBUType), nullable=False, index=True)  # SBU Partitioning
     arr_component_id = Column(Integer, ForeignKey("arr_components.id"), nullable=False)
     source_filename = Column(String(255), nullable=False)
     page_number = Column(Integer, nullable=False)
@@ -181,4 +194,4 @@ class ExtractionEvidence(Base):
     arr_component = relationship("ARRComponent", back_populates="evidence")
 
     def __repr__(self):
-        return f"<ExtractionEvidence(file={self.source_filename}, page={self.page_number}, value={self.extracted_value})>"
+        return f"<ExtractionEvidence(sbu={self.sbu_code.value}, file={self.source_filename}, page={self.page_number}, value={self.extracted_value})>"

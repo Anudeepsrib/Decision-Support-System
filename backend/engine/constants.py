@@ -34,8 +34,20 @@ class KSERCConstants:
     # ─── Return on Equity ───
     ROE_RATE: float = 0.155              # 15.5% pre-tax
 
-    # ─── Technical Loss Targets ───
-    T_AND_D_LOSS_TARGET: float = 0.14    # 14% normative cap
+    # ─── Technical Loss Targets (Year-wise Trajectory: 2022-27 MYT Control Period) ───
+    # Reference: KSERC MYT 2022-27 Control Period Order - Progressive reduction trajectory
+    T_AND_D_LOSS_TRAJECTORY: Dict[str, float] = field(default_factory=lambda: {
+        "FY_2022-23": 0.155,  # 15.5% - Baseline year
+        "FY_2023-24": 0.150,  # 15.0% - 0.5% reduction
+        "FY_2024-25": 0.145,  # 14.5% - 0.5% reduction
+        "FY_2025-26": 0.140,  # 14.0% - Target year (KPUPL Order OP 15/2025, Page 36)
+        "FY_2026-27": 0.135,  # 13.5% - Final control period year
+    })
+    # Backward compatibility alias
+    @property
+    def T_AND_D_LOSS_TARGET(self) -> float:
+        return self.T_AND_D_LOSS_TRAJECTORY.get("FY_2025-26", 0.14)
+    
     AT_AND_C_LOSS_TARGET: float = 0.18   # 18% (Aggregate Technical & Commercial)
 
     # ─── Depreciation ───

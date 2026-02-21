@@ -1,6 +1,14 @@
 # regulatory_config.yaml
 # Externalized normative values for framework-agnostic execution
 
+# SBU Partitioning Configuration (Data Isolation)
+sbu_partitioning:
+  enabled: true
+  allowed_values:
+    - SBU-G  # Generation
+    - SBU-T  # Transmission
+    - SBU-D  # Distribution
+
 escalation_indices:
   cpi_weight: 0.70 # Consumer Price Index
   wpi_weight: 0.30 # Wholesale Price Index
@@ -17,7 +25,17 @@ sharing_mechanism:
     consumer_share: 1.0 # 100% passed through
 
 technical_loss_targets:
-  sbu_distribution: 0.14 # 14% normative cap
+  sbu_distribution: 0.14 # 14% normative cap (baseline)
+  # Year-wise trajectory for 2022-27 MYT Control Period
+  # Reference: KSERC MYT 2022-27 Control Period Order
+  trajectory:
+    FY_2022-23: 0.155  # 15.5% - Baseline year
+    FY_2023-24: 0.150  # 15.0% - 0.5% reduction
+    FY_2024-25: 0.145  # 14.5% - 0.5% reduction
+    FY_2025-26: 0.140  # 14.0% - Target year (KPUPL Order OP 15/2025, Page 36)
+    FY_2026-27: 0.135  # 13.5% - Final control period year
 
 financial_parameters:
   roe_rate: 0.155 # Return on Equity at 15.5%
+  sbi_eblr: 0.0850 # SBI External Benchmark Lending Rate 8.50%
+  interest_spread: 0.02 # +2% normative spread

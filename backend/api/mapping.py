@@ -52,6 +52,7 @@ class MappingConfirmResponse(BaseModel):
 class MappingSuggestion(BaseModel):
     """AI's suggested mapping for a single extracted field."""
     mapping_id: int
+    sbu_code: str                      # SBU Partitioning: SBU-G, SBU-T, SBU-D
     source_field: str                  # e.g., "Employee Expense"
     suggested_head: str                # e.g., "O&M"
     suggested_category: str            # e.g., "Controllable"
@@ -64,6 +65,7 @@ class MappingSuggestion(BaseModel):
 _mapping_store = {
     1: MappingSuggestion(
         mapping_id=1,
+        sbu_code="SBU-D",
         source_field="Employee Expense (Salaries & Wages)",
         suggested_head="O&M",
         suggested_category="Controllable",
@@ -72,6 +74,7 @@ _mapping_store = {
     ),
     2: MappingSuggestion(
         mapping_id=2,
+        sbu_code="SBU-G",
         source_field="Short-Term Power Purchase (Exchange)",
         suggested_head="Power_Purchase",
         suggested_category="Uncontrollable",
@@ -80,6 +83,7 @@ _mapping_store = {
     ),
     3: MappingSuggestion(
         mapping_id=3,
+        sbu_code="SBU-T",
         source_field="Legal & Professional Fees",
         suggested_head="O&M",
         suggested_category="Controllable",

@@ -6,6 +6,7 @@ This module is the "single source of truth" for all ARR Truing-Up computations.
 Phase 2 AI modules feed data INTO this engine; they never bypass it.
 """
 
+import hashlib
 import json
 from datetime import datetime
 from dataclasses import dataclass, asdict
@@ -13,11 +14,18 @@ from typing import Optional, List
 from backend.engine.constants import KSERC, KSERCConstants
 
 
+def generate_checksum(data: dict) -> str:
+    """Generate SHA-256 checksum for audit integrity verification."""
+    canonical = json.dumps(data, sort_keys=True, default=str, separators=(',', ':'))
+    return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+
+
 @dataclass
 class CostInput:
     """Structured input for a single ARR cost head."""
     head: str             # "O&M", "Power_Purchase", "Interest"
     category: str         # "Controllable" or "Uncontrollable"
+    sbu_code: str         # "SBU-G", "SBU-T", "SBU-D" - SBU Partitioning
     approved: float
     actual: float
     anomaly_score: Optional[float] = None   # Injected by Phase 2 AI Hook
@@ -38,6 +46,8 @@ class RegulatoryRef:
 class AuditResult:
     """Fully traceable output object for every computation."""
     timestamp: str
+    checksum: str                    # SHA-256 for integrity verification
+    sbu_code: str                  # SBU Partitioning: SBU-G, SBU-T, SBU-D
     scenario: str
     cost_head: str
     variance_category: str
@@ -46,6 +56,7 @@ class AuditResult:
     variance_amount: float
     disallowed_variance: float
     passed_through_variance: float
+    disallowance_reason: Optional[str]  # Explicit reason for disallowance
     logic_applied: str
     regulatory_reference: dict
     metadata: dict
@@ -89,6 +100,7 @@ class RuleEngine:
                 consumer_impact = abs(variance) * self.constants.CONSUMER_GAIN_SHARE
                 disallowed = 0.0
                 passed_through = consumer_impact
+                disallowance_reason = None
                 logic = (
                     f"Controllable Gain: Savings of {abs(variance):,.2f} shared "
                     f"2/3 ({utility_impact:,.2f}) to Utility, "
@@ -98,6 +110,10 @@ class RuleEngine:
             else:
                 disallowed = abs(variance)
                 passed_through = 0.0
+                disallowance_reason = (
+                    f"Controllable Loss of {abs(variance):,.2f} fully disallowed per "
+                    f"Regulation 9.3 — 100% borne by Utility. No pass-through to consumers."
+                )
                 logic = (
                     f"Controllable Loss: Excess of {abs(variance):,.2f} fully "
                     f"disallowed (100% borne by Utility)."
@@ -106,6 +122,7 @@ class RuleEngine:
         else:
             disallowed = 0.0
             passed_through = variance  # Negative = additional burden on consumer
+            disallowance_reason = None
             logic = (
                 f"Uncontrollable Variance: {variance:,.2f} fully passed through "
                 f"to Consumer (100% recovery)."
@@ -125,24 +142,56 @@ class RuleEngine:
         if not input_data.is_human_verified:
             flags.append("UNVERIFIED_DATA_WARNING")
 
-        return AuditResult(
-            timestamp=datetime.utcnow().isoformat(),
-            scenario=f"{input_data.head} {'Gain' if is_gain else 'Loss'} Sharing",
-            cost_head=input_data.head,
-            variance_category=input_data.category,
-            approved_amount=input_data.approved,
-            actual_amount=input_data.actual,
-            variance_amount=variance,
-            disallowed_variance=disallowed,
-            passed_through_variance=passed_through,
-            logic_applied=logic,
-            regulatory_reference=asdict(ref),
-            metadata={
+        # Build result dict for checksum generation
+        result_data = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "sbu_code": input_data.sbu_code,
+            "scenario": f"{input_data.head} {'Gain' if is_gain else 'Loss'} Sharing",
+            "cost_head": input_data.head,
+            "variance_category": input_data.category,
+            "approved_amount": input_data.approved,
+            "actual_amount": input_data.actual,
+            "variance_amount": variance,
+            "disallowed_variance": disallowed,
+            "passed_through_variance": passed_through,
+            "disallowance_reason": disallowance_reason,
+            "logic_applied": logic,
+            "regulatory_reference": asdict(ref),
+            "metadata": {
                 "engine_version": self.version,
                 "flags": flags,
             },
-            input_snapshot=asdict(input_data)
-        )
+            "input_snapshot": asdict(input_data)
+        }
+        
+        # Generate integrity checksum
+        checksum = generate_checksum(result_data)
+        result_data["checksum"] = checksum
+
+        return AuditResult(**result_data)
+
+    # ─── T&D Loss Target Lookup ───
+
+    def get_td_loss_target(self, financial_year: str) -> float:
+        """
+        Retrieves the T&D loss target for a specific financial year.
+        Uses the 2022-27 MYT Control Period trajectory.
+        
+        Args:
+            financial_year: Financial year string (e.g., "FY_2024-25" or "2024-25")
+        
+        Returns:
+            Normative T&D loss target as a decimal (e.g., 0.14 for 14%)
+        """
+        # Normalize format: "2024-25" -> "FY_2024-25"
+        if not financial_year.startswith("FY_"):
+            financial_year = f"FY_{financial_year}"
+        
+        target = self.constants.T_AND_D_LOSS_TRAJECTORY.get(financial_year)
+        if target is None:
+            # Fallback to default if year not in trajectory
+            target = 0.14
+        return target
 
     # ─── O&M Normative Escalation ───
 

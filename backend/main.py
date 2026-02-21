@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.api.extraction import router as extraction_router
 from backend.api.mapping import router as mapping_router
+from backend.api.reports import router as reports_router
 
 app = FastAPI(
     title="ARR Truing-Up Decision Support System",
@@ -32,6 +33,7 @@ app.add_middleware(
 # Register API routes
 app.include_router(extraction_router)
 app.include_router(mapping_router)
+app.include_router(reports_router)
 
 
 @app.get("/", tags=["Health"])

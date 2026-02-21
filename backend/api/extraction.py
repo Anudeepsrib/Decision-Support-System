@@ -17,6 +17,7 @@ router = APIRouter(prefix="/extract", tags=["Extraction"])
 class ExtractedField(BaseModel):
     """A single extracted data point with full provenance."""
     field_name: str               # e.g., "Actual O&M Cost"
+    sbu_code: str                 # SBU Partitioning: SBU-G, SBU-T, SBU-D
     extracted_value: Optional[float]
     confidence_score: float        # 0.0 to 1.0
     source_page: int
@@ -62,6 +63,7 @@ async def extract_tables_from_pdf(file: UploadFile = File(...)):
     extracted_fields = [
         ExtractedField(
             field_name="Approved O&M Cost (FY 2024-25)",
+            sbu_code="SBU-D",
             extracted_value=1500000000,
             confidence_score=0.95,
             source_page=12,
@@ -72,6 +74,7 @@ async def extract_tables_from_pdf(file: UploadFile = File(...)):
         ),
         ExtractedField(
             field_name="Actual O&M Cost (FY 2024-25)",
+            sbu_code="SBU-D",
             extracted_value=1800000000,
             confidence_score=0.88,
             source_page=14,
@@ -82,6 +85,7 @@ async def extract_tables_from_pdf(file: UploadFile = File(...)):
         ),
         ExtractedField(
             field_name="Power Purchase Cost (Actual)",
+            sbu_code="SBU-G",
             extracted_value=None,
             confidence_score=0.42,
             source_page=18,
