@@ -1,0 +1,58 @@
+# Decision Support System (Phase 1) Implementation Tasks
+
+- [x] Project Initialization
+  - [x] Set up basic required structure (directories).
+  - [x] Document the conceptual roadmap in [README.md](file:///c:/Users/anude/Documents/GitHub/Decision-Support-System/README.md), including the Phase Delineation and Concept to Execution details.
+  - [x] Create the Architecture Blueprint Mermaid diagram highlighting Integration Hooks.
+- [x] Core Regulatory Logic Implementation
+  - [x] Define the externalized regulatory configuration ([regulatory_config.yaml](file:///c:/Users/anude/Documents/GitHub/Decision-Support-System/config/regulatory_config.yaml)).
+  - [x] Write the Gain/Loss Sharing Module ([src/GainLossSharingModule.ts](file:///c:/Users/anude/Documents/GitHub/Decision-Support-System/src/GainLossSharingModule.ts)), implementing the 2/3 (Utility) to 1/3 (Consumer) split with checks against normative caps.
+  - [x] Implement variance analysis for controllable vs uncontrollable cost heads (O&M, Power Purchase, Interest).
+- [x] Auditability and Output
+  - [x] Create a compliance-grade type schema for the audit object ([src/AuditTrail.ts](file:///c:/Users/anude/Documents/GitHub/Decision-Support-System/src/AuditTrail.ts)).
+  - [x] Generate a sample Audit Object JSON for a "Disallowed O&M Cost" scenario with `logic_applied` and `regulatory_reference`.
+- [x] Demonstration
+  - [x] Set up environment with `tsx` and required dependencies.
+  - [x] Create [src/demo.ts](file:///c:/Users/anude/Documents/GitHub/Decision-Support-System/src/demo.ts) script to run three distinct Phase 1 scenarios.
+  - [x] Update `README` with execution instructions.
+
+# Phase 2 Implementation Tasks (AI-Augmented DSS)
+
+- [x] AI Modules Architecture & Implementation
+  - [x] **Module B: Anomaly Detection** - Create the [src/ai/AnomalyDetection.py](file:///c:/Users/anude/Documents/GitHub/Decision-Support-System/src/ai/AnomalyDetection.py) script for Isolation Forest logic to identify spikes in Power Purchase costs.
+  - [x] **Module A: RAG System Prompt** - Document the specific System Prompt template for extracting structured PDF tables based on the 30.06.2025 Order.
+  - [x] **Phase 2 Technical Integration** - Establish the integration hooks connecting the Python AI scripts with the Phase 1 Rule Engine typings.
+- [x] User Experience & Workflow Documentation
+  - [x] Document the **Demo Workflow**: The step-by-step user journey from PDF upload to "Final Petition Draft" generation.
+  - [x] Introduce the **AI-Human Collaboration** UI conceptually (Confidence Scores, Heatmaps, Draft Generator) in the architecture.
+
+# Phase 3 Implementation Tasks (Final Hardening)
+
+- [x] Production-Level Stress Testing
+  - [x] **Gain/Loss Edge Cases** - Write a deterministic Python/TypeScript test script validating the engine against the 3 edge cases (Gain, Loss, Loss exceeding caps).
+- [x] System Upgrades & Security
+  - [x] **RAG Optimization** - Update the `README` System Prompt with a "Few-Shot Example" specifically tailored for KSERC Power Purchase tables and strict "flag if unsure" logic.
+  - [x] **Deployment Checklist** - Document the top 5 security and data integrity checks for live KSERC server deployment.
+- [x] Adversarial Data Validation
+  - [x] Create [tests/test_anomaly_adversarial.py](file:///c:/Users/anude/Documents/GitHub/Decision-Support-System/tests/test_anomaly_adversarial.py) testing Dirty Data, Limit Tests, and Cross-Order Conflict scenarios.
+- [x] Pro Features
+  - [x] **Snapshot & Compare** - Build [src/SnapshotCompare.ts](file:///c:/Users/anude/Documents/GitHub/Decision-Support-System/src/SnapshotCompare.ts) for Scenario A vs B delta reports.
+  - [x] **Performance Optimization** - Build [src/ai/VectorizedBlockIngestion.py](file:///c:/Users/anude/Documents/GitHub/Decision-Support-System/src/ai/VectorizedBlockIngestion.py) for 35,040-row vectorized ingestion under 5 seconds.
+  - [x] **Petition Generator** - Build [src/ai/AnnexureGenerator.py](file:///c:/Users/anude/Documents/GitHub/Decision-Support-System/src/ai/AnnexureGenerator.py) for KSERC-standard Excel Annexure output.
+
+# Phase 4 Implementation Tasks (Production Refactor)
+
+- [x] System Blueprint & Architecture
+  - [x] Create the production Mermaid diagram: PDF Upload → Extraction → Mapping Workbench → Rule Engine → Report.
+  - [x] Restructure project directories into `backend/` (Python/FastAPI) and `frontend/` (React/TS).
+- [x] Canonical Schema & Database
+  - [x] Create SQLAlchemy models: [ARRComponent](file:///c:/Users/anude/Documents/GitHub/Decision-Support-System/backend/models/schema.py#43-74), [RuleSet](file:///c:/Users/anude/Documents/GitHub/Decision-Support-System/backend/models/schema.py#76-97), [AuditTrail](file:///c:/Users/anude/Documents/GitHub/Decision-Support-System/backend/models/schema.py#99-131), [MappingRecord](file:///c:/Users/anude/Documents/GitHub/Decision-Support-System/backend/models/schema.py#133-158), [ExtractionEvidence](file:///c:/Users/anude/Documents/GitHub/Decision-Support-System/backend/models/schema.py#160-185).
+  - [x] Hard-code KSERC 2022-27 regulatory constants into the [RuleSet](file:///c:/Users/anude/Documents/GitHub/Decision-Support-System/backend/models/schema.py#76-97) module.
+- [x] Deterministic Rule Engine (Python)
+  - [x] Port the Gain/Loss Sharing & O&M Normative logic to a versioned Python [RuleEngine](file:///c:/Users/anude/Documents/GitHub/Decision-Support-System/backend/engine/rule_engine.py#58-217) class.
+  - [x] Implement Interest Logic (SBI EBLR + 2%) and CPI:WPI (70:30) escalation.
+- [x] FastAPI PDF-to-Schema Bridge
+  - [x] Build the `/extract` endpoint for PDF table extraction with page/table anchors.
+  - [x] Build the `/mapping/confirm` endpoint for the human-in-the-loop confirmation flow.
+- [x] Professional README
+  - [x] Rewrite README to professional grade with architecture, API docs, quickstart, and deployment checklist.
