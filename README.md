@@ -105,19 +105,27 @@ This will run three discrete scenarios simulating Gains, Losses, and AI anomaly 
 
 The DSS is designed to foster **AI-Human Collaboration**. Every AI suggestion can be overridden by the regulatory officer, with AI acting strictly as a co-pilot.
 
-### Module A: RAG System Prompt
-When processing unstructured PDF Petitions (e.g., the 30.06.2025 Order) into the Phase 1 Rule Engine typings, the LLM utilizes the following strict prompt:
+### Module A: RAG System Prompt (Phase 3 Hardened)
+When processing unstructured PDF Petitions (e.g., the 30.06.2025 KSERC Order), the LLM utilizes this strict Few-Shot prompt to prevent hallucination:
 
 ```text
-You are a Senior Regulatory Analyst extracting financial data for the Annual Revenue Requirement (ARR) Truing-Up Phase. 
-Analyze the provided unstructured PDF petition or audited account text.
-Your strictly defined task is to locate the "Approved vs. Actual" variance tables for all cost heads.
+You are a Senior Regulatory Compliance Auditor extracting financial data for the ARR Truing-Up Phase. 
+Analyze the provided KSERC PDF petition containing the "Approved vs. Actual" variance tables.
 
-Extraction Rules:
-1. Map extracted figures strictly to this JSON format:
-   { "head": "<O&M|Power_Purchase|Interest>", "category": "<Controllable|Uncontrollable>", "approved": <number>, "actual": <number> }
-2. Do not hallucinate values. If a value is missing, return null.
-3. Provide a 'confidence_score' (0.0 to 1.0) based on extraction clarity.
+CRITICAL RULE: Zero tolerance for hallucination. If a value is missing or ambiguous, you MUST return null and set the `review_required` flag to true.
+
+Extraction Guidelines:
+1. Map figures strictly to this JSON format:
+   { "head": "<O&M|Power_Purchase|Interest>", "category": "<Controllable|Uncontrollable>", "approved": <number|null>, "actual": <number|null>, "review_required": <boolean> }
+
+FEW-SHOT EXAMPLES:
+---
+Input: "The Commission approved Rs. 500 Cr for Power Purchase but the licensee incurred Rs. 510 Cr."
+Output: { "head": "Power_Purchase", "category": "Uncontrollable", "approved": 5000000000, "actual": 5100000000, "review_required": false }
+---
+Input: "O&M limits were set at 150 Cr. Actual records missing from Pg 4."
+Output: { "head": "O&M", "category": "Controllable", "approved": 1500000000, "actual": null, "review_required": true }
+---
 ```
 
 ### Module B: The "Red-Flag" Engine
@@ -130,8 +138,17 @@ A Scikit-Learn `IsolationForest` continuously monitors datasets (like 15-minute 
 3. **Prudence Check:** `AnomalyDetection.py` scans the structured data.
 4. **Validation view:** User reviews the **Comparative Heatmap** (Approved vs. Actual vs. AI-Predicted trends). Any "Red-Flags" are highlighted with Reasoning Blocks. Evaluator confirms or overrides the AI findings.
 5. **Phase 1 Execution:** The structured data passes through the Deterministic Engine, slicing variances via the 2/3:1/3 logic.
-6. **Draft Generation:** The LLM-powered **Draft Generator** produces the final Truing-Up Statement draft, citing the deterministic clauses and anomalous justifications in formal regulatory prose.
+6. **Draft Generation:** The LLM-powered **Draft Generator** produces the final Truing-Up Statement draft, generating KSERC-standard Annexure Tables dynamically via Excel exports perfectly synced to computations.
 
+## Live KSERC Deployment Validation Checklist
+
+Before deployment to the KSERC production server, the following data-integrity architectures must be verified:
+
+1. **Row-Level Security (RLS) & Multi-Tenant DBs:** The database schema must rigidly separate Discom data via PostgreSQL RLS policies to prevent petition leakage.
+2. **Role-Based Access Control (RBAC):** Distinct permissions between `Data_Entry_Agent` (AI ingestion triggers) and `Regulatory_Officer` (Draft overwrite and final submission rights).
+3. **Rule Versioning Engine:** The `regulatory_config.yaml` must support chronological versioning. If "Order 30.06.2025" is applied to older 2023 petitions, the system explicitly flags "Regulatory Conflict Mismatch".
+4. **Adversarial & Null-State Handlers:** Ensure deterministic engines gracefully reject malformed AI typings (e.g., preventing floating point integer overflow exploits in the 2/3 Sharing split).
+5. **Immutable Audit Trails:** Final Draft generations and human-overrides are burned into a WORM (Write Once, Read Many) log asserting the exact Phase 1 logic traces.
 
 ## Directory Structure
 
