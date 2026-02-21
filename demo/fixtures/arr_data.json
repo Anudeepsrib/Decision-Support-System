@@ -1,0 +1,81 @@
+{
+  "arr_components": [
+    {
+      "financial_year": "2024-25",
+      "sbu_code": "SBU-D",
+      "cost_head": "O&M",
+      "category": "Controllable",
+      "approved_amount": 180000000,
+      "actual_amount": 150000000,
+      "variance": 30000000,
+      "is_human_verified": true,
+      "verified_by": "auditor@utility.com"
+    },
+    {
+      "financial_year": "2024-25",
+      "sbu_code": "SBU-D",
+      "cost_head": "Power_Purchase",
+      "category": "Uncontrollable",
+      "approved_amount": 400000000,
+      "actual_amount": 450000000,
+      "variance": -50000000,
+      "is_human_verified": true,
+      "verified_by": "auditor@utility.com"
+    },
+    {
+      "financial_year": "2024-25",
+      "sbu_code": "SBU-D",
+      "cost_head": "Interest",
+      "category": "Uncontrollable",
+      "approved_amount": 50000000,
+      "actual_amount": 52500000,
+      "variance": -2500000,
+      "is_human_verified": true,
+      "verified_by": "auditor@utility.com"
+    },
+    {
+      "financial_year": "2024-25",
+      "sbu_code": "SBU-G",
+      "cost_head": "O&M",
+      "category": "Controllable",
+      "approved_amount": 120000000,
+      "actual_amount": 125000000,
+      "variance": -5000000,
+      "is_human_verified": true,
+      "verified_by": "auditor@utility.com"
+    },
+    {
+      "financial_year": "2024-25",
+      "sbu_code": "SBU-G",
+      "cost_head": "Power_Purchase",
+      "category": "Uncontrollable",
+      "approved_amount": 800000000,
+      "actual_amount": 850000000,
+      "variance": -50000000,
+      "is_human_verified": true,
+      "verified_by": "auditor@utility.com"
+    },
+    {
+      "financial_year": "2024-25",
+      "sbu_code": "SBU-T",
+      "cost_head": "O&M",
+      "category": "Controllable",
+      "approved_amount": 60000000,
+      "actual_amount": 55000000,
+      "variance": 5000000,
+      "is_human_verified": true,
+      "verified_by": "auditor@utility.com"
+    },
+    {
+      "financial_year": "2024-25",
+      "sbu_code": "SBU-T",
+      "cost_head": "Depreciation",
+      "category": "Controllable",
+      "approved_amount": 80000000,
+      "actual_amount": 78000000,
+      "variance": 2000000,
+      "is_human_verified": true,
+      "verified_by": "auditor@utility.com"
+    }
+  ]
+}

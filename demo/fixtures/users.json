@@ -1,0 +1,45 @@
+{
+  "users": [
+    {
+      "username": "regulatory.officer@kserc.gov.in",
+      "email": "regulatory.officer@kserc.gov.in",
+      "full_name": "Senior Regulatory Officer",
+      "role": "regulatory_officer",
+      "sbu_access": ["SBU-G", "SBU-T", "SBU-D"],
+      "hashed_password": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewKyNiAYMyzJ/I1K",
+      "is_active": true,
+      "mfa_enabled": false
+    },
+    {
+      "username": "auditor@utility.com",
+      "email": "auditor@utility.com",
+      "full_name": "Senior Auditor",
+      "role": "senior_auditor",
+      "sbu_access": ["SBU-D"],
+      "hashed_password": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewKyNiAYMyzJ/I1K",
+      "is_active": true,
+      "mfa_enabled": false
+    },
+    {
+      "username": "data.entry@utility.com",
+      "email": "data.entry@utility.com",
+      "full_name": "Data Entry Agent",
+      "role": "data_entry_agent",
+      "sbu_access": ["SBU-D"],
+      "hashed_password": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewKyNiAYMyzJ/I1K",
+      "is_active": true,
+      "mfa_enabled": false
+    },
+    {
+      "username": "analyst@utility.com",
+      "email": "analyst@utility.com",
+      "full_name": "Business Analyst",
+      "role": "readonly_analyst",
+      "sbu_access": ["SBU-G", "SBU-T", "SBU-D"],
+      "hashed_password": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewKyNiAYMyzJ/I1K",
+      "is_active": true,
+      "mfa_enabled": false
+    }
+  ],
+  "password_plaintext": "DemoPass123!"
+}

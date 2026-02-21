@@ -1,0 +1,82 @@
+[
+  {
+    "mapping_id": 1,
+    "sbu_code": "SBU-D",
+    "source_field": "Employee Salaries & Wages (Schedule 12)",
+    "suggested_head": "O&M",
+    "suggested_category": "Controllable",
+    "confidence": 0.95,
+    "reasoning": "Employee costs under Schedule 12 of Audited Accounts map directly to O&M per KSERC Regulation 5.1. Source: Page 14, Table 2, Cell B4.",
+    "status": "Pending"
+  },
+  {
+    "mapping_id": 2,
+    "sbu_code": "SBU-D",
+    "source_field": "Long Term Power Purchase — NTPC Agreement",
+    "suggested_head": "Power_Purchase",
+    "suggested_category": "Uncontrollable",
+    "confidence": 0.98,
+    "reasoning": "Long-term PPA with NTPC is classified as Uncontrollable per Regulation 4.2. Rate determined by regulator-approved tariff. Source: Page 18, Table 5.",
+    "status": "Pending"
+  },
+  {
+    "mapping_id": 3,
+    "sbu_code": "SBU-D",
+    "source_field": "Short Term Power Purchase — IEX Spot",
+    "suggested_head": "Power_Purchase",
+    "suggested_category": "Uncontrollable",
+    "confidence": 0.92,
+    "reasoning": "Exchange-based spot purchases are Uncontrollable per Regulation 4.3. Market-driven pricing.",
+    "status": "Pending"
+  },
+  {
+    "mapping_id": 4,
+    "sbu_code": "SBU-D",
+    "source_field": "Maintenance & Repairs — Distribution Lines",
+    "suggested_head": "O&M",
+    "suggested_category": "Controllable",
+    "confidence": 0.88,
+    "reasoning": "Planned maintenance activities are Controllable operational expenses.",
+    "status": "Pending"
+  },
+  {
+    "mapping_id": 5,
+    "sbu_code": "SBU-D",
+    "source_field": "Interest on Working Capital Loan",
+    "suggested_head": "Interest",
+    "suggested_category": "Uncontrollable",
+    "confidence": 0.96,
+    "reasoning": "Normative interest calculated at SBI EBLR + 2% per Regulation 6.3. Rate is externally determined.",
+    "status": "Pending"
+  },
+  {
+    "mapping_id": 6,
+    "sbu_code": "SBU-G",
+    "source_field": "Fuel Charges — Coal Procurement",
+    "suggested_head": "Power_Purchase",
+    "suggested_category": "Uncontrollable",
+    "confidence": 0.94,
+    "reasoning": "Fuel costs for generation pass-through per Regulation 4.1. Market-linked pricing.",
+    "status": "Pending"
+  },
+  {
+    "mapping_id": 7,
+    "sbu_code": "SBU-T",
+    "source_field": "Transmission Line Maintenance",
+    "suggested_head": "O&M",
+    "suggested_category": "Controllable",
+    "confidence": 0.85,
+    "reasoning": "Transmission O&M activities are Controllable per Regulation 5.2.",
+    "status": "Pending"
+  },
+  {
+    "mapping_id": 8,
+    "sbu_code": "SBU-D",
+    "source_field": "Legal & Professional Fees",
+    "suggested_head": "O&M",
+    "suggested_category": "Controllable",
+    "confidence": 0.67,
+    "reasoning": "Professional fees typically map to O&M, but confidence lower due to potential regulatory nature. RECOMMEND REVIEW.",
+    "status": "Pending"
+  }
+]

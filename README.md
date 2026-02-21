@@ -186,8 +186,57 @@ npm install
 
 **Start the API Server:**
 ```bash
-uvicorn backend.main:app --reload --port 8000
+uvicorn backend.main_secure:app --reload --port 8000
 ```
+
+**Start the Frontend (React):**
+```bash
+cd frontend
+npm install
+npm start
+```
+
+---
+
+## 🎬 Demo Mode (5-Minute Quick Demo)
+
+Want to see the system in action immediately? We provide a complete demo environment with sample data.
+
+### Quick Demo Setup
+
+```bash
+# 1. Initialize demo data
+python demo/scripts/init_demo.py
+
+# 2. Start backend with demo config
+cd backend
+uvicorn main_secure:app --reload --env-file ../demo/.env.demo
+
+# 3. Start frontend (new terminal)
+cd frontend
+npm start
+```
+
+### Demo Credentials
+
+| Username | Password | Role | Access |
+|----------|----------|------|--------|
+| `regulatory.officer@kserc.gov.in` | `DemoPass123!` | Regulatory Officer | All SBUs |
+| `auditor@utility.com` | `DemoPass123!` | Senior Auditor | SBU-D only |
+| `data.entry@utility.com` | `DemoPass123!` | Data Entry Agent | SBU-D only |
+
+### Demo Scenarios
+
+1. **📄 PDF Upload** — Upload sample petition, watch AI extract 12 fields
+2. **✅ Mapping Workbench** — Review 8 pending AI suggestions, confirm/override
+3. **📊 Report Generation** — View variance analysis with 70:30 CPI:WPI calculations
+4. **🔒 SBU Isolation** — See strict data separation between SBU-G/T/D
+
+**📖 Complete Guide:** See [`DEMO_GUIDE.md`](DEMO_GUIDE.md) for step-by-step walkthrough.
+
+**🧹 Cleanup:** The `demo/` folder is self-contained and safe to delete after demo.
+
+---
 Then open [http://localhost:8000/docs](http://localhost:8000/docs) for the interactive Swagger documentation.
 
 **Run the Phase 1 Demo (TypeScript):**
