@@ -1,0 +1,21 @@
+{
+  "timestamp": "2026-02-21T11:20:00.000Z",
+  "scenario": "O&M Loss Disallowance",
+  "cost_head": "O&M",
+  "variance_category": "Controllable",
+  "approved_amount": 150000000,
+  "actual_amount": 180000000,
+  "variance_amount": -30000000,
+  "disallowed_variance": 30000000,
+  "passed_through_variance": 0,
+  "logic_applied": "Controllable Loss fully borne by Utility (Disallowed).",
+  "regulatory_reference": {
+    "clause": "Regulation 9.2 - Gain/Loss Sharing mechanism",
+    "description": "Sharing of controllable factors efficiency gains/losses",
+    "order_date": "30.06.2025"
+  },
+  "metadata": {
+    "engine_version": "Phase1-v1.0.0",
+    "flags": ["PHASE2_HOOK_READY"]
+  }
+}

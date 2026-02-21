@@ -1,0 +1,23 @@
+# regulatory_config.yaml
+# Externalized normative values for framework-agnostic execution
+
+escalation_indices:
+  cpi_weight: 0.70 # Consumer Price Index
+  wpi_weight: 0.30 # Wholesale Price Index
+
+sharing_mechanism:
+  controllable_gains:
+    utility_share: 0.6666666666666666 # 2/3
+    consumer_share: 0.3333333333333333 # 1/3
+  controllable_losses:
+    utility_share: 1.0 # 100% loss borne by utility
+    consumer_share: 0.0
+  uncontrollable_variances:
+    utility_share: 0.0
+    consumer_share: 1.0 # 100% passed through
+
+technical_loss_targets:
+  sbu_distribution: 0.14 # 14% normative cap
+
+financial_parameters:
+  roe_rate: 0.155 # Return on Equity at 15.5%
