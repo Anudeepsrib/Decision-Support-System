@@ -12,12 +12,28 @@ from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 import os
+import warnings
 
 # ─── Security Configuration ───
-SECRET_KEY = os.getenv("SECRET_KEY", "your-256-bit-secret-key-change-in-production")
+_DEFAULT_SECRET = "your-256-bit-secret-key-change-in-production"
+SECRET_KEY = os.getenv("SECRET_KEY", _DEFAULT_SECRET)
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+
+# F-13: Hard-fail if default secret is used in production
+_ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+if SECRET_KEY == _DEFAULT_SECRET:
+    if _ENVIRONMENT == "production":
+        raise RuntimeError(
+            "SECURITY FATAL: SECRET_KEY is set to the default value in production mode. "
+            "Set a unique SECRET_KEY in your .env file before deploying."
+        )
+    else:
+        warnings.warn(
+            "SECRET_KEY is using the default value. Set a unique key in .env for production.",
+            stacklevel=2,
+        )
 
 # ─── Password Hashing ───
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -216,7 +232,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    if token_data.exp and token_data.exp < datetime.utcnow():
+    if token_data.exp and token_data.exp < datetime.now(timezone.utc).replace(tzinfo=None):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired",
@@ -225,8 +241,12 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     
     return token_data
 
-async def require_permission(permission: str):
-    """Dependency factory to require specific permission"""
+def require_permission(permission: str):
+    """
+    Dependency factory to require specific permission.
+    Usage: Depends(require_permission("mapping.confirm"))
+    MUST be a sync function — Depends() needs a callable, not a coroutine.
+    """
     async def permission_checker(user: TokenData = Depends(get_current_user)):
         if not user.role:
             raise HTTPException(
@@ -242,8 +262,11 @@ async def require_permission(permission: str):
         return user
     return permission_checker
 
-async def require_sbu_access(sbu_code: str):
-    """Dependency factory to require SBU access"""
+def require_sbu_access(sbu_code: str):
+    """
+    Dependency factory to require SBU access.
+    Usage: Depends(require_sbu_access("SBU-D"))
+    """
     async def sbu_checker(user: TokenData = Depends(get_current_user)):
         user_sbu_access = [SBUAccess(s) for s in user.sbu_access]
         if not SecurityManager.can_access_sbu(user_sbu_access, sbu_code):
@@ -254,46 +277,77 @@ async def require_sbu_access(sbu_code: str):
         return user
     return sbu_checker
 
-# ─── Role-specific Dependencies ───
+# ─── Role-specific Dependencies (pre-built) ───
 require_regulatory_officer = require_permission("mapping.confirm")
 require_senior_auditor = require_permission("mapping.override")
 require_data_entry = require_permission("extraction.upload")
 require_audit_access = require_permission("audit.read")
 
 # ─── Mock User Database (Production: Use PostgreSQL) ───
-# These would be in your actual database
-MOCK_USERS = {
-    "regulatory.officer@kserc.gov.in": {
-        "username": "regulatory.officer@kserc.gov.in",
-        "email": "regulatory.officer@kserc.gov.in",
-        "full_name": "Senior Regulatory Officer",
-        "role": UserRole.REGULATORY_OFFICER,
-        "sbu_access": [SBUAccess.ALL],
-        "hashed_password": pwd_context.hash("TempPass123!"),  # Change in production
-        "is_active": True,
-        "mfa_enabled": True,
-    },
-    "auditor@utility.com": {
-        "username": "auditor@utility.com",
-        "email": "auditor@utility.com",
-        "full_name": "Senior Auditor",
-        "role": UserRole.SENIOR_AUDITOR,
-        "sbu_access": [SBUAccess.SBU_D],
-        "hashed_password": pwd_context.hash("TempPass123!"),
-        "is_active": True,
-        "mfa_enabled": False,
-    },
-    "data.entry@utility.com": {
-        "username": "data.entry@utility.com",
-        "email": "data.entry@utility.com",
-        "full_name": "Data Entry Agent",
-        "role": UserRole.DATA_ENTRY_AGENT,
-        "sbu_access": [SBUAccess.SBU_D],
-        "hashed_password": pwd_context.hash("TempPass123!"),
-        "is_active": True,
-        "mfa_enabled": False,
-    },
-}
+# F-14: Lazy-load hashes to avoid ~300ms cold-start penalty per hash
+_DEMO_PASSWORD = "TempPass123!"
+_cached_hash: Optional[str] = None
+
+
+def _get_demo_hash() -> str:
+    """Lazily compute the demo password hash (once, on first login attempt)."""
+    global _cached_hash
+    if _cached_hash is None:
+        _cached_hash = pwd_context.hash(_DEMO_PASSWORD)
+    return _cached_hash
+
+
+class _LazyMockUsers:
+    """Lazy dict that computes password hashes only on first access."""
+    _users: Optional[Dict[str, Any]] = None
+
+    @classmethod
+    def _build(cls) -> Dict[str, Any]:
+        h = _get_demo_hash()
+        return {
+            "regulatory.officer@kserc.gov.in": {
+                "username": "regulatory.officer@kserc.gov.in",
+                "email": "regulatory.officer@kserc.gov.in",
+                "full_name": "Senior Regulatory Officer",
+                "role": UserRole.REGULATORY_OFFICER,
+                "sbu_access": [SBUAccess.ALL],
+                "hashed_password": h,
+                "is_active": True,
+                "mfa_enabled": True,
+                "permissions": ROLE_PERMISSIONS[UserRole.REGULATORY_OFFICER],
+            },
+            "auditor@utility.com": {
+                "username": "auditor@utility.com",
+                "email": "auditor@utility.com",
+                "full_name": "Senior Auditor",
+                "role": UserRole.SENIOR_AUDITOR,
+                "sbu_access": [SBUAccess.SBU_D],
+                "hashed_password": h,
+                "is_active": True,
+                "mfa_enabled": False,
+                "permissions": ROLE_PERMISSIONS[UserRole.SENIOR_AUDITOR],
+            },
+            "data.entry@utility.com": {
+                "username": "data.entry@utility.com",
+                "email": "data.entry@utility.com",
+                "full_name": "Data Entry Agent",
+                "role": UserRole.DATA_ENTRY_AGENT,
+                "sbu_access": [SBUAccess.SBU_D],
+                "hashed_password": h,
+                "is_active": True,
+                "mfa_enabled": False,
+                "permissions": ROLE_PERMISSIONS[UserRole.DATA_ENTRY_AGENT],
+            },
+        }
+
+    @classmethod
+    def get(cls, key: str) -> Optional[Dict[str, Any]]:
+        if cls._users is None:
+            cls._users = cls._build()
+        return cls._users.get(key)
+
+
+MOCK_USERS = _LazyMockUsers()
 
 def get_user(username: str) -> Optional[Dict[str, Any]]:
     """Get user from database (mock implementation)"""

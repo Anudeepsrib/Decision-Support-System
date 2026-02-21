@@ -1,0 +1,3 @@
+C:\Users\anude\Documents\GitHub\Decision-Support-System\backend\security\__init__.py:2: UserWarning: SECRET_KEY is using the default value. Set a unique key in .env for production.
+  from .auth import (
+SERVER BOOT OK: App loaded with 14 routes

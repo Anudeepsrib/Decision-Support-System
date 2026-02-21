@@ -3,11 +3,13 @@ Analytical Reports API Endpoint — Dec 12th Commission Mandate Task (ii)
 Implements comprehensive analytical reporting with regulatory traceability.
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
+
+from security.auth import get_current_user, require_permission, TokenData
 
 router = APIRouter(prefix="/reports", tags=["Analytical Reports"])
 
@@ -157,7 +159,9 @@ class InsightGenerator:
 async def generate_analytical_report(
     financial_year: str = Query(..., description="Financial year (e.g., 2024-25)"),
     sbu_code: Optional[str] = Query(None, description="SBU filter (SBU-G, SBU-T, SBU-D)"),
-    report_type: ReportType = Query(ReportType.ANALYTICAL, description="Type of report")
+    report_type: ReportType = Query(ReportType.ANALYTICAL, description="Type of report"),
+    current_user: TokenData = Depends(get_current_user),  # F-12: RBAC enforced
+    _perm=Depends(require_permission("reports.read")),
 ):
     """
     Generate comprehensive analytical report per Dec 12th 2025 Commission mandate.
@@ -220,7 +224,7 @@ async def generate_analytical_report(
     report_data = {
         "financial_year": financial_year,
         "sbu_scope": sbu_scope,
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
     }
     
     import hashlib
@@ -229,9 +233,9 @@ async def generate_analytical_report(
     ).hexdigest()
     
     return AnalyticalReportResponse(
-        report_id=f"RPT-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+        report_id=f"RPT-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
         report_type=report_type,
-        generated_at=datetime.utcnow().isoformat(),
+        generated_at=datetime.now(timezone.utc).isoformat(),
         financial_year=financial_year,
         sbu_scope=sbu_scope,
         preliminary_summary={
@@ -277,10 +281,15 @@ async def generate_analytical_report(
 
 
 @router.get("/sbu-summary", response_model=List[SBUSummary])
-async def get_sbu_summary(financial_year: str = Query(..., description="Financial year")):
+async def get_sbu_summary(
+    financial_year: str = Query(..., description="Financial year"),
+    current_user: TokenData = Depends(get_current_user),  # F-12: RBAC enforced
+    _perm=Depends(require_permission("reports.read")),
+):
     """
     Returns per-SBU summary for SBU Partitioning compliance.
     Demonstrates strict data isolation between SBU-G, SBU-T, and SBU-D.
+    Requires: reports.read permission.
     """
     return [
         SBUSummary(

@@ -4,11 +4,11 @@
  */
 
 import { API_BASE_URL } from './config';
-import { 
-  AuthToken, 
-  UserProfile, 
-  LoginCredentials, 
-  ExtractedField, 
+import {
+  AuthToken,
+  UserProfile,
+  LoginCredentials,
+  ExtractedField,
   ExtractionResponse,
   MappingSuggestion,
   MappingConfirmRequest,
@@ -54,10 +54,11 @@ class HttpClient {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    _isRetry: boolean = false,  // F-08: prevent infinite 401 loop
   ): Promise<T> {
     const url = `${this.baseURL}${endpoint}`;
-    
+
     // Default headers
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -88,13 +89,11 @@ class HttpClient {
         );
       }
 
-      // Handle unauthorized
-      if (response.status === 401) {
-        // Try to refresh token
+      // Handle unauthorized — retry ONCE with refreshed token (F-08)
+      if (response.status === 401 && !_isRetry) {
         const refreshed = await this.refreshAccessToken();
         if (refreshed) {
-          // Retry the original request
-          return this.request<T>(endpoint, options);
+          return this.request<T>(endpoint, options, true);  // single retry
         } else {
           TokenManager.clearTokens();
           window.location.href = '/login';
@@ -305,7 +304,7 @@ export const MappingService = {
       override_head: newHead,
       override_category: newCategory,
       comment,
-      officer_name: 'Current User', // Should come from auth context
+      officer_name: 'Current User', // TODO(F-07): Replace with user.full_name from AuthContext
     });
   },
 

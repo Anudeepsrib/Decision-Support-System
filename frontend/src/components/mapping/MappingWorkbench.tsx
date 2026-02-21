@@ -1,15 +1,27 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import { MappingService } from '../../services/api';
 import { MappingSuggestion, MappingStatus, VarianceCategory, CostHead } from '../../services/types';
+import { useAuth } from '../../contexts/AuthContext';
 
 export function MappingWorkbench() {
+  const { user } = useAuth();  // F-07: Get officer name from auth context
+  const officerName = user?.full_name || 'Unknown Officer';
+
   const [mappings, setMappings] = useState<MappingSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMapping, setSelectedMapping] = useState<MappingSuggestion | null>(null);
-  const [comment, setComment] = useState('');
+  // F-09: Persist draft comment across page refreshes
+  const [comment, setComment] = useState(
+    () => sessionStorage.getItem('dss_mapping_draft_comment') || ''
+  );
   const [overrideHead, setOverrideHead] = useState('');
   const [overrideCategory, setOverrideCategory] = useState<VarianceCategory>(VarianceCategory.CONTROLLABLE);
+
+  // F-09: Save draft comment to sessionStorage on change
+  useEffect(() => {
+    sessionStorage.setItem('dss_mapping_draft_comment', comment);
+  }, [comment]);
 
   useEffect(() => {
     loadPendingMappings();
@@ -38,7 +50,7 @@ export function MappingWorkbench() {
         mapping_id: mapping.mapping_id,
         decision: 'Confirmed',
         comment,
-        officer_name: 'Current User',
+        officer_name: officerName,  // F-07: from auth context
       });
       toast.success('Mapping confirmed');
       setComment('');
@@ -107,11 +119,10 @@ export function MappingWorkbench() {
           {mappings.map((mapping) => (
             <div
               key={mapping.mapping_id}
-              className={`border rounded-lg p-4 ${
-                selectedMapping?.mapping_id === mapping.mapping_id
+              className={`border rounded-lg p-4 ${selectedMapping?.mapping_id === mapping.mapping_id
                   ? 'border-blue-500 bg-blue-50'
                   : 'border-gray-200'
-              }`}
+                }`}
             >
               <div className="flex justify-between items-start mb-2">
                 <div>

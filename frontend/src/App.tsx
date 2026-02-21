@@ -1,6 +1,7 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Login } from './components/auth/Login';
 import { Layout } from './components/layout/Layout';
 import { Dashboard } from './components/dashboard/Dashboard';
@@ -21,16 +22,19 @@ function App() {
   }
 
   return (
-    <Layout>
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/upload" element={<PDFUploader onUploadComplete={(r: ExtractionResponse) => console.log(r)} />} />
-        <Route path="/mapping" element={<MappingWorkbench />} />
-        <Route path="/reports" element={<ReportDashboard />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Layout>
+    <ErrorBoundary>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/upload" element={<PDFUploader onUploadComplete={(r: ExtractionResponse) => console.log(r)} />} />
+          <Route path="/mapping" element={<MappingWorkbench />} />
+          <Route path="/reports" element={<ReportDashboard />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Layout>
+    </ErrorBoundary>
   );
 }
 
 export default App;
+

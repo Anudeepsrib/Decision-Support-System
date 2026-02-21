@@ -10,8 +10,36 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from dataclasses import dataclass, asdict
+from enum import Enum
 from typing import Optional, List
+from decimal import Decimal, ROUND_HALF_UP
 from backend.engine.constants import KSERC, KSERCConstants
+
+
+# ─── Enums for Input Validation (F-03, F-04) ───
+
+class CostCategory(str, Enum):
+    """Enforced variance categories. Prevents silent logic bypass from typos."""
+    CONTROLLABLE = "Controllable"
+    UNCONTROLLABLE = "Uncontrollable"
+
+
+class SBUCode(str, Enum):
+    """Enforced SBU partitioning codes. Prevents invalid isolation tags."""
+    SBU_G = "SBU-G"
+    SBU_T = "SBU-T"
+    SBU_D = "SBU-D"
+
+
+# ─── Financial Precision Utilities (F-02) ───
+
+def _money_round(value: float, places: int = 2) -> float:
+    """
+    Banker's rounding for financial amounts.
+    Uses Python Decimal to eliminate IEEE 754 float drift.
+    Example: 2/3 * 300000000 → 200000000.00 (not 199999999.99999997)
+    """
+    return float(Decimal(str(value)).quantize(Decimal(10) ** -places, rounding=ROUND_HALF_UP))
 
 
 def generate_checksum(data: dict) -> str:
@@ -21,7 +49,6 @@ def generate_checksum(data: dict) -> str:
     identical computation inputs always produce the identical checksum.
     This upholds the 100% reproducibility guarantee of the Rule Engine.
     """
-    # Exclude volatile fields that change across identical runs
     stable_data = {k: v for k, v in data.items() if k not in ("timestamp",)}
     canonical = json.dumps(stable_data, sort_keys=True, default=str, separators=(',', ':'))
     return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
@@ -30,14 +57,33 @@ def generate_checksum(data: dict) -> str:
 @dataclass
 class CostInput:
     """Structured input for a single ARR cost head."""
-    head: str             # "O&M", "Power_Purchase", "Interest"
-    category: str         # "Controllable" or "Uncontrollable"
-    sbu_code: str         # "SBU-G", "SBU-T", "SBU-D" - SBU Partitioning
+    head: str                        # "O&M", "Power_Purchase", "Interest"
+    category: CostCategory           # F-03: Enum, not free-form string
+    sbu_code: SBUCode                # F-04: Enum, not free-form string
     approved: float
     actual: float
     anomaly_score: Optional[float] = None   # Injected by Phase 2 AI Hook
     evidence_page: Optional[int] = None      # PDF provenance
     is_human_verified: bool = False
+
+    def __post_init__(self):
+        """Validate and coerce enum fields. Catches typos like 'controllable'."""
+        if not isinstance(self.category, CostCategory):
+            try:
+                self.category = CostCategory(self.category)
+            except ValueError:
+                valid = [e.value for e in CostCategory]
+                raise ValueError(
+                    f"Invalid category '{self.category}'. Must be one of: {valid}"
+                )
+        if not isinstance(self.sbu_code, SBUCode):
+            try:
+                self.sbu_code = SBUCode(self.sbu_code)
+            except ValueError:
+                valid = [e.value for e in SBUCode]
+                raise ValueError(
+                    f"Invalid sbu_code '{self.sbu_code}'. Must be one of: {valid}"
+                )
 
 
 @dataclass
@@ -54,7 +100,7 @@ class AuditResult:
     """Fully traceable output object for every computation."""
     timestamp: str
     checksum: str                    # SHA-256 for integrity verification
-    sbu_code: str                  # SBU Partitioning: SBU-G, SBU-T, SBU-D
+    sbu_code: str                    # SBU Partitioning: SBU-G, SBU-T, SBU-D
     scenario: str
     cost_head: str
     variance_category: str
@@ -94,7 +140,6 @@ class RuleEngine:
         """
         # Zero-hallucination enforcement:
         # Block ONLY when actual value exists but has NOT been human-verified.
-        # Allows None actuals through (they are flagged in the output, not blocked).
         if input_data.actual is not None and not input_data.is_human_verified:
             raise ValueError(
                 f"ZERO-HALLUCINATION VIOLATION: Actual value for '{input_data.head}' "
@@ -102,13 +147,13 @@ class RuleEngine:
                 f"Use the /mapping/confirm endpoint to verify before computation."
             )
 
-        variance = input_data.approved - input_data.actual
+        variance = _money_round(input_data.approved - input_data.actual)
         is_gain = variance >= 0
 
-        if input_data.category == "Controllable":
+        if input_data.category == CostCategory.CONTROLLABLE:
             if is_gain:
-                utility_impact = abs(variance) * self.constants.UTILITY_GAIN_SHARE
-                consumer_impact = abs(variance) * self.constants.CONSUMER_GAIN_SHARE
+                utility_impact = _money_round(abs(variance) * self.constants.UTILITY_GAIN_SHARE)
+                consumer_impact = _money_round(abs(variance) * self.constants.CONSUMER_GAIN_SHARE)
                 disallowed = 0.0
                 passed_through = consumer_impact
                 disallowance_reason = None
@@ -119,7 +164,7 @@ class RuleEngine:
                 )
                 clause = "Regulation 9.2 — Controllable Gains Sharing"
             else:
-                disallowed = abs(variance)
+                disallowed = _money_round(abs(variance))
                 passed_through = 0.0
                 disallowance_reason = (
                     f"Controllable Loss of {abs(variance):,.2f} fully disallowed per "
@@ -132,7 +177,7 @@ class RuleEngine:
                 clause = "Regulation 9.3 — Controllable Loss Disallowance"
         else:
             disallowed = 0.0
-            passed_through = variance  # Negative = additional burden on consumer
+            passed_through = _money_round(variance)  # Negative = additional burden on consumer
             disallowance_reason = None
             logic = (
                 f"Uncontrollable Variance: {variance:,.2f} fully passed through "
@@ -142,7 +187,7 @@ class RuleEngine:
 
         ref = RegulatoryRef(
             clause=clause,
-            description=f"KSERC MYT Framework — {input_data.category} {input_data.head}",
+            description=f"KSERC MYT Framework — {input_data.category.value} {input_data.head}",
             order_date=self.constants.ORDER_DATE,
             regulation_version=self.version
         )
@@ -156,10 +201,10 @@ class RuleEngine:
         # Build result dict for checksum generation
         result_data = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "sbu_code": input_data.sbu_code,
+            "sbu_code": input_data.sbu_code.value,
             "scenario": f"{input_data.head} {'Gain' if is_gain else 'Loss'} Sharing",
             "cost_head": input_data.head,
-            "variance_category": input_data.category,
+            "variance_category": input_data.category.value,
             "approved_amount": input_data.approved,
             "actual_amount": input_data.actual,
             "variance_amount": variance,
@@ -174,7 +219,7 @@ class RuleEngine:
             },
             "input_snapshot": asdict(input_data)
         }
-        
+
         # Generate integrity checksum
         checksum = generate_checksum(result_data)
         result_data["checksum"] = checksum
@@ -188,12 +233,6 @@ class RuleEngine:
         Retrieves the T&D loss target for a specific financial year.
         Delegates to KSERCConstants.get_td_loss_target() which reads
         the module-level T_AND_D_LOSS_TRAJECTORY dict.
-
-        Args:
-            financial_year: Financial year string (e.g., "FY_2024-25" or "2024-25")
-
-        Returns:
-            Normative T&D loss target as a decimal (e.g., 0.145 for 14.5%)
         """
         return self.constants.get_td_loss_target(financial_year)
 
@@ -210,14 +249,14 @@ class RuleEngine:
             self.constants.CPI_WEIGHT * cpi_index_change +
             self.constants.WPI_WEIGHT * wpi_index_change
         )
-        escalated_om = base_om * (1 + blended_escalation)
+        escalated_om = _money_round(base_om * (1 + blended_escalation))
 
         return {
             "base_om": base_om,
             "cpi_change": cpi_index_change,
             "wpi_change": wpi_index_change,
             "blended_escalation_pct": round(blended_escalation * 100, 4),
-            "escalated_om": round(escalated_om, 2),
+            "escalated_om": escalated_om,
             "formula": f"{base_om} × (1 + ({self.constants.CPI_WEIGHT}×{cpi_index_change} + {self.constants.WPI_WEIGHT}×{wpi_index_change}))",
             "regulatory_clause": "Regulation 5.1 — O&M Escalation (CPI:WPI 70:30)"
         }
@@ -230,14 +269,14 @@ class RuleEngine:
         Formula: Interest = Outstanding_Loan × (SBI_EBLR + 2%)
         """
         rate = self.constants.NORMATIVE_INTEREST_RATE
-        interest = outstanding_loan * rate
+        interest = _money_round(outstanding_loan * rate)
 
         return {
             "outstanding_loan": outstanding_loan,
             "sbi_eblr": self.constants.SBI_EBLR,
             "spread": self.constants.INTEREST_SPREAD,
             "normative_rate": rate,
-            "normative_interest": round(interest, 2),
+            "normative_interest": interest,
             "formula": f"{outstanding_loan} × ({self.constants.SBI_EBLR} + {self.constants.INTEREST_SPREAD})",
             "regulatory_clause": "Regulation 6.3 — Normative Interest (SBI EBLR + 2%)"
         }
@@ -259,11 +298,15 @@ class RuleEngine:
             total_gap += result.variance_amount
             total_disallowed += result.disallowed_variance
 
-        return {
+        report = {
             "engine_version": self.version,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),  # F-01: fixed
             "total_items_processed": len(inputs),
-            "total_revenue_gap": round(total_gap, 2),
-            "total_disallowed": round(total_disallowed, 2),
+            "total_revenue_gap": _money_round(total_gap),
+            "total_disallowed": _money_round(total_disallowed),
             "line_items": results
         }
+
+        # Add batch-level checksum for petition integrity
+        report["batch_checksum"] = generate_checksum(report)
+        return report

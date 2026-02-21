@@ -1,0 +1,57 @@
+C:\Users\anude\Documents\GitHub\Decision-Support-System\backend\security\__init__.py:2: UserWarning: SECRET_KEY is using the default value. Set a unique key in .env for production.
+  from .auth import (
+≡ƒÜÇ Initializing ARR Truing-Up DSS Demo Data...
+============================================================
+Γ£à Loaded 4 demo users
+   Default password: DemoPass123!
+
+≡ƒôï Demo Credentials:
+------------------------------------------------------------
+   regulatory.officer@kserc.gov.in
+   Password: DemoPass123!
+   Role: regulatory_officer
+   Access: SBU-G, SBU-T, SBU-D
+
+   auditor@utility.com
+   Password: DemoPass123!
+   Role: senior_auditor
+   Access: SBU-D
+
+   data.entry@utility.com
+   Password: DemoPass123!
+   Role: data_entry_agent
+   Access: SBU-D
+
+   analyst@utility.com
+   Password: DemoPass123!
+   Role: readonly_analyst
+   Access: SBU-G, SBU-T, SBU-D
+
+Γ£à Loaded 7 ARR components
+Γ£à Loaded 8 pending mappings
+
+≡ƒôä Sample Extraction Data:
+------------------------------------------------------------
+   Approved O&M Cost (FY 2024-25): Γé╣180,000,000
+   Source: Page 12, Table 1, Cell C4
+   Confidence: 95%
+
+   Actual O&M Cost (FY 2024-25): Γé╣150,000,000
+   Source: Page 14, Table 2, Cell D6
+   Confidence: 88%
+
+   Power Purchase Cost (Actual): Γé╣850,000,000
+   Source: Page 18, Table 3, Cell B8
+   Confidence: 92%
+
+============================================================
+Γ£¿ Demo data initialized successfully!
+
+≡ƒîÉ Backend: http://localhost:8000
+≡ƒûÑ∩╕Å  Frontend: http://localhost:3000
+≡ƒôÜ API Docs: http://localhost:8000/docs
+
+Next steps:
+   1. Start backend: uvicorn backend.main_secure:app --reload --env-file demo/.env.demo
+   2. Start frontend: cd frontend && npm start
+   3. Login with demo credentials above

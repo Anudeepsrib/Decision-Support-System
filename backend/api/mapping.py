@@ -3,10 +3,12 @@ FastAPI endpoint: Human-in-the-Loop Mapping Confirmation.
 Implements Module B "Mapping Workbench" — AI suggests, human confirms.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, field_validator
 from typing import Optional, Literal
-from datetime import datetime
+from datetime import datetime, timezone
+
+from security.auth import get_current_user, require_permission, TokenData
 
 router = APIRouter(prefix="/mapping", tags=["Mapping Workbench"])
 
@@ -96,17 +98,25 @@ _mapping_store = {
 # ─── Endpoints ───
 
 @router.get("/pending", response_model=list[MappingSuggestion])
-async def get_pending_mappings():
-    """Returns all AI-suggested mappings awaiting officer review."""
+async def get_pending_mappings(
+    current_user: TokenData = Depends(get_current_user),  # F-12: RBAC enforced
+    _perm=Depends(require_permission("mapping.read")),
+):
+    """Returns all AI-suggested mappings awaiting officer review. Requires: mapping.read."""
     return [m for m in _mapping_store.values() if m.status == "Pending"]
 
 
 @router.post("/confirm", response_model=MappingConfirmResponse)
-async def confirm_mapping(req: MappingConfirmRequest):
+async def confirm_mapping(
+    req: MappingConfirmRequest,
+    current_user: TokenData = Depends(get_current_user),  # F-12: RBAC enforced
+    _perm=Depends(require_permission("mapping.confirm")),
+):
     """
     Officer confirms, overrides, or rejects an AI-suggested mapping.
     Override and Reject require mandatory comments.
     All decisions are immutably logged in the audit trail.
+    Requires: mapping.confirm permission.
     """
     mapping = _mapping_store.get(req.mapping_id)
     if not mapping:
@@ -136,7 +146,7 @@ async def confirm_mapping(req: MappingConfirmRequest):
         audit_note = f"AI suggestion rejected by {req.officer_name}. Reason: {req.comment}"
 
     mapping.status = req.decision
-    decided_at = datetime.utcnow().isoformat()
+    decided_at = datetime.now(timezone.utc).isoformat()
 
     return MappingConfirmResponse(
         mapping_id=req.mapping_id,

@@ -9,7 +9,7 @@ from datetime import timedelta
 from pydantic import BaseModel
 from typing import Optional
 
-from backend.security.auth import (
+from security.auth import (
     authenticate_user,
     SecurityManager,
     Token,
@@ -18,7 +18,7 @@ from backend.security.auth import (
     get_user,
     MOCK_USERS,
 )
-from backend.security.rate_limit import brute_force_protection
+from security.rate_limit import brute_force_protection
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 

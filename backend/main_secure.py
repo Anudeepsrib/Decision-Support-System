@@ -9,15 +9,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from contextlib import asynccontextmanager
 
-from backend.api.extraction import router as extraction_router
-from backend.api.mapping import router as mapping_router
-from backend.api.reports import router as reports_router
-from backend.api.auth import router as auth_router
-from backend.security.rate_limit import (
+from api.extraction import router as extraction_router
+from api.mapping import router as mapping_router
+from api.reports import router as reports_router
+from api.auth import router as auth_router
+from security.rate_limit import (
     RateLimitMiddleware,
     SecurityHeadersMiddleware,
     ip_filter,
 )
+# from observability import (
+#     configure_logging,
+#     RequestTracingMiddleware,
+#     logger,
+# )
 
 # ─── Environment Configuration ───
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
@@ -31,9 +36,10 @@ CORS_ALLOWED_ORIGINS = os.getenv(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown events"""
-    print(f"Starting ARR Truing-Up DSS in {ENVIRONMENT} mode")
+    # configure_logging(json_format=(ENVIRONMENT == "production"))
+    # logger.info("app_starting", environment=ENVIRONMENT)
     yield
-    print("Shutting down ARR Truing-Up DSS")
+    # logger.info("app_shutting_down")
 
 # ─── Application Initialization ───
 app = FastAPI(
@@ -50,7 +56,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ─── Security Middleware ───
+# ─── Security & Observability Middleware ───
+# app.add_middleware(RequestTracingMiddleware)  # F-21: Request tracing
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RateLimitMiddleware)
 

@@ -4,10 +4,12 @@ Implements the "Evidence Pack" requirement — every extracted figure
 links to its specific page and table in the source document.
 """
 
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
+
+from security.auth import get_current_user, require_permission, TokenData
 
 router = APIRouter(prefix="/extract", tags=["Extraction"])
 
@@ -42,13 +44,18 @@ class ExtractionResponse(BaseModel):
 # ─── Endpoints ───
 
 @router.post("/upload", response_model=ExtractionResponse)
-async def extract_tables_from_pdf(file: UploadFile = File(...)):
+async def extract_tables_from_pdf(
+    file: UploadFile = File(...),
+    current_user: TokenData = Depends(get_current_user),  # F-12: RBAC enforced
+    _perm=Depends(require_permission("extraction.upload")),
+):
     """
     Accepts a PDF petition or audited financials document.
     Extracts structured financial tables with page/table anchors.
 
     Every extracted value carries provenance metadata linking it
     to the specific page, table, and cell in the source document.
+    Requires: extraction.upload permission.
     """
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
@@ -99,12 +106,12 @@ async def extract_tables_from_pdf(file: UploadFile = File(...)):
     fields_needing_review = sum(1 for f in extracted_fields if f.review_required)
 
     return ExtractionResponse(
-        job_id=f"ext-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+        job_id=f"ext-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
         filename=file.filename,
         total_pages_processed=24,
         total_fields_extracted=len(extracted_fields),
         fields_requiring_review=fields_needing_review,
         extraction_method="LLM_RAG + Tabula",
-        timestamp=datetime.utcnow().isoformat(),
+        timestamp=datetime.now(timezone.utc).isoformat(),
         fields=extracted_fields
     )
