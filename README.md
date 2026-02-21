@@ -39,49 +39,68 @@ flowchart TD
 
     %% Data Layer
     subgraph DataSourcing [Data Layer]
-        DB[(PostgreSQL\n15-min Block Data)]:::data
-        PDF[Unstructured PDFs\n& Audited Accounts]:::data
+        DB[(PostgreSQL<br>15-min Block Data)]:::data
+        PDF[Unstructured PDFs<br>& Audited Accounts]:::data
     end
 
     %% Phase 2 AI Hooks (Inputs)
     subgraph AI_Input [Phase 2: AI Input Hooks]
-        NLP[NLP Petition Parsing\n<font size=1>Extracts data from PDFs</font>]:::ai
-        Predictive[Predictive ARR\n<font size=1>LSTM/ARIMA Forecasting</font>]:::ai
+        NLP[NLP Petition Parsing<br><font size=1>Extracts data from PDFs</font>]:::ai
+        Predictive[Predictive ARR<br><font size=1>LSTM/ARIMA Forecasting</font>]:::ai
     end
 
     %% Phase 1 Rule Engine
     subgraph Phase1 [Phase 1: Deterministic Engine]
-        Config{{regulatory_config.yaml\nNormative Caps & Rules}}:::core
-        Engine[Gain / Loss Sharing Module\n<font size=1>Variance Analysis & Normative Caps</font>]:::core
+        Config{{regulatory_config.yaml<br>Normative Caps & Rules}}:::core
+        Engine[Gain / Loss Sharing Module<br><font size=1>Variance Analysis & Normative Caps</font>]:::core
     end
 
     %% Phase 2 AI Hooks (Validation)
     subgraph AI_Validation [Phase 2: AI Validation Hooks]
-        Anomaly[Anomaly Detection\n<font size=1>Isolation Forests</font>]:::ai
-        Optim[Procurement Optimization\n<font size=1>Linear Programming</font>]:::ai
+        Anomaly[Anomaly Detection<br><font size=1>Isolation Forests</font>]:::ai
+        Optim[Procurement Optimization<br><font size=1>Linear Programming</font>]:::ai
     end
 
     %% Output Layer
     subgraph Outputs [Output Layer]
-        Trace[Audit Trail JSON\n<font size=1>Regulation Trace & Logic</font>]:::audit
+        Trace[Audit Trail JSON<br><font size=1>Regulation Trace & Logic</font>]:::audit
     end
 
     %% Relationships
     DB --> Engine
     PDF --> NLP
-    NLP -.->|Structured Extracted Data\n(Hook)| Engine
-    Predictive -.->|Forecasted Sales/Demand\n(Hook)| Engine
+    NLP -.->|Structured Extracted Data<br>(Hook)| Engine
+    Predictive -.->|Forecasted Sales/Demand<br>(Hook)| Engine
 
     Config --> Engine
     
     Engine --> Anomaly
-    Anomaly -.->|Red-Flag Alerts\n(Hook)| Trace
+    Anomaly -.->|Red-Flag Alerts<br>(Hook)| Trace
     
     Engine --> Optim
-    Optim -.->|Optimized Mix\n(Hook)| Trace
+    Optim -.->|Optimized Mix<br>(Hook)| Trace
 
     Engine --> Trace
 ```
+
+## Running the Demonstration
+
+To execute the Phase 1 Rule Engine with sample data:
+
+1. **Install Dependencies:**
+   Ensure Node.js is installed. From the project root, run:
+   ```bash
+   npm install
+   ```
+
+2. **Run the Demo:**
+   Execute the demonstration script which loads the config, instantiates the engine, and processes sample scenarios:
+   ```bash
+   npx tsx src/demo.ts
+   ```
+
+This will run three discrete scenarios simulating Gains, Losses, and AI anomaly flagging, outputting the respective Audit JSON traces to your console.
+
 
 ## Directory Structure
 
