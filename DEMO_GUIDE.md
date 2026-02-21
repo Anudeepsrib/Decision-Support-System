@@ -294,15 +294,6 @@ rm -rf frontend/node_modules
 5. **Demonstrate security** — Show SBU isolation with two browsers
 6. **End with audit trail** — Proves immutability and compliance
 
----
-
-## 📞 Support
-
-If you encounter issues during demo:
-
-1. Check `demo/TROUBLESHOOTING.md`
-2. Review API logs at `http://localhost:8000/docs`
-3. Contact: support@utility.com
 
 ---
 
