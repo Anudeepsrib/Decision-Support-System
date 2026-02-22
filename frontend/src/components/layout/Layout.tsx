@@ -47,11 +47,10 @@ export function Layout({ children }: LayoutProps) {
               <Link
                 key={item.path}
                 to={item.path}
-                className={`py-3 border-b-2 transition-colors ${
-                  location.pathname === item.path
+                className={`py-2 border-b-2 transition-colors cursor-pointer ${location.pathname === item.path
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-600 hover:text-gray-900'
-                }`}
+                  }`}
               >
                 {item.label}
               </Link>
