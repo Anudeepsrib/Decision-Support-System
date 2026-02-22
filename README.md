@@ -1,377 +1,186 @@
-<p align="center">
-  <h1 align="center">ARR Truing-Up Decision Support System</h1>
-  <p align="center">
-    <strong>AI-Augmented Regulatory Compliance Engine for the Power Utility Sector</strong>
-  </p>
-  <p align="center">
-    <em>KSERC MYT 2022-27 Framework | 30.06.2025 Order Compliant</em>
-  </p>
-  <p align="center">
-    <a href="#architecture">Architecture</a> · <a href="#modules">Modules</a> · <a href="#quickstart">Quickstart</a> · <a href="#api-reference">API Reference</a> · <a href="#deployment">Deployment</a>
-  </p>
-</p>
+# Annual Revenue Requirement (ARR) Decision Support System
+## Comprehensive End-to-End Stakeholder Guide
+
+![Status](https://img.shields.io/badge/Status-Enterprise_Ready-success?style=for-the-badge&logo=checkmark)
+![License](https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge)
+<br>
+![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)
+![LangGraph](https://img.shields.io/badge/LangGraph-1C1C1C?style=for-the-badge&logo=openai)
+![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
+![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+
+Welcome to the ARR Decision Support System. This document serves as a complete, plain-language guide covering everything from the underlying business strategy to running a live enterprise deployment.
 
 ---
 
-## Overview
+## 1. Requirements — What the Project Needs and Why
 
-A production-grade analytics engine that transitions from a **deterministic rule-based compliance engine** to an **AI-augmented predictive system** for Annual Revenue Requirement (ARR) Truing-Up in the Power Utility Sector.
+**The Challenge:** 
+Regulatory agencies, such as the Kerala State Electricity Board (KSEB), analyze vast amounts of financial data submitted by utility companies for establishing Annual Revenue Requirements. Searching through hundreds of PDF pages to extract financial tables, verify the math, and apply rigid regulatory rules is traditionally a slow, error-prone, and highly manual process.
 
-The system reconstructs every figure in the KSERC 30.06.2025 Truing-Up Order (Table 7.1) with **100% mathematical fidelity**, full regulatory traceability, and zero tolerance for hallucinated numbers.
+**The Solution:**
+We need an intelligent, automated system that acts as a digital assistant to Regulatory Officers. The system must reliably extract data from rigid PDFs, apply regulatory rules mathematically without guessing or making up numbers ("Zero Hallucination"), and ultimately keep a human in control of the final decision. 
 
-### Design Principles
-
-| Principle | Implementation |
-|---|---|
-| **Zero Hallucination** | All "Actuals" must be human-verified before computation. AI flags uncertain values with `review_required: true`. |
-| **Full Traceability** | Every output generates a JSON audit object citing the specific regulatory clause applied. |
-| **AI as Co-Pilot** | AI suggests; the Regulatory Officer decides. Every AI suggestion is overridable with mandatory comments. |
-| **100% Reproducibility** | Versioned Rule Engine (`KSERC-MYT-2022-27-v1.0`). Same inputs always produce same outputs. |
+**Why it matters:** 
+By automating the data entry and basic math checks, the agency significantly reduces the time it takes to review financial claims, minimizes costly human errors, and maintains an auditable trail of every decision made.
 
 ---
 
-## Tech Stack
+## 2. Features — System Breakdown & Business Value
 
-| Layer | Technology | Purpose |
-|---|---|---|
-| **Backend (Brain)** | Python · FastAPI | Deterministic Rule Engine, Table Extraction, Anomaly Detection |
-| **Frontend (Body)** | React · TypeScript | Mapping Workbench, Dashboard, Annexure Viewer |
-| **Database** | PostgreSQL | Audited ARR heads, Versioned RuleSets, Immutable Audit Trails |
-| **Cache/Queue** | Redis | Async OCR job state, Report generation queues |
-| **ML/AI** | Scikit-Learn · LangChain | Isolation Forest anomalies, RAG-based PDF extraction |
-| **Reporting** | OpenPyXL | KSERC-standard Annexure Tables in Excel format |
+- **Automated AI Data Extraction:**
+  - *What it does:* Uses artificial intelligence to "read" PDF reports and extract specific financial tables natively into the system.
+  - *Value:* Saves hours of manual data transcription and prevents copy-paste errors.
+
+- **Human-in-the-Loop Mapping Workbench:**
+  - *What it does:* Pauses the AI process to show the extracted numbers to a human user. The user can review, correct, or approve the numbers before any financial calculations occur.
+  - *Value:* Builds trust. The AI is purely an assistant; the human remains the final authority and auditor.
+
+- **Deterministic Rule Engine (The Math Checker):**
+  - *What it does:* Runs the exact mathematical formulas required by regulatory law (e.g., KSERC MYT Framework) on the structured, human-approved data.
+  - *Value:* Guarantees 100% mathematical accuracy. The AI never guesses the final financial outcome; hardcoded strict logic calculators do.
+
+- **Intelligent Anomaly Detection:**
+  - *What it does:* Scans the incoming data against historical baselines to flag unusual spikes in costs (like a sudden historical 50% jump in Power Purchase pricing).
+  - *Value:* Instantly highlights suspicious data naturally, directing the human auditor's attention exactly where it's needed most efficiently.
+
+- **Data-Dense Executive Dashboard:**
+  - *What it does:* Displays the final accepted vs. rejected costs in a clean, comprehensive digital interface.
+  - *Value:* Provides immediate, digestible insights to executives and stakeholders without needing to read a 100-page report.
 
 ---
 
-<a id="architecture"></a>
-## System Architecture
+## 3. Implementation Overview
 
-The architecture follows a **Brain/Body Split** pattern. The Python backend owns all deterministic logic and AI processing. The TypeScript frontend owns the user-facing verification workflows. Phase 2 AI modules feed data **into** the Rule Engine — they never bypass it.
+How is the solution actually built? Imagine an automated factory assembly line with three main stations:
 
-```mermaid
-flowchart TD
-    classDef brain fill:#1a1a2e,stroke:#e94560,stroke-width:2px,color:#fff
-    classDef body fill:#0f3460,stroke:#16213e,stroke-width:2px,color:#fff
-    classDef data fill:#533483,stroke:#2b2d42,stroke-width:2px,color:#fff
-    classDef output fill:#e94560,stroke:#1a1a2e,stroke-width:2px,color:#fff
+1. **The Brain (Backend AI Pipeline):** When a user uploads a PDF, the system's "Brain" reads the document. If it gets confused, it attempts to self-correct. Once it extracts the data, it pauses the assembly line.
+2. **The Inspection Station (Frontend User Interface):** The system alerts the human worker. The human reviews the data on a clean, digital dashboard, fixes any typos the AI might have made, and hits "Approve".
+3. **The Strict Calculator (Rule Engine):** Once approved, the data flows into a strict calculator. The calculator applies the heavy regulatory math and spits out the final approved budgets and variance reports. 
 
-    subgraph Input ["1 · Data Ingestion"]
-        PDF["PDF Upload<br>Petitions & Audited Accounts"]:::data
-        Manual["Manual Entry<br>Verified Financials"]:::data
-    end
+Everything is securely saved to a digital filing cabinet (the database) so the history of the document can be audited years later via an Audit Trail.
 
-    subgraph Extraction ["2 · AI Extraction Pipeline"]
-        OCR["Table Extraction<br>Page/Table Anchors"]:::brain
-        RAG["RAG Few-Shot Parser<br>LLM with Evidence Links"]:::brain
-    end
+---
 
-    subgraph Verification ["3 · Human-in-the-Loop"]
-        Workbench["Mapping Workbench<br>Confirm / Override / Reject"]:::body
-        Confidence["Confidence Scores<br>Review Required Flags"]:::body
-    end
+## 4. Software & Dependencies (Plain Language)
 
-    subgraph Engine ["4 · Deterministic Rule Engine"]
-        Rules["Versioned RuleSet<br>KSERC-MYT-2022-27-v1.0"]:::brain
-        GainLoss["Gain/Loss Sharing<br>2/3 Utility : 1/3 Consumer"]:::brain
-        OM["O&M Escalation<br>CPI:WPI 70:30"]:::brain
-        Interest["Interest Logic<br>SBI EBLR + 2%"]:::brain
-    end
+To build this modern assembly line securely, we use specific industry-standard tools:
 
-    subgraph Validation ["5 · AI Validation Layer"]
-        Anomaly["Anomaly Detection<br>Isolation Forest"]:::brain
-        Vectorized["Vectorized Prudence<br>35,040 blocks in 0.008s"]:::brain
-    end
+- **React & TailwindCSS (The "Look and Feel"):** These are the tools used to build the website you click on. They ensure the dashboard is fast, interactive, and looks highly professional on any screen.
+- **FastAPI (The "Traffic Cop"):** This framework handles all the data traveling between the user's screen and the server. It manages speed, scale, and ensures data is routed quickly and securely.
+- **PostgreSQL (The "Digital Filing Cabinet"):** A highly secure, enterprise-grade database that permanently stores user profiles, historical financial records, and every audit report securely.
+- **LangGraph & LangSmith (The "AI Managers"):** These tools manage the AI operations. *LangGraph* creates the step-by-step workflow for the AI to follow, ensuring it knows when to pause for human review. *LangSmith* acts as a security camera, recording every single decision the AI makes so we can trace its internal logic if something goes wrong.
+- **Docker (The "Shipping Container"):** Docker wraps all the code, settings, and tools into a tidy isolated box. This ensures the software runs identically on any computer or cloud server in the world, preventing the classic "it works on my machine" problem.
 
-    subgraph Output ["6 · Report Generation"]
-        Audit["Immutable Audit Trail<br>WORM Compliance"]:::output
-        Annexure["KSERC Annexure Tables<br>Excel Export"]:::output
-        Draft["Petition Draft<br>Auto-Generated Prose"]:::output
-    end
+---
 
-    PDF --> OCR --> RAG --> Workbench
-    Manual --> Workbench
-    Workbench --> Rules
-    Confidence --> Workbench
-    Rules --> GainLoss
-    Rules --> OM
-    Rules --> Interest
-    GainLoss --> Anomaly
-    OM --> Anomaly
-    Interest --> Anomaly
-    Anomaly --> Vectorized
-    Vectorized --> Audit
-    Audit --> Annexure
-    Audit --> Draft
+## 5. Environment Configuration
+
+Before the system can boot up, it needs a set of digital keys and instructions. These are stored in hidden configuration files called `.env` (Environment Variables). 
+
+### Where to put them
+You need to create a `.env` file inside the `backend/` folder and another `.env` file in the `frontend/` folder.
+
+### What goes inside `backend/.env`
+```env
+# The environment setting: "development" for testing on your laptop, "production" for the live internet.
+ENVIRONMENT=development
+
+# Database Connection: Tells the backend exactly where the PostgreSQL filing cabinet is located natively.
+DATABASE_URL=postgresql+asyncpg://dss_user:dss_pass@localhost:5432/arr_dss
+
+# AI Keys: Your private passwords to use OpenAI's brain and LangSmith's tracking cameras securely.
+OPENAI_API_KEY=sk-your-private-key-here
+LANGCHAIN_API_KEY=lsv2_your-private-key-here
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_PROJECT=arr_dss_pipeline
+```
+*Note: Never share these keys or post them online!*
+
+### What goes inside `frontend/.env`
+```env
+# Tells the internet browser where exactly to send data to reach the backend traffic cop operations.
+VITE_API_URL=http://localhost:8000
 ```
 
 ---
 
-<a id="modules"></a>
-## Core Modules
+## 6. Demo Guide
 
-### Module A — Extraction & Evidence
-Extracts tables from PDF petitions with **page/table anchors**. If the system claims an actual O&M cost of ₹500 Cr, it links to the specific page, table, and cell in the Audited Financials.
+If you need to show the system to a client or stakeholder, follow these simple steps to start a local demonstration entirely on your laptop:
 
-```
-POST /extract/upload  →  { fields: [{ value: 1500000000, source_page: 12, source_table: 1, cell: "C4" }] }
-```
+**Step 1: Start the Backend (The Engine)**
+1. Open your computer's **Terminal** (on Mac, search for "Terminal"; on Windows, search for "Command Prompt").
+2. Tell the Terminal to go into the backend folder by typing this exactly and pressing Enter: 
+   ```bash
+   cd backend
+   ```
+3. Activate the secure Python workspace so the engine knows what tools to use:
+   - On Windows, type: `venv\Scripts\activate`
+   - On Mac/Linux, type: `source venv/bin/activate`
+4. Start the engine securely by typing: 
+   ```bash
+   uvicorn main:app --reload
+   ```
+   *(Leave this Terminal window open! It is quietly running the engine in the background.)*
 
-### Module B — Mapping Workbench
-AI suggests a mapping (e.g., `"Employee Expense" → "O&M Component"`) and the officer must **Confirm**, **Override**, or **Reject** with a mandatory comment. No mapping enters the Rule Engine without human approval.
+**Step 2: Start the Frontend (The User Interface)**
+1. Open a **brand new** Terminal window (do not close the first one).
+2. Tell this new Terminal to go into the frontend folder:
+   ```bash
+   cd frontend
+   ```
+3. Start drawing the website by typing: 
+   ```bash
+   npm run dev
+   ```
 
-```
-GET  /mapping/pending   →  Returns all AI suggestions awaiting review
-POST /mapping/confirm   →  Officer decision with audit trail
-```
-
-### Module C — Deterministic Rule Engine
-A versioned Python class. If `rules_v1.0` is used, results are **100% reproducible**.
-
-| Computation | Formula | Clause |
-|---|---|---|
-| **Gain Sharing** | Savings × ⅔ (Utility) + ⅓ (Consumer) | Regulation 9.2 |
-| **Loss Disallowance** | Excess × 100% (Utility bears) | Regulation 9.3 |
-| **O&M Escalation** | Base × (1 + 0.70×ΔCPI + 0.30×ΔWPI) | Regulation 5.1 |
-| **Normative Interest** | Outstanding Loan × (SBI EBLR + 2%) | Regulation 6.3 |
-| **Uncontrollable Pass-Through** | 100% to Consumer | Regulation 9.4 |
-
-### Module D — Anomaly Detection ("Red-Flag" Engine)
-Scikit-Learn `IsolationForest` monitors datasets for sudden financial spikes. Every flag generates a **Reasoning Block** explaining the outlier classification.
-
-### Module E — Performance Engine
-Vectorized NumPy operations process **35,040 rows** (365 days × 96 blocks) of 15-minute power purchase data in **< 0.01 seconds**.
-
-### Module F — Annexure Generator
-Produces KSERC-standard Excel workbooks with three professional sheets:
-- **Annexure-I**: Variance Summary Statement
-- **Annexure-II**: Gain/Loss Sharing Computation Detail
-- **Annexure-III**: AI Prudence Check Flags
+**Step 3: Run the Demonstration**
+1. Open your everyday web browser (like Chrome or Edge) and type `http://localhost:5173` into the top address bar.
+2. **Show the Upload:** You will see the ARR Dashboard. Upload a sample KSEB PDF document here.
+3. **Show Human-in-the-Loop:** Navigate to the "Mapping Workbench" screen. Show your stakeholders how the AI extracted the numbers from the PDF. Crucially, demonstrate manually changing one number to prove the human has ultimate control.
+4. **Show the Results:** Click "Approve" and navigate to the Main Dashboard to show the final, highly accurate mathematical outputs.
 
 ---
 
-<a id="quickstart"></a>
-## Quickstart
+## 7. Production Deployment (Going Live)
 
-### Prerequisites
-- **Python 3.10+** and **Node.js 18+**
-- PostgreSQL (optional for full DB; runs without for demo)
+When it is time to move the system off your laptop and onto the live internet for real users, we use **Docker**. Docker is like a universal shipping container—it packages our entire factory up so it runs perfectly on any company server in the world.
 
-### 1. Clone & Install
+**Step 1: Prepare the Live Server**
+Ensure the live company server (like AWS, Azure, or your internal IT server) has **Docker** and **Docker Compose** installed. (Your IT team can do this in one click).
+
+**Step 2: Transfer Files and Setup Keys**
+Copy this entire project folder to the live server. Create your `.env` password files exactly as described in Section 5. 
+*Important:* Only change `ENVIRONMENT=development` to `ENVIRONMENT=production` in the backend so the system knows it is live. Ensure you replace `sk-your-private-key-here` with your actual, real passwords from OpenAI!
+
+**Step 3: Build and Launch**
+Open the server's Terminal. Ensure you are inside the main, top-level project folder (where the `docker-compose.yml` file is located). Type this single command:
 
 ```bash
-git clone https://github.com/Anudeepsrib/Decision-Support-System.git
-cd Decision-Support-System
+docker-compose up --build -d
 ```
 
-### 2. Backend Setup (Python)
+**Step 4: What this single command does autonomously:**
+1. It reads the master blueprint (`docker-compose.yml`).
+2. It builds the secure PostgreSQL database locally.
+3. It installs all the Python tools and boots up the `run_prod.py` script. This script automatically checks how powerful the server is and scales the engine to run as fast as biologically possible.
+4. It builds the React website so users can log in.
+5. It ties everything together into a secure network. 
+6. The `-d` at the end of the command tells the system to run "detached"—meaning you can safely close your Terminal window and the software will stay online forever.
 
-```bash
-python -m venv venv
-# Windows
-.\venv\Scripts\activate
-# macOS/Linux
-source venv/bin/activate
-
-pip install -r requirements.txt
-```
-
-> [!IMPORTANT]
-> `camelot-py` (used for PDF table extraction) requires **Ghostscript** as a system dependency.
-> Install it before `pip install`:
-> - **Windows**: Download from [ghostscript.com](https://www.ghostscript.com/download/gsdnld.html) and add to PATH.
-> - **Ubuntu/Debian**: `sudo apt-get install ghostscript`
-> - **macOS**: `brew install ghostscript`
-
-### 3. Frontend Setup (TypeScript)
-
-```bash
-npm install
-```
-
-### 4. Run the System
-
-**Start the API Server:**
-```bash
-uvicorn backend.main_secure:app --reload --port 8000
-```
-
-**Start the Frontend (React):**
-```bash
-cd frontend
-npm install
-npm start
-```
+The Decision Support System is now live, robust, and running securely for enterprise consumption!
 
 ---
 
-## 🎬 Demo Mode (5-Minute Quick Demo)
+## 8. Further Reading (Documentation)
 
-Want to see the system in action immediately? We provide a complete demo environment with sample data.
+For deeper insights into the project's sub-systems, refer to our comprehensive manuals located in the `docs/` directory:
 
-### Quick Demo Setup
-
-```bash
-# 1. Initialize demo data
-python demo/scripts/init_demo.py
-
-# 2. Start backend with demo config
-cd backend
-uvicorn main_secure:app --reload --env-file ../demo/.env.demo
-
-# 3. Start frontend (new terminal)
-cd frontend
-npm start
-```
-
-### Demo Credentials
-
-| Username | Password | Role | Access |
-|----------|----------|------|--------|
-| `regulatory.officer@kserc.gov.in` | `DemoPass123!` | Regulatory Officer | All SBUs |
-| `auditor@utility.com` | `DemoPass123!` | Senior Auditor | SBU-D only |
-| `data.entry@utility.com` | `DemoPass123!` | Data Entry Agent | SBU-D only |
-
-### Demo Scenarios
-
-1. **📄 PDF Upload** — Upload sample petition, watch AI extract 12 fields
-2. **✅ Mapping Workbench** — Review 8 pending AI suggestions, confirm/override
-3. **📊 Report Generation** — View variance analysis with 70:30 CPI:WPI calculations
-4. **🔒 SBU Isolation** — See strict data separation between SBU-G/T/D
-
-**📖 Complete Guide:** See [`DEMO_GUIDE.md`](DEMO_GUIDE.md) for step-by-step walkthrough.
-
-**🧹 Cleanup:** The `demo/` folder is self-contained and safe to delete after demo.
-
----
-Then open [http://localhost:8000/docs](http://localhost:8000/docs) for the interactive Swagger documentation.
-
-**Run the Phase 1 Demo (TypeScript):**
-```bash
-npx tsx src/demo.ts
-```
-
-**Run the Anomaly Detection Demo:**
-```bash
-python src/ai/AnomalyDetection.py
-```
-
-**Run the Performance Benchmark:**
-```bash
-python src/ai/VectorizedBlockIngestion.py
-```
-
-**Generate KSERC Annexure Excel:**
-```bash
-python src/ai/AnnexureGenerator.py
-```
-
-**Run All Tests:**
-```bash
-npx tsx tests/test_gain_loss.ts
-python -m pytest tests/ -v
-```
-
----
-
-<a id="api-reference"></a>
-## API Reference
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/` | Service health and version info |
-| `GET` | `/health` | Health check |
-| `POST` | `/extract/upload` | Upload PDF for table extraction with page/table anchors |
-| `GET` | `/mapping/pending` | List all AI-suggested mappings awaiting officer review |
-| `POST` | `/mapping/confirm` | Officer confirms/overrides/rejects a mapping |
-
-Full interactive documentation available at `/docs` (Swagger UI) and `/redoc` (ReDoc).
-
----
-
-## RAG Extraction Prompt (Phase 3 Hardened)
-
-The LLM extraction pipeline uses a strict Few-Shot prompt with zero-hallucination enforcement:
-
-```text
-You are a Senior Regulatory Compliance Auditor extracting financial data for 
-the ARR Truing-Up Phase under the KSERC MYT 2022-27 Framework.
-
-CRITICAL RULE: Zero tolerance for hallucination. If a value is missing or 
-ambiguous, you MUST return null and set review_required to true.
-
-Extraction format:
-{ "head": "<O&M|Power_Purchase|Interest>", "approved": <number|null>, 
-  "actual": <number|null>, "review_required": <boolean> }
-
-FEW-SHOT EXAMPLES:
-
-Input: "The Commission approved Rs. 500 Cr for Power Purchase but the 
-licensee incurred Rs. 510 Cr."
-Output: { "head": "Power_Purchase", "approved": 5000000000, 
-          "actual": 5100000000, "review_required": false }
-
-Input: "O&M limits were set at 150 Cr. Actual records missing from Pg 4."
-Output: { "head": "O&M", "approved": 1500000000, "actual": null, 
-          "review_required": true }
-```
-
----
-
-<a id="deployment"></a>
-## Production Deployment Checklist
-
-Before deploying to a live KSERC regulatory server:
-
-| # | Check | Requirement |
-|---|---|---|
-| 1 | **Row-Level Security** | PostgreSQL RLS policies segregate Discom data to prevent petition leakage. |
-| 2 | **Role-Based Access Control** | `Data_Entry_Agent` (AI triggers) vs `Regulatory_Officer` (final submission rights). |
-| 3 | **Rule Versioning** | `regulatory_config.yaml` supports chronological versioning. Cross-order conflicts flagged. |
-| 4 | **Adversarial Handlers** | Deterministic engines reject malformed inputs; floating-point boundary tests pass. |
-| 5 | **Immutable Audit Trails** | WORM (Write Once, Read Many) logging for all computations and human overrides. |
-
----
-
-## Project Structure
-
-```
-Decision-Support-System/
-├── backend/                        # Python FastAPI (The Brain)
-│   ├── api/
-│   │   ├── extraction.py           # PDF upload & table extraction endpoint
-│   │   └── mapping.py              # Human-in-the-loop mapping confirmation
-│   ├── engine/
-│   │   ├── constants.py            # KSERC 2022-27 immutable regulatory constants
-│   │   └── rule_engine.py          # Versioned deterministic Rule Engine
-│   ├── models/
-│   │   └── schema.py               # SQLAlchemy canonical schema (5 models)
-│   └── main.py                     # FastAPI application entry point
-├── config/
-│   └── regulatory_config.yaml      # Externalized normative values
-├── src/                            # TypeScript modules (The Body)
-│   ├── ai/
-│   │   ├── AnomalyDetection.py     # Isolation Forest anomaly detection
-│   │   ├── AnnexureGenerator.py    # KSERC Excel Annexure generator
-│   │   └── VectorizedBlockIngestion.py  # 35K-row performance engine
-│   ├── AuditTrail.ts               # TypeScript audit trace interfaces
-│   ├── GainLossSharingModule.ts    # Phase 1 TypeScript engine
-│   ├── SnapshotCompare.ts          # Scenario A vs B delta reports
-│   └── demo.ts                     # Interactive demonstration script
-├── tests/
-│   ├── test_gain_loss.ts           # Gain/Loss edge case stress tests
-│   └── test_anomaly_adversarial.py # Adversarial anomaly detection tests
-├── output/                         # Generated reports & annexures
-└── README.md
-```
-
----
-
-## License
-
-This project is developed for regulatory compliance research and demonstration purposes.
-
----
-
-<p align="center">
-  <sub>Built with precision for the KSERC MYT 2022-27 regulatory framework.</sub>
-</p>
+- [`docs/BEGINNERS_GUIDE.md`](./docs/BEGINNERS_GUIDE.md) - Understanding the regulatory context and core features.
+- [`docs/DEMO_GUIDE.md`](./docs/DEMO_GUIDE.md) - How to run demo data payloads and sandbox the AI logic.
+- [`docs/SECURITY.md`](./docs/SECURITY.md) - Deep dive into RBAC, authentication logic, and rate-limiting protocols.
+- [`docs/design_system.md`](./docs/design_system.md) - UI design principles, aesthetic standards, and color tokens.

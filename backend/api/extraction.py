@@ -9,7 +9,8 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timezone
 
-from security.auth import get_current_user, require_permission, TokenData
+from backend.security.auth import get_current_user, require_permission, TokenData
+from backend.api.extraction_graph import extraction_graph, ExtractedField
 
 router = APIRouter(prefix="/extract", tags=["Extraction"])
 
@@ -66,52 +67,34 @@ async def extract_tables_from_pdf(
     if file_size_mb > 50:
         raise HTTPException(status_code=413, detail="File exceeds 50MB limit.")
 
-    # Simulated extraction pipeline (production would use tabula/camelot/LLM)
-    extracted_fields = [
-        ExtractedField(
-            field_name="Approved O&M Cost (FY 2024-25)",
-            sbu_code="SBU-D",
-            extracted_value=1500000000,
-            confidence_score=0.95,
-            source_page=12,
-            source_table=1,
-            cell_reference="C4",
-            raw_text="Rs. 150.00 Cr",
-            review_required=False
-        ),
-        ExtractedField(
-            field_name="Actual O&M Cost (FY 2024-25)",
-            sbu_code="SBU-D",
-            extracted_value=1800000000,
-            confidence_score=0.88,
-            source_page=14,
-            source_table=2,
-            cell_reference="D6",
-            raw_text="Rs. 180.00 Cr (Audited)",
-            review_required=False
-        ),
-        ExtractedField(
-            field_name="Power Purchase Cost (Actual)",
-            sbu_code="SBU-G",
-            extracted_value=None,
-            confidence_score=0.42,
-            source_page=18,
-            source_table=3,
-            cell_reference="B8",
-            raw_text="[Table partially obscured]",
-            review_required=True
-        ),
-    ]
+    job_id = f"ext-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
 
-    fields_needing_review = sum(1 for f in extracted_fields if f.review_required)
+    # Initialize Graph State
+    initial_state = {
+        "job_id": job_id,
+        "filename": file.filename,
+        "raw_ocr_pages": {1: "Mocked OCR Document Text..."},
+        "extracted_fields": [],
+        "retry_count": 0,
+        "requires_human_review": False
+    }
+
+    # Asynchronously invoke LangGraph Pipeline with Thread Checkpoint
+    config = {"configurable": {"thread_id": job_id}}
+    final_state = await extraction_graph.ainvoke(initial_state, config=config)
+
+    # Convert state dicts back to Pydantic objects for the API response
+    result_fields = [ExtractedField(**f) for f in final_state.get("extracted_fields", [])]
+
+    fields_needing_review = sum(1 for f in result_fields if f.review_required)
 
     return ExtractionResponse(
-        job_id=f"ext-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+        job_id=job_id,
         filename=file.filename,
-        total_pages_processed=24,
-        total_fields_extracted=len(extracted_fields),
+        total_pages_processed=len(initial_state["raw_ocr_pages"]),
+        total_fields_extracted=len(result_fields),
         fields_requiring_review=fields_needing_review,
-        extraction_method="LLM_RAG + Tabula",
+        extraction_method="LangGraph + ChatOpenAI",
         timestamp=datetime.now(timezone.utc).isoformat(),
-        fields=extracted_fields
+        fields=result_fields
     )
