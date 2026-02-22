@@ -311,14 +311,6 @@ cap_drop:
 
 ---
 
-## Security Contacts
-
-**For security issues, contact:**
-
-- Email: security@utility.com
-- PGP Key: [Download Public Key]
-- Response Time: Within 24 hours
-
 **Responsible Disclosure:**
 We appreciate responsible disclosure of vulnerabilities. Please do not publicly disclose issues until we've had a chance to address them.
 
