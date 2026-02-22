@@ -209,6 +209,21 @@ Example entry:
 
 ---
 
+### Scenario 6: Advanced Extensibility Module (Phase 3)
+
+**Actor:** Regulatory Officer
+
+1. **Tariff Draft Generation:** On the Reports page, scroll down to the "Regulatory Executive Draft". Click "Generate Draft". Watch the system invoke LangChain/GPT-4o-mini to rapidly generate a narrative based on the final computed Uncontrollable and Controllable values. **Showcase that the human can edit the text before saving.**
+2. **Historical Timeline Tracking:** Navigate back to the Dashboard home view. Scroll to the "Multi-Year Historical Trends" section. Hover over the interactive **Recharts** to demonstrate year-over-year cost tracking against Approved ARRs dating back to 2022.
+3. **Efficiency Penalties:** Scroll to the "Line Loss & Efficiency Analysis" card. Choose FY 2024-25 and input a Line Loss of **14.5%**. Let the Rule Engine dynamically highlight the deviation from the normative 12.0% trajectory, producing a strict financial Disallowance Estimate in Crores.
+
+**Key Points to Highlight:**
+- Text extraction handles standard APIs and native Tesseract OCR seamlessly in the backend via LangGraph.
+- Zero-hallucination policies govern the LLM output — humans maintain final approval capability.
+- The system live-syncs baseline models daily against the official `erckerala.org` web portal.
+
+---
+
 ## 📊 Demo Data Summary
 
 ### Users (4 accounts)

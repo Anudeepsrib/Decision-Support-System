@@ -349,6 +349,27 @@ Here's how the entire system flows in four simple steps:
 
 ---
 
+## Chapter 5: Advanced Extensions — The Next Level
+
+To make the system truly enterprise-ready, we recently added 5 advanced modules that take the DSS from a simple calculator to a holistic regulatory platform:
+
+### 1. The Scanned Document Reader (OCR)
+Sometimes documents arrive as scanned images rather than clean digital PDFs. The new **Optical Character Recognition (OCR)** fallback acts like a pair of high-tech glasses for the AI, allowing it to "read" the text embedded inside images automatically without requiring manual transcription.
+
+### 2. The Auto-Drafter (LLM Tariff Generation)
+Instead of forcing humans to write the final legal paragraphs, the system features a **Tariff Generation Assistant**. It looks at the final approved Revenue Gap and writes a formal 3-paragraph regulatory draft explaining the financial decision. *Crucially, humans must review and edit this draft before it is finalized.*
+
+### 3. The Live Fact-Checker (KSERC Integration)
+The system no longer relies solely on hard-coded targets. A background process silently checks the live `erckerala.org` regulatory portal every night, downloading the absolute latest historical benchmarks so the AI anomaly detection is always using today's data.
+
+### 4. The Time Machine (Multi-Year History)
+Why just look at this year? A beautiful, interactive dashboard now tracks the utility's performance dynamically over a 5-year **Historical Trend**. This allows executives to instantly spot if a utility is slowly improving its efficiency or quietly ballooning its costs over half a decade.
+
+### 5. The Penalty Estimator (Line Loss Efficiency)
+Losing electricity on power lines is expensive. The system now takes the extracted "Line Loss Percentage" and compares it to the rigid regulatory trajectory. If the utility lost 12% of its power but was only allowed to lose 10%, the system instantly calculates an estimated penalty in Crores for failing to maintain the grid.
+
+---
+
 ## Closing: The Future Impact
 
 ### From Months to Days

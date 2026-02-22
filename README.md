@@ -47,9 +47,15 @@ By automating the data entry and basic math checks, the agency significantly red
   - *What it does:* Scans the incoming data against historical baselines to flag unusual spikes in costs (like a sudden historical 50% jump in Power Purchase pricing).
   - *Value:* Instantly highlights suspicious data naturally, directing the human auditor's attention exactly where it's needed most efficiently.
 
-- **Data-Dense Executive Dashboard:**
-  - *What it does:* Displays the final accepted vs. rejected costs in a clean, comprehensive digital interface.
+- **Data-Dense Executive Dashboard & Historical Trends:**
+  - *What it does:* Displays the final accepted vs. rejected costs in a clean, comprehensive digital interface, alongside year-over-year interactive Recharts for multi-year tracking.
   - *Value:* Provides immediate, digestible insights to executives and stakeholders without needing to read a 100-page report.
+
+- **Advanced Extensions Module:**
+  - **Scanned Document OCR:** Fallback data extraction via Tesseract for image-based PDFs without native text layers.
+  - **LLM-Based Tariff Generation:** Auto-drafts human-editable 3-paragraph regulatory narratives using `gpt-4o-mini` based on computed variance.
+  - **Live KSERC Benchmark Sync:** Natively scrapes and caches the latest regulatory orders from `erckerala.org` in the background.
+  - **Line Loss & Efficiency Analysis:** Dynamically tracks T&D trajectory deviations, computing estimated penalty Crores for violations.
 
 ---
 
@@ -69,10 +75,11 @@ Everything is securely saved to a digital filing cabinet (the database) so the h
 
 To build this modern assembly line securely, we use specific industry-standard tools:
 
-- **React & TailwindCSS (The "Look and Feel"):** These are the tools used to build the website you click on. They ensure the dashboard is fast, interactive, and looks highly professional on any screen.
+- **React, TailwindCSS & Recharts (The "Look and Feel"):** These are the tools used to build the website you click on. They ensure the dashboard is fast, interactive, and looks highly professional on any screen, utilizing Recharts for dynamic historical plotting.
 - **FastAPI (The "Traffic Cop"):** This framework handles all the data traveling between the user's screen and the server. It manages speed, scale, and ensures data is routed quickly and securely.
 - **PostgreSQL (The "Digital Filing Cabinet"):** A highly secure, enterprise-grade database that permanently stores user profiles, historical financial records, and every audit report securely.
-- **LangGraph & LangSmith (The "AI Managers"):** These tools manage the AI operations. *LangGraph* creates the step-by-step workflow for the AI to follow, ensuring it knows when to pause for human review. *LangSmith* acts as a security camera, recording every single decision the AI makes so we can trace its internal logic if something goes wrong.
+- **LangGraph & LangSmith (The "AI Managers"):** These tools manage the AI operations. *LangGraph* creates the step-by-step workflow for the AI to follow, ensuring it knows when to pause for human review. *LangSmith* acts as a security camera, recording every single decision the AI makes.
+- **Tesseract OCR & BeautifulSoup (The "Extractors"):** Built-in native dependencies that act as fallbacks for scanning images into text and silently fetching live internet updates from regulatory portals.
 - **Docker (The "Shipping Container"):** Docker wraps all the code, settings, and tools into a tidy isolated box. This ensures the software runs identically on any computer or cloud server in the world, preventing the classic "it works on my machine" problem.
 
 ---
