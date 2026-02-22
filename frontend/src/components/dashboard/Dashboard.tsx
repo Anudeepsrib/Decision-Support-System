@@ -2,6 +2,8 @@ import React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import { DocumentTextIcon, CheckCircleIcon, ChartBarIcon } from '@heroicons/react/24/outline';
+import { HistoricalTrends } from './HistoricalTrends';
+import { EfficiencyAnalysis } from './EfficiencyAnalysis';
 
 export function Dashboard() {
   const { user } = useAuth();
@@ -79,6 +81,12 @@ export function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Feature 4: Multi-Year Historical Trends Dashboard */}
+      <HistoricalTrends />
+
+      {/* Feature 5: Line Loss & Efficiency Analysis */}
+      <EfficiencyAnalysis />
     </div>
   );
 }

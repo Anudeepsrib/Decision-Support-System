@@ -236,6 +236,31 @@ class RuleEngine:
         """
         return self.constants.get_td_loss_target(financial_year)
 
+    def compute_line_loss_efficiency(self, financial_year: str, actual_loss_pct: float) -> dict:
+        """
+        Validates the actual Line Loss against KSERC approved norms.
+        Calculates whether the Utility achieved the efficiency target or violated it,
+        which impacts power purchase cost disallowances mathematically elsewhere.
+        """
+        target_loss_pct = self.get_td_loss_target(financial_year)
+        deviation = _money_round(actual_loss_pct - target_loss_pct, 4)
+        is_violation = deviation > 0
+
+        logic_applied = (
+            f"Line Loss Target ({target_loss_pct}%) vs Actual ({actual_loss_pct}%). "
+            f"{'Violation detected' if is_violation else 'Efficiency target achieved'}."
+        )
+
+        return {
+            "financial_year": financial_year,
+            "target_loss_percent": target_loss_pct,
+            "actual_loss_percent": actual_loss_pct,
+            "deviation_percent": deviation,
+            "is_violation": is_violation,
+            "logic_applied": logic_applied,
+            "regulatory_clause": "Regulation 7.4 — T&D Loss Target Trajectory"
+        }
+
     # ─── O&M Normative Escalation ───
 
     def compute_om_escalation(

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ReportsService } from '../../services/api';
 import { AnalyticalReport, SBUCode } from '../../services/types';
 import { toast } from 'react-toastify';
+import { TariffDraft } from './TariffDraft';
 
 export function ReportDashboard() {
   const [report, setReport] = useState<AnalyticalReport | null>(null);
@@ -117,6 +118,9 @@ export function ReportDashboard() {
               </ul>
             </div>
           )}
+
+          {/* Tariff Draft Generation Card */}
+          <TariffDraft report={report} />
 
           {/* Report Metadata */}
           <div className="text-xs text-gray-400">

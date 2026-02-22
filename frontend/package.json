@@ -10,7 +10,7 @@
     "react-dropzone": "^15.0.0",
     "react-router-dom": "^6.8.0",
     "react-toastify": "^9.1.0",
-    "recharts": "^2.5.0"
+    "recharts": "^2.15.4"
   },
   "scripts": {
     "start": "react-scripts start",

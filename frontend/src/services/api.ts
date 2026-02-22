@@ -12,7 +12,9 @@ import {
   ExtractionResponse,
   MappingSuggestion,
   MappingConfirmRequest,
-  AnalyticalReport
+  AnalyticalReport,
+  HistoricalTrendData,
+  EfficiencyResponse
 } from './types';
 
 // ─── Token Management ───
@@ -370,6 +372,51 @@ export const HealthService = {
   }> {
     const response = await fetch(`${API_BASE_URL}/security/status`);
     return response.json();
+  },
+};
+
+/**
+ * Tariff Generation Service
+ */
+export const TariffService = {
+  async generateDraft(data: {
+    financial_year: string;
+    net_revenue_gap: number;
+    total_approved_arr: number;
+    total_actual_arr: number;
+    controllable_gap: number;
+    uncontrollable_gap: number;
+    anomaly_flags_count: number;
+  }): Promise<{
+    draft_id: string;
+    financial_year: string;
+    generated_at: string;
+    llm_model: string;
+    draft_narrative: string;
+    human_review_required: boolean;
+  }> {
+    return httpClient.post('/tariff/generate-draft', data);
+  },
+};
+
+/**
+ * Historical Data Service
+ */
+export const HistoryService = {
+  async getTrends(): Promise<HistoricalTrendData[]> {
+    return httpClient.get<HistoricalTrendData[]>('/history/trends');
+  },
+};
+
+/**
+ * Efficiency Analysis Service
+ */
+export const EfficiencyService = {
+  async evaluateLineLoss(financialYear: string, actualLineLossPercent: number): Promise<EfficiencyResponse> {
+    return httpClient.post<EfficiencyResponse>('/efficiency/line-loss', {
+      financial_year: financialYear,
+      actual_line_loss_percent: actualLineLossPercent
+    });
   },
 };
 

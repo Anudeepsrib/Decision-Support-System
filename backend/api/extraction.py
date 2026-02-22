@@ -11,6 +11,9 @@ from datetime import datetime, timezone
 
 from backend.security.auth import get_current_user, require_permission, TokenData
 from backend.api.extraction_graph import extraction_graph, ExtractedField
+from backend.api.ocr_service import ocr_service
+import io
+import PyPDF2
 
 router = APIRouter(prefix="/extract", tags=["Extraction"])
 
@@ -58,8 +61,9 @@ async def extract_tables_from_pdf(
     to the specific page, table, and cell in the source document.
     Requires: extraction.upload permission.
     """
-    if not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
+    allowed_extensions = (".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".bmp")
+    if not file.filename.lower().endswith(allowed_extensions):
+        raise HTTPException(status_code=400, detail="Only PDF and Image files are accepted.")
 
     contents = await file.read()
     file_size_mb = len(contents) / (1024 * 1024)
@@ -69,11 +73,30 @@ async def extract_tables_from_pdf(
 
     job_id = f"ext-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
 
+    # Document Processing: PyPDF2 Native -> OCR Fallback
+    raw_pages = {}
+    is_image = ocr_service.is_image(contents, file.filename)
+    
+    if is_image:
+        raw_pages = ocr_service.process_image(contents)
+    else:
+        # Try native text extraction via PyPDF2
+        pdf_reader = PyPDF2.PdfReader(io.BytesIO(contents))
+        total_text_length = 0
+        for i, page in enumerate(pdf_reader.pages):
+            text = page.extract_text() or ""
+            raw_pages[i+1] = text
+            total_text_length += len(text.strip())
+        
+        # If very little text is found, we assume it is a scanned document and hit OCR
+        if total_text_length < 50:
+            raw_pages = ocr_service.process_pdf(contents)
+
     # Initialize Graph State
     initial_state = {
         "job_id": job_id,
         "filename": file.filename,
-        "raw_ocr_pages": {1: "Mocked OCR Document Text..."},
+        "raw_ocr_pages": raw_pages,
         "extracted_fields": [],
         "retry_count": 0,
         "requires_human_review": False

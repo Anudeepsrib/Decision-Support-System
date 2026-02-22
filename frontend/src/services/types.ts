@@ -250,6 +250,28 @@ export interface AnalyticalReport {
   generated_by: string;
 }
 
+export interface HistoricalTrendData {
+  financial_year: string;
+  power_purchase_cost: number;
+  o_and_m_cost: number;
+  staff_cost: number;
+  line_loss_percent: number;
+  total_approved_arr: number;
+  total_actual_arr: number;
+  revenue_gap: number;
+}
+
+export interface EfficiencyResponse {
+  financial_year: string;
+  target_loss_percent: number;
+  actual_loss_percent: number;
+  deviation_percent: number;
+  is_violation: boolean;
+  logic_applied: string;
+  regulatory_clause: string;
+  penalty_estimate_cr: number;
+}
+
 // ─── Error Types ───
 
 export interface ApiErrorResponse {

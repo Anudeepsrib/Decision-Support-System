@@ -195,3 +195,47 @@ class ExtractionEvidence(Base):
 
     def __repr__(self):
         return f"<ExtractionEvidence(sbu={self.sbu_code.value}, file={self.source_filename}, page={self.page_number}, value={self.extracted_value})>"
+
+class KSERCBenchmark(Base):
+    """
+    Cached historical benchmarks scraped from erckerala.org.
+    Used by the Rule Engine to calculate Year-over-Year trends and validate norms.
+    """
+    __tablename__ = "kserc_benchmarks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    financial_year = Column(String(10), nullable=False, index=True)
+    metric_name = Column(String(100), nullable=False) # e.g., "Approved_Distribution_Loss_Percent"
+    metric_value = Column(Float, nullable=False)
+    source_url = Column(String(255), nullable=True)
+    scraped_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("financial_year", "metric_name", name="uq_fy_metric"),
+    )
+
+    def __repr__(self):
+        return f"<KSERCBenchmark(fy={self.financial_year}, metric={self.metric_name}, val={self.metric_value})>"
+
+class HistoricalRecord(Base):
+    """
+    Stores finalized year-over-year Truing-Up financial aggregates.
+    Designed for fast 'Side-by-Side' multi-year dashboard rendering.
+    """
+    __tablename__ = "historical_records"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    financial_year = Column(String(10), nullable=False, unique=True, index=True) # e.g. "2022-23"
+    
+    # Core Aggregates 
+    power_purchase_cost = Column(Float, nullable=False, default=0.0)
+    o_and_m_cost = Column(Float, nullable=False, default=0.0)
+    staff_cost = Column(Float, nullable=False, default=0.0)
+    line_loss_percent = Column(Float, nullable=False, default=0.0)
+    
+    total_approved_arr = Column(Float, nullable=False, default=0.0)
+    total_actual_arr = Column(Float, nullable=False, default=0.0)
+    revenue_gap = Column(Float, nullable=False, default=0.0)
+
+    def __repr__(self):
+        return f"<HistoricalRecord(fy={self.financial_year}, gap={self.revenue_gap})>"

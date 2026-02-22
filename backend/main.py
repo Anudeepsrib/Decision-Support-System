@@ -12,16 +12,21 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from contextlib import asynccontextmanager
+import asyncio
 
 from backend.api.extraction import router as extraction_router
 from backend.api.mapping import router as mapping_router
 from backend.api.reports import router as reports_router
 from backend.api.auth import router as auth_router
+from backend.api.tariff_generator import router as tariff_router
+from backend.api.history import router as history_router
+from backend.api.efficiency import router as efficiency_router
 from backend.security.rate_limit import (
     RateLimitMiddleware,
     SecurityHeadersMiddleware,
     ip_filter,
 )
+from backend.api.scheduler import kserc_periodic_sync_loop
 
 # ─── Environment Configuration ───
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
@@ -35,7 +40,11 @@ CORS_ALLOWED_ORIGINS = os.getenv(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown events"""
+    # Start the continuous background KSERC synchronization task
+    kserc_sync_task = asyncio.create_task(kserc_periodic_sync_loop(interval_seconds=86400))
     yield
+    # Safely cancel background task on shutdown
+    kserc_sync_task.cancel()
 
 # ─── Application Initialization ───
 app = FastAPI(
@@ -107,6 +116,9 @@ app.include_router(auth_router)
 app.include_router(extraction_router)
 app.include_router(mapping_router)
 app.include_router(reports_router)
+app.include_router(tariff_router)
+app.include_router(history_router)
+app.include_router(efficiency_router)
 
 
 # ─── Health Check Endpoints ───
