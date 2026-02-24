@@ -17,7 +17,7 @@ asyncpg==0.30.0
 # ─── Authentication & Security ───
 python-jose[cryptography]==3.4.0
 passlib[bcrypt]==1.7.4
-bcrypt==4.2.1
+bcrypt<4.1
 cryptography==44.0.0
 python-dotenv==1.0.1
 

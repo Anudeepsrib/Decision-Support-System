@@ -65,9 +65,9 @@ app = FastAPI(
         "name": "Internal Enterprise License",
         "url": "http://example.com/license",
     },
-    docs_url="/docs" if DEBUG else None,
-    redoc_url="/redoc" if DEBUG else None,
-    openapi_url="/openapi.json" if DEBUG else None,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
     swagger_ui_parameters={
         "defaultModelsExpandDepth": -1, # Hide schemas by default
         "displayRequestDuration": True, # Show request times for latency tracking
