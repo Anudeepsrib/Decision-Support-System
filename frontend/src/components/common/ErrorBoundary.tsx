@@ -43,36 +43,40 @@ export class ErrorBoundary extends Component<Props, State> {
             }
 
             return (
-                <div className="min-h-screen flex items-center justify-center bg-gray-50 p-8">
-                    <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-6 text-center">
-                        <div className="text-4xl mb-4">⚠️</div>
-                        <h2 className="text-xl font-bold text-gray-800 mb-2">
+                <div style={s.container}>
+                    <div style={s.card}>
+                        <div style={s.icon}>⚠️</div>
+                        <h2 style={s.title}>
                             Something went wrong
                         </h2>
-                        <p className="text-gray-600 mb-4">
-                            An unexpected error occurred. Your data is safe — please try refreshing.
+                        <p style={s.subtitle}>
+                            An unexpected system error occurred. Your data is safe—please try refreshing the application.
                         </p>
                         {this.state.error && (
-                            <details className="text-left text-sm text-gray-500 mb-4">
-                                <summary className="cursor-pointer text-blue-500">
+                            <details style={s.details}>
+                                <summary style={s.summary}>
                                     Technical details
                                 </summary>
-                                <pre className="mt-2 p-2 bg-gray-100 rounded overflow-auto text-xs">
+                                <pre style={s.pre}>
                                     {this.state.error.toString()}
                                     {this.state.errorInfo?.componentStack}
                                 </pre>
                             </details>
                         )}
-                        <div className="flex gap-2 justify-center">
+                        <div style={s.buttonGroup}>
                             <button
                                 onClick={this.handleReset}
-                                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                                style={s.primaryButton}
+                                onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#2c5282'}
+                                onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#3182ce'}
                             >
                                 Try Again
                             </button>
                             <button
                                 onClick={() => window.location.reload()}
-                                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                                style={s.secondaryButton}
+                                onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#e2e8f0'}
+                                onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#edf2f7'}
                             >
                                 Refresh Page
                             </button>
@@ -85,3 +89,17 @@ export class ErrorBoundary extends Component<Props, State> {
         return this.props.children;
     }
 }
+
+const s: Record<string, React.CSSProperties> = {
+    container: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f7fafc', padding: '2rem' },
+    card: { width: '100%', maxWidth: '450px', backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)', padding: '2rem', textAlign: 'center' as const, borderTop: '4px solid #e53e3e' },
+    icon: { fontSize: '3rem', marginBottom: '1rem' },
+    title: { fontSize: '1.5rem', fontWeight: 700, color: '#2d3748', margin: '0 0 0.5rem 0' },
+    subtitle: { color: '#718096', marginBottom: '1.5rem', fontSize: '0.95rem', lineHeight: 1.5 },
+    details: { textAlign: 'left' as const, fontSize: '0.875rem', color: '#a0aec0', marginBottom: '1.5rem', border: '1px solid #edf2f7', borderRadius: '4px', padding: '0.5rem' },
+    summary: { cursor: 'pointer', color: '#3182ce', fontWeight: 500, outline: 'none' },
+    pre: { marginTop: '0.5rem', padding: '0.5rem', backgroundColor: '#f1f5f9', borderRadius: '4px', overflow: 'auto', fontSize: '0.75rem', color: '#4a5568', whiteSpace: 'pre-wrap' },
+    buttonGroup: { display: 'flex', gap: '1rem', justifyContent: 'center' },
+    primaryButton: { padding: '0.5rem 1.5rem', backgroundColor: '#3182ce', color: '#ffffff', border: 'none', borderRadius: '4px', fontWeight: 600, cursor: 'pointer', transition: 'background-color 0.2s' },
+    secondaryButton: { padding: '0.5rem 1.5rem', backgroundColor: '#edf2f7', color: '#4a5568', border: 'none', borderRadius: '4px', fontWeight: 600, cursor: 'pointer', transition: 'background-color 0.2s' }
+};
