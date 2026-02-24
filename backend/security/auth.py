@@ -65,6 +65,7 @@ ROLE_PERMISSIONS: Dict[UserRole, List[str]] = {
         "mapping.confirm",
         "mapping.override",
         "mapping.reject",
+        "mapping.read",
         "reports.generate_final",
         "reports.read",
         "audit.read",
@@ -197,7 +198,7 @@ class SecurityManager:
                 role=UserRole(role) if role else None,
                 permissions=permissions,
                 sbu_access=sbu_access,
-                exp=datetime.fromtimestamp(exp) if exp else None
+                exp=datetime.utcfromtimestamp(exp) if exp else None
             )
         except JWTError:
             return None
@@ -234,7 +235,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    if token_data.exp and token_data.exp < datetime.now(timezone.utc).replace(tzinfo=None):
+    if token_data.exp and token_data.exp < datetime.utcnow():
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired",

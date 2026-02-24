@@ -26,31 +26,29 @@ export function HistoricalTrends() {
     }, []);
 
     if (loading) {
-        return <div className="p-4 text-gray-500 animate-pulse">Loading historical insights...</div>;
+        return <div style={{ padding: '1rem', color: '#718096' }}>Loading historical insights...</div>;
     }
 
     if (data.length === 0) {
-        return <div className="p-4 text-gray-500">No historical data available.</div>;
+        return <div style={{ padding: '1rem', color: '#718096' }}>No historical data available.</div>;
     }
 
-    // Format currency down to Crores for clean presentation
     const formatYAxis = (tickItem: number) => `₹${(tickItem / 1e7).toFixed(0)}Cr`;
     const formatTooltipCurrency = (value: number) => `₹${(value / 1e7).toFixed(2)} Cr`;
     const formatTooltipPercent = (value: number) => `${value}%`;
 
     return (
-        <div className="space-y-6 mt-8">
-            <div className="border-b pb-2">
-                <h2 className="text-2xl font-bold text-gray-800">Multi-Year Historical Trends</h2>
-                <p className="text-gray-500">Year-over-Year tracking of key metrics against Truing-Up baseline averages.</p>
+        <div style={s.container}>
+            <div style={s.header}>
+                <h2 style={s.title}>Multi-Year Historical Trends</h2>
+                <p style={s.subtitle}>Year-over-Year tracking of key metrics against Truing-Up baseline averages.</p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
+            <div style={s.grid}>
                 {/* Approved vs Actual ARR Trajectory (Bar) */}
-                <div className="bg-white p-4 rounded-lg shadow border border-gray-100">
-                    <h3 className="text-lg font-semibold text-gray-700 mb-4 text-center">ARR Trajectory (Approved vs Actual)</h3>
-                    <div className="h-64 w-full">
+                <div style={s.card}>
+                    <h3 style={s.cardTitle}>ARR Trajectory (Approved vs Actual)</h3>
+                    <div style={s.chartWrapper}>
                         <ResponsiveContainer>
                             <BarChart data={data} margin={{ top: 10, right: 30, left: 20, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -66,9 +64,9 @@ export function HistoricalTrends() {
                 </div>
 
                 {/* Operational Cost Dynamics (Line) */}
-                <div className="bg-white p-4 rounded-lg shadow border border-gray-100">
-                    <h3 className="text-lg font-semibold text-gray-700 mb-4 text-center">Operational Cost Dynamics</h3>
-                    <div className="h-64 w-full">
+                <div style={s.card}>
+                    <h3 style={s.cardTitle}>Operational Cost Dynamics</h3>
+                    <div style={s.chartWrapper}>
                         <ResponsiveContainer>
                             <LineChart data={data} margin={{ top: 10, right: 30, left: 20, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -85,9 +83,9 @@ export function HistoricalTrends() {
                 </div>
 
                 {/* Line Loss Efficiency (Line) */}
-                <div className="bg-white p-4 rounded-lg shadow border border-gray-100">
-                    <h3 className="text-lg font-semibold text-gray-700 mb-4 text-center">T&D Line Loss Progression (%)</h3>
-                    <div className="h-64 w-full">
+                <div style={s.card}>
+                    <h3 style={s.cardTitle}>T&D Line Loss Progression (%)</h3>
+                    <div style={s.chartWrapper}>
                         <ResponsiveContainer>
                             <LineChart data={data} margin={{ top: 10, right: 30, left: 20, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -102,9 +100,9 @@ export function HistoricalTrends() {
                 </div>
 
                 {/* Net Revenue Gap Magnitude (Bar) */}
-                <div className="bg-white p-4 rounded-lg shadow border border-gray-100">
-                    <h3 className="text-lg font-semibold text-gray-700 mb-4 text-center">Net Revenue Gap Magnitude</h3>
-                    <div className="h-64 w-full">
+                <div style={s.card}>
+                    <h3 style={s.cardTitle}>Net Revenue Gap Magnitude</h3>
+                    <div style={s.chartWrapper}>
                         <ResponsiveContainer>
                             <BarChart data={data} margin={{ top: 10, right: 30, left: 20, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -117,8 +115,18 @@ export function HistoricalTrends() {
                         </ResponsiveContainer>
                     </div>
                 </div>
-
             </div>
         </div>
     );
 }
+
+const s: Record<string, React.CSSProperties> = {
+    container: { marginTop: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' },
+    header: { borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem' },
+    title: { fontSize: '1.5rem', fontWeight: 700, color: '#2d3748', margin: '0 0 0.25rem 0' },
+    subtitle: { color: '#718096', margin: 0, fontSize: '0.9rem' },
+    grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem' },
+    card: { background: '#fff', padding: '1rem', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', border: '1px solid #edf2f7' },
+    cardTitle: { fontSize: '1.125rem', fontWeight: 600, color: '#4a5568', marginBottom: '1rem', textAlign: 'center' },
+    chartWrapper: { height: '16rem', width: '100%' }
+};

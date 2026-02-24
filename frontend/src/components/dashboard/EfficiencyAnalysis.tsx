@@ -30,21 +30,21 @@ export function EfficiencyAnalysis() {
     };
 
     return (
-        <div className="bg-white p-6 rounded-lg shadow mt-8 border-t-4 border-teal-500">
-            <div className="flex justify-between items-center mb-6">
+        <div style={s.container}>
+            <div style={s.headerRow}>
                 <div>
-                    <h2 className="text-xl font-bold text-gray-800">Operational Efficiency & Line Loss Analysis</h2>
-                    <p className="text-sm text-gray-500">Evaluates submitted T&D losses against normative KSERC trajectories.</p>
+                    <h2 style={s.title}>Operational Efficiency & Line Loss Analysis</h2>
+                    <p style={s.subtitle}>Evaluates submitted T&D losses against normative KSERC trajectories.</p>
                 </div>
             </div>
 
-            <div className="flex flex-col md:flex-row gap-4 mb-6">
-                <div className="flex flex-col">
-                    <label className="text-sm font-medium mb-1 text-gray-700">Financial Year</label>
+            <div style={s.controlsRow}>
+                <div style={s.inputGroup}>
+                    <label style={s.label}>Financial Year</label>
                     <select
                         value={financialYear}
                         onChange={(e) => setFinancialYear(e.target.value)}
-                        className="border rounded px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500"
+                        style={s.input}
                     >
                         <option value="2022-23">2022-23</option>
                         <option value="2023-24">2023-24</option>
@@ -54,21 +54,21 @@ export function EfficiencyAnalysis() {
                     </select>
                 </div>
 
-                <div className="flex flex-col">
-                    <label className="text-sm font-medium mb-1 text-gray-700">Actual Line Loss (%)</label>
-                    <div className="flex items-center gap-2">
+                <div style={s.inputGroup}>
+                    <label style={s.label}>Actual Line Loss (%)</label>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                         <input
                             type="number"
                             step="0.01"
                             value={actualLoss}
                             onChange={(e) => setActualLoss(e.target.value)}
                             placeholder="e.g. 11.52"
-                            className="border rounded px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 w-32"
+                            style={{ ...s.input, width: '8rem' }}
                         />
                         <button
                             onClick={handleEvaluate}
                             disabled={loading}
-                            className="px-4 py-2 bg-teal-600 text-white rounded text-sm hover:bg-teal-700 disabled:opacity-50"
+                            style={{ ...s.button, opacity: loading ? 0.5 : 1 }}
                         >
                             {loading ? 'Evaluating...' : 'Evaluate'}
                         </button>
@@ -77,47 +77,47 @@ export function EfficiencyAnalysis() {
             </div>
 
             {result && (
-                <div className={`p-4 rounded-lg border ${result.is_violation ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
-                    <div className="flex items-start gap-3">
+                <div style={result.is_violation ? s.resultBoxViolation : s.resultBoxSuccess}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
                         {result.is_violation ? (
-                            <ExclamationTriangleIcon className="w-6 h-6 text-red-600 mt-1" />
+                            <ExclamationTriangleIcon style={{ width: '24px', height: '24px', color: '#e53e3e', marginTop: '4px' }} />
                         ) : (
-                            <CheckCircleIcon className="w-6 h-6 text-green-600 mt-1" />
+                            <CheckCircleIcon style={{ width: '24px', height: '24px', color: '#38a169', marginTop: '4px' }} />
                         )}
 
-                        <div className="w-full">
-                            <h3 className={`text-lg font-bold mb-2 ${result.is_violation ? 'text-red-800' : 'text-green-800'}`}>
+                        <div style={{ width: '100%' }}>
+                            <h3 style={{ ...s.resultTitle, color: result.is_violation ? '#9b2c2c' : '#276749' }}>
                                 {result.is_violation ? 'Efficiency Violation Detected' : 'Efficiency Target Achieved'}
                             </h3>
 
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                            <div style={s.statsGrid}>
                                 <div>
-                                    <p className="text-sm text-gray-600">Normative Target</p>
-                                    <p className="text-lg font-medium">{result.target_loss_percent}%</p>
+                                    <p style={s.statLabel}>Normative Target</p>
+                                    <p style={s.statValue}>{result.target_loss_percent}%</p>
                                 </div>
                                 <div>
-                                    <p className="text-sm text-gray-600">Actual Submission</p>
-                                    <p className={`text-lg font-medium ${result.is_violation ? 'text-red-700' : 'text-green-700'}`}>
+                                    <p style={s.statLabel}>Actual Submission</p>
+                                    <p style={{ ...s.statValue, color: result.is_violation ? '#c53030' : '#2f855a' }}>
                                         {result.actual_loss_percent}%
                                     </p>
                                 </div>
                                 <div>
-                                    <p className="text-sm text-gray-600">Deviation</p>
-                                    <p className="text-lg font-medium">
+                                    <p style={s.statLabel}>Deviation</p>
+                                    <p style={s.statValue}>
                                         {result.deviation_percent > 0 ? '+' : ''}{result.deviation_percent}%
                                     </p>
                                 </div>
                                 {result.is_violation && (
                                     <div>
-                                        <p className="text-sm text-red-600 font-semibold">Est. Power Purchase Penalty</p>
-                                        <p className="text-lg font-bold text-red-700">₹{result.penalty_estimate_cr} Cr</p>
+                                        <p style={{ ...s.statLabel, color: '#e53e3e', fontWeight: 600 }}>Est. Power Purchase Penalty</p>
+                                        <p style={{ ...s.statValue, color: '#c53030', fontWeight: 700 }}>₹{result.penalty_estimate_cr} Cr</p>
                                     </div>
                                 )}
                             </div>
 
-                            <div className="text-sm bg-white bg-opacity-60 p-3 rounded">
+                            <div style={s.logicBox}>
                                 <strong>Logic Engine:</strong> {result.logic_applied} <br />
-                                <span className="text-gray-500 italic mt-1 inline-block">{result.regulatory_clause}</span>
+                                <span style={{ color: '#718096', fontStyle: 'italic', marginTop: '4px', display: 'inline-block' }}>{result.regulatory_clause}</span>
                             </div>
                         </div>
                     </div>
@@ -126,3 +126,22 @@ export function EfficiencyAnalysis() {
         </div>
     );
 }
+
+const s: Record<string, React.CSSProperties> = {
+    container: { background: '#fff', padding: '1.5rem', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', marginTop: '2rem', borderTop: '4px solid #319795' },
+    headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' },
+    title: { fontSize: '1.25rem', fontWeight: 700, color: '#2d3748', margin: '0 0 0.25rem 0' },
+    subtitle: { fontSize: '0.875rem', color: '#718096', margin: 0 },
+    controlsRow: { display: 'flex', gap: '1.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' as const },
+    inputGroup: { display: 'flex', flexDirection: 'column' as const, gap: '0.25rem' },
+    label: { fontSize: '0.875rem', fontWeight: 500, color: '#4a5568' },
+    input: { border: '1px solid #cbd5e0', borderRadius: '4px', padding: '0.5rem 0.75rem', fontSize: '0.875rem', outline: 'none' },
+    button: { padding: '0.5rem 1rem', background: '#319795', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '0.875rem', cursor: 'pointer' },
+    resultBoxSuccess: { padding: '1rem', borderRadius: '8px', border: '1px solid #c6f6d5', background: '#f0fff4' },
+    resultBoxViolation: { padding: '1rem', borderRadius: '8px', border: '1px solid #fed7d7', background: '#fff5f5' },
+    resultTitle: { fontSize: '1.125rem', fontWeight: 700, margin: '0 0 0.5rem 0' },
+    statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '1rem', marginBottom: '1rem' },
+    statLabel: { fontSize: '0.875rem', color: '#4a5568', margin: '0 0 0.25rem 0' },
+    statValue: { fontSize: '1.125rem', fontWeight: 500, margin: 0, color: '#2d3748' },
+    logicBox: { fontSize: '0.875rem', background: 'rgba(255,255,255,0.6)', padding: '0.75rem', borderRadius: '4px' }
+};

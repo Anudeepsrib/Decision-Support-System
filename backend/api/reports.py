@@ -9,8 +9,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 from enum import Enum
 
-from asyncache import cached
-from cachetools import TTLCache
+
 
 from backend.security.auth import get_current_user, require_permission, TokenData
 
@@ -160,7 +159,6 @@ class InsightGenerator:
 
 # Cache up to 100 requests for 5 minutes
 @router.get("/analytical", response_model=AnalyticalReportResponse)
-@cached(cache=TTLCache(maxsize=100, ttl=300))
 async def generate_analytical_report(
     financial_year: str = Query(..., description="Financial year (e.g., 2024-25)"),
     sbu_code: Optional[str] = Query(None, description="SBU filter (SBU-G, SBU-T, SBU-D)"),
@@ -287,7 +285,6 @@ async def generate_analytical_report(
 
 # Cache up to 50 requests for 5 minutes
 @router.get("/sbu-summary", response_model=List[SBUSummary])
-@cached(cache=TTLCache(maxsize=50, ttl=300))
 async def get_sbu_summary(
     financial_year: str = Query(..., description="Financial year"),
     current_user: TokenData = Depends(get_current_user),  # F-12: RBAC enforced
