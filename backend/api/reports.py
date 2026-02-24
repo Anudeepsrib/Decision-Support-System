@@ -12,7 +12,7 @@ from enum import Enum
 from asyncache import cached
 from cachetools import TTLCache
 
-from security.auth import get_current_user, require_permission, TokenData
+from backend.security.auth import get_current_user, require_permission, TokenData
 
 router = APIRouter(prefix="/reports", tags=["Analytical Reports"])
 

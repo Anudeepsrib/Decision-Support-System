@@ -8,7 +8,7 @@ from pydantic import BaseModel, field_validator
 from typing import Optional, Literal
 from datetime import datetime, timezone
 
-from security.auth import get_current_user, require_permission, TokenData
+from backend.security.auth import get_current_user, require_permission, TokenData
 
 router = APIRouter(prefix="/mapping", tags=["Mapping Workbench"])
 

@@ -368,6 +368,12 @@ Why just look at this year? A beautiful, interactive dashboard now tracks the ut
 ### 5. The Penalty Estimator (Line Loss Efficiency)
 Losing electricity on power lines is expensive. The system now takes the extracted "Line Loss Percentage" and compares it to the rigid regulatory trajectory. If the utility lost 12% of its power but was only allowed to lose 10%, the system instantly calculates an estimated penalty in Crores for failing to maintain the grid.
 
+### 6. The High-Speed Enterprise Engine (Performance Architecture)
+To ensure the system remains lightning fast even when hundreds of users are making requests at once, three major performance upgrades have been implemented under the hood:
+- **Smart Multitasking (Asynchronous Threading):** Reading 500-page PDFs requires intense computing power. The system now sends these heavy jobs to a "background room" so the main server is never blocked, allowing other users to explore the dashboard instantly while documents process.
+- **Instant Memory Recall (TTL Caching):** When an executive dashboard requests complex historical variance analysis, the system temporarily memorizes the exact calculations. If another user requests the exact same data 2 minutes later, the system delivers it instantly without re-crunching the numbers.
+- **Lightweight Delivery (Frontend Code Splitting):** Instead of forcing the user's web browser to download the entire application at once, the system's "Code Splitting" logic delivers only the exact screen the user is clicking on. The heavy interactive charts are only downloaded when the user actually navigates to the reporting dashboard.
+
 ---
 
 ## Closing: The Future Impact

@@ -57,6 +57,11 @@ By automating the data entry and basic math checks, the agency significantly red
   - **Live KSERC Benchmark Sync:** Natively scrapes and caches the latest regulatory orders from `erckerala.org` in the background.
   - **Line Loss & Efficiency Analysis:** Dynamically tracks T&D trajectory deviations, computing estimated penalty Crores for violations.
 
+- **Enterprise Performance Architecture:**
+  - **Asynchronous Data Extraction Threading:** Offloads CPU-intensive PDF parsing text-extraction processes to prevent blocking core FastAPI pipelines.
+  - **Time-To-Live (TTL) Caching:** Utilizes robust in-memory caching for read-heavy executive analytical endpoints (e.g. SBU Summaries and Analytical Variance). 
+  - **Route-Level Code Splitting:** Frontend React router initialized with `React.lazy` and Suspense boundaries for heavily reduced production bundle sizes and drastically faster application boot times.
+
 ---
 
 ## 3. Implementation Overview
