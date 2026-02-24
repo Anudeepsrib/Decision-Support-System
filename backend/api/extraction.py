@@ -14,6 +14,7 @@ from backend.api.extraction_graph import extraction_graph, ExtractedField
 from backend.api.ocr_service import ocr_service
 import io
 import PyPDF2
+import asyncio
 
 router = APIRouter(prefix="/extract", tags=["Extraction"])
 
@@ -80,13 +81,19 @@ async def extract_tables_from_pdf(
     if is_image:
         raw_pages = ocr_service.process_image(contents)
     else:
-        # Try native text extraction via PyPDF2
-        pdf_reader = PyPDF2.PdfReader(io.BytesIO(contents))
-        total_text_length = 0
-        for i, page in enumerate(pdf_reader.pages):
-            text = page.extract_text() or ""
-            raw_pages[i+1] = text
-            total_text_length += len(text.strip())
+        # Try native text extraction via PyPDF2 (offloaded to thread)
+        def _extract_text_sync(pdf_bytes):
+            pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
+            text_pages = {}
+            total_len = 0
+            for i, page in enumerate(pdf_reader.pages):
+                text = page.extract_text() or ""
+                text_pages[i+1] = text
+                total_len += len(text.strip())
+            return text_pages, total_len
+
+        raw_pages, total_text_length = await asyncio.to_thread(_extract_text_sync, contents)
+        
         
         # If very little text is found, we assume it is a scanned document and hit OCR
         if total_text_length < 50:
