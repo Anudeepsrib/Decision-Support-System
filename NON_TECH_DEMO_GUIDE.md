@@ -1,480 +1,595 @@
 # Executive Demo Guide: ARR Truing-Up Decision Support System
+## A Complete Walkthrough - From PDF Upload to Regulatory Report
 
-Welcome to the **ARR Truing-Up Decision Support System** (DSS). This application is designed to modernize and automate the review of Annual Revenue Requirement (ARR) petitions using AI, ensuring strict compliance with the KSERC MYT Framework 2022-27.
-
-This guide provides a complete, step-by-step walkthrough for **non-technical stakeholders** to set up the environment from scratch and experience every core capability of the system.
-
----
-
-## 📌 Prerequisites
-
-Before you begin, please ensure the following software is installed on your computer. If any of these are missing, ask your IT team to install them — it takes under 5 minutes.
-
-| Software | Minimum Version | How to Check | Download Link |
-|----------|----------------|--------------|---------------|
-| **Python** | 3.10 or higher | `python --version` | [python.org](https://www.python.org/downloads/) |
-| **Node.js** | 18 or higher | `node --version` | [nodejs.org](https://nodejs.org/) |
-| **Git** | Any recent version | `git --version` | [git-scm.com](https://git-scm.com/) |
-
-> **Tip:** On Windows, open **Command Prompt** or **PowerShell** to run these check commands. On Mac, open the **Terminal** app.
+> This guide is written for **non-technical stakeholders**. Every step explains what you see in the browser, what is happening in the background, **which file in the codebase is running**, and **why that code matters** to the outcome. Code snippets are included so technical reviewers can verify the logic without guessing.
 
 ---
 
-## 🛠️ 1. Environment Setup (First-Time Only)
+## 📌 Prerequisites & Setup
 
-This section only needs to be done **once** when you first download the project. It creates an isolated Python workspace and installs all required libraries.
+| Software | Version | Purpose |
+|----------|---------|---------|
+| **Python** | 3.10+ | Runs the backend AI engine |
+| **Node.js** | 18+ | Runs the React frontend UI |
 
-### Step 1.1 — Clone the Repository
-
-If you haven't already downloaded the project, open a terminal and run:
+### First-time Setup
 
 ```bash
+# Clone the project
 git clone https://github.com/Anudeepsrib/Decision-Support-System.git
 cd Decision-Support-System
-```
 
-### Step 1.2 — Create a Python Virtual Environment
-
-A virtual environment keeps the project's Python packages separate from your system Python. This prevents conflicts with other software.
-
-**Windows (PowerShell):**
-```powershell
+# Create a Python virtual environment
 python -m venv venv
-.\venv\Scripts\Activate.ps1
-```
+.\venv\Scripts\Activate.ps1       # Windows PowerShell
+# source venv/bin/activate         # Mac/Linux
 
-**Windows (Command Prompt):**
-```cmd
-python -m venv venv
-.\venv\Scripts\activate
-```
-
-**Mac / Linux:**
-```bash
-python3 -m venv venv
-source venv/bin/activate
-```
-
-> **How do I know it worked?** You will see `(venv)` appear at the beginning of your terminal prompt. This confirms you are inside the virtual environment.
-
-### Step 1.3 — Install Python Dependencies
-
-With the virtual environment active (you should see `(venv)` in your prompt), install all backend packages:
-
-```bash
+# Install backend dependencies (~68 packages)
 pip install -r requirements.txt
+
+# Install frontend dependencies
+cd frontend && npm install && cd ..
 ```
 
-This installs ~68 packages including FastAPI (web server), PyPDF2/pdfplumber (PDF reading), scikit-learn/pandas (data processing), and all security libraries. It may take 2-5 minutes depending on your internet speed.
+### Starting the Application (Two Terminals)
 
-### Step 1.4 — Install Frontend Dependencies
-
-Now install the React frontend packages:
-
-```bash
-cd frontend
-npm install
-cd ..
-```
-
-This downloads the React UI framework, Recharts (interactive charts), Axios (API calls), and other interface libraries into the `frontend/node_modules/` folder.
-
-### Step 1.5 — Configure Environment Variables
-
-The application needs a small configuration file to know how to connect to services.
-
-1. Copy the example environment file:
-   ```bash
-   copy .env.example backend\.env        # Windows
-   cp .env.example backend/.env          # Mac/Linux
-   ```
-2. Open `backend/.env` in any text editor and fill in your actual API keys:
-   - **`OPENAI_API_KEY`** — Your private OpenAI API key (for AI-powered extraction and tariff generation).
-   - **`SECRET_KEY`** — Any random 32+ character string (for securing login tokens).
-   - Leave all other values at their defaults for local demo use.
-
-> ⚠️ **Security Warning:** Never share your `.env` file or commit it to Git. It contains private API keys.
-
-### Step 1.6 — Generate Demo PDF Files (Optional)
-
-The project includes 3 pre-built sample PDFs in `data/demo_files/`. If they are missing or you want to regenerate them, run:
-
-```bash
-pip install reportlab
-python generate_demo_data.py
-```
-
-This creates three realistic regulatory PDFs:
-| File | Description | SBU |
-|------|-------------|-----|
-| `1_True_Up_Petition_SBU_D_FY25.pdf` | Truing-Up Petition (Distribution) | SBU-D |
-| `2_Audited_Financials_SBU_G_FY25.pdf` | Statutory Audit Report (Generation) | SBU-G |
-| `3_Transmission_Loss_Report_FY25.pdf` | Line Loss Compliance Report (Transmission) | SBU-T |
-
----
-
-## 🚀 2. Starting the Application
-
-Every time you want to run the demo, you need to start **two servers** — the backend (engine) and the frontend (visual interface). Open **two separate terminal windows** in the project's root folder.
-
-### Terminal 1 — Backend Server (The Engine)
-
-Activate the virtual environment first, then start the server:
-
-**Windows (PowerShell):**
+**Terminal 1 - Backend Engine:**
 ```powershell
-.\venv\Scripts\Activate.ps1
-$env:DEBUG="true"; python -m uvicorn backend.main:app --reload
+venv\Scripts\python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
-**Windows (Command Prompt):**
-```cmd
-.\venv\Scripts\activate
-set DEBUG=true && python -m uvicorn backend.main:app --reload
-```
-
-**Mac / Linux:**
+**Terminal 2 - Frontend UI:**
 ```bash
-source venv/bin/activate
-export DEBUG="true" && uvicorn backend.main:app --reload
+cd frontend && npm start
 ```
 
-> **What does `--reload` do?** It automatically restarts the backend when code changes are detected. This is useful for development but not needed for presentations.
-
-✅ **Success indicator:** You will see output like:
-```
-INFO:     Uvicorn running on http://127.0.0.1:8000
-INFO:     Application startup complete.
-```
-
-You can verify the backend is healthy by opening [http://localhost:8000/docs](http://localhost:8000/docs) in your browser — this shows the interactive API documentation.
-
-### Terminal 2 — Frontend Interface (The UI)
-
-In a **separate** terminal window:
-
-```bash
-cd frontend
-npm start
-```
-
-✅ **Success indicator:** Your default web browser will automatically open to **`http://localhost:3000`**. You will see the login screen.
-
-> **Note:** If the browser doesn't open automatically, manually navigate to [http://localhost:3000](http://localhost:3000).
+The backend API explorer is available at: **http://localhost:8000/docs**
+The UI is available at: **http://localhost:3000**
 
 ---
 
-## 🔐 3. Logging In
+## 🔐 STEP 1 - Logging In (Authentication & RBAC)
 
-The system enforces **Role-Based Access Control (RBAC)**, meaning different users see different features based on their role. For the full demo experience, use the **Regulatory Officer** account:
+### What You See:
+Navigate to **http://localhost:3000**. You'll see the login screen.
 
-| Field | Value |
-|-------|-------|
-| **Email** | `regulatory.officer@kserc.gov.in` |
-| **Password** | `DemoPass123!` |
+Enter:
+- **Username:** `admin`
+- **Password:** `Admin@12345678`
 
-This account has **full access** to all three Strategic Business Units (SBU-G, SBU-T, SBU-D) and all system features.
+### What Happens in the Backend:
 
-### Other Available Demo Accounts
+**File:** `backend/api/auth.py` - `POST /auth/login`
+**File:** `backend/security/auth.py` - the core security engine
 
-| Email | Password | Role | Access Level |
-|-------|----------|------|-------------|
-| `auditor@utility.com` | `DemoPass123!` | Senior Auditor | SBU-D only |
-| `data.entry@utility.com` | `DemoPass123!` | Data Entry Agent | SBU-D only (upload-focused) |
-| `analyst@utility.com` | `DemoPass123!` | Readonly Analyst | All SBUs (view-only) |
-
-> **Demo Tip:** To showcase the security model, log in as the Auditor in a separate incognito window and show how they cannot access SBU-G or SBU-T data. This demonstrates data isolation.
-
----
-
-## 📊 4. The Dashboard (Command Center)
-
-Upon logging in, you will land on the **Dashboard**. This is the executive overview providing a real-time snapshot of regulatory compliance across all SBUs.
-
-### Key Features to Demonstrate:
-
-**a) Welcome Card**
-- Confirms your authenticated identity, role, and which SBUs you have access to (e.g., "Access to SBU-G, SBU-T, SBU-D").
-- Demonstrates that the system is aware of your permissions.
-
-**b) Efficiency Analysis Module (Line Loss Calculator)**
-- This is an interactive widget that evaluates Transmission & Distribution (T&D) line loss against the KSERC normative trajectory.
-- **Live Demo Steps:**
-  1. In the "Actual Loss %" input box, enter **`11.50`** (the target value).
-  2. Click **"Evaluate"**.
-  3. ✅ A **green success message** appears — the utility is within compliance.
-  4. Now change the value to **`12.20`** and click **"Evaluate"** again.
-  5. 🔴 The system instantly switches to a **red alert**, cites the specific regulatory clause, and calculates the estimated **penalty in Crores (₹)** that the utility would face.
-- **Why this matters:** This takes an analyst hours to manually calculate — the system does it in milliseconds with full regulatory traceability.
-
-**c) Multi-Year Historical Trends**
-- Scroll down to see interactive **Recharts** line/bar graphs tracking:
-  - **Approved vs. Actual ARR** costs over multiple financial years.
-  - **Net Revenue Gap** trajectory (surplus or deficit over time).
-- **Demo Tip:** Hover over the charts to see exact values for each year. This helps stakeholders instantly understand cost trends without reading 100-page reports.
-
----
-
-## 📄 5. Ingesting Petitions (PDF Uploader)
-
-Now we simulate receiving a massive, unstructured PDF petition from a utility company — the core use case of the system. In this step, we will dive under the hood to see exactly how the backend code processes the documents.
-
-### Steps in the UI:
-
-1. Click **"Upload PDF"** in the top navigation bar.
-2. Open your computer's file explorer and navigate to the `data/` folder inside this project.
-3. **Drag and drop** the file named **`ARR 2022-27 dated 25.06.2022.pdf`** into the upload zone.
-4. Watch the progress indicator as the AI engine processes the 400+ page document.
-
-### What Happens Behind the Scenes (The Backend Flow):
-
-When you drop the PDF into the browser, a complex orchestration of **Python** backend code is triggered. Here is the exact flow:
-
-#### Step A: Receiving the File (`backend/api/extraction.py`)
-The frontend sends the file to the FastAPI backend endpoint `POST /extract/upload`. 
-The backend handles the upload asynchronously and assigns it a unique Job ID.
-
-#### Step B: Reading the PDF (`backend/api/ocr_service.py` & `PyPDF2`)
-The system first attempts to extract the raw text from the PDF using the `PyPDF2` library. This is extremely fast but only works if the PDF has a native text layer (i.e., it wasn't scanned from a physical piece of paper).
-If the PDF is a scanned image, the system falls back to **Tesseract OCR** (Optical Character Recognition) via the `pytesseract` library to visually "read" the text from the images.
-
-#### Step C: The Extraction State Machine (`backend/api/extraction_graph.py` & `LangGraph`)
-The core intelligence lives in a **LangGraph** state machine. LangGraph is a framework for building cyclical, agentic workflows. 
-The system defines a `State` object that holds the raw text pages and a list of `ExtractedField` objects.
+When you click **Sign In**, the frontend sends a form-encoded POST request to the backend. The backend looks up the `admin` user from the in-memory user store and verifies the password using **bcrypt hashing** (via the `passlib` library).
 
 ```python
-# From backend/api/extraction_graph.py
-class ExtractionState(TypedDict):
-    raw_ocr_pages: List[str]
-    extracted_fields: List[Dict[str, Any]]
-    requires_human_review: bool
-    retry_count: int
-```
+# backend/security/auth.py
+from passlib.context import CryptContext
+from jose import JWTError, jwt
 
-The state machine runs through the text page-by-page. We use **Regular Expressions (Regex)** (via the standard Python `re` library) to intelligently hunt for specific financial patterns, rather than relying blindly on an LLM.
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-```python
-# From backend/api/extraction_graph.py
-# Example of the Regex Engine hunting for O&M Costs
-def _extract_fields_from_text(pages: List[str]) -> List[Dict[str, Any]]:
-    # ... setup ...
-    patterns = {
-        "O&M Cost": [
-            r"O\s*&\s*M\s*(?:Expenses|Cost)?\s*[\:\-]?\s*(?:Rs\.?|₹)?\s*([\d\,\.]+)\s*(?:Cr\.?|Lakh)?",
-            r"Operation and Maintenance.*?(?:Rs\.?|₹)?\s*([\d\,\.]+)"
-        ],
-        # ... other cost heads ...
+# The admin user defined in the system
+USERS = {
+    "admin": {
+        "username": "admin",
+        "role": UserRole.SUPER_ADMIN,
+        "sbu_access": ["ALL"],
+        "password_plain": "Admin@12345678",  # Hashed on first login
     }
+}
 ```
 
-#### Step D: Confidence Scoring & Flagging
-For every number found, the system assigns a **confidence score**. 
-- If it confidently extracts a value like ₹2,021.00 Crore for Total ARR, it scores it at `0.95` (95%).
-- If the regex engine cannot find a specific cost head in the context it expects, it outputs `N/A` and flags the field as `requires_human_review = True`. 
+If the password matches, the backend uses the **`python-jose`** library to mint a **JWT (JSON Web Token)** - a cryptographically signed string that proves your identity for all future requests. This token expires in 30 minutes by default.
 
 ```python
-# From backend/api/extraction_graph.py
-if best_val is not None:
-    fields.append({
-        "field_name": head,
-        "extracted_value": best_val,
-        "source_page": best_page,
-        "confidence_score": 0.95,
-        "review_required": False
-    })
-else:
-    # Flag for human review if nothing found
-    fields.append({
-        "field_name": head,
-        "extracted_value": None,
-        "source_page": None,
-        "confidence_score": 0.40, 
-        "review_required": True
-    })
+# backend/security/auth.py
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+def create_access_token(data: dict) -> str:
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 ```
 
-#### Step E: Auto-Populating Mappings (`backend/api/mapping.py`)
-Once the LangGraph pipeline finishes, the `backend/api/extraction.py` endpoint takes the extracted fields and automatically sends them to the **Mapping Workbench**.
-The backend intelligently classifies each field (e.g., mapping "Employee Cost" to the "O&M" regulatory cost head and marking it as a "Controllable" expense).
+The token is stored in your browser's `localStorage`. From this point on, every API call you make includes this token in the `Authorization: Bearer <token>` header. The backend validates it on every request via `get_current_user()`.
+
+**Why it matters:** No one can access financial data without this token. Roles define what each user can see - `SUPER_ADMIN` (admin) can do everything; lower roles are restricted to specific SBUs and actions.
+
+---
+
+## 📊 STEP 2 - The Dashboard (Real-Time KPIs)
+
+### What You See:
+After login, the **Dashboard** shows:
+- Your identity, role, and SBU access level
+- An **Efficiency Analysis** widget (Line Loss Calculator)
+- **Multi-Year Historical Trends** charts
+
+### What Happens in the Backend When You Load the Dashboard:
+
+The dashboard makes two API calls simultaneously.
+
+#### 2a. The Efficiency Widget - `POST /efficiency/line-loss`
+
+**File:** `backend/api/efficiency.py`
+
+When you enter an actual line loss percentage and click **Evaluate**, the backend applies the deterministic KSERC Normative Target trajectory formula. No LLM, no guessing - pure math.
 
 ```python
-# From backend/api/extraction.py
-# Auto-populate the mapping workbench and store data for reports
+# backend/api/efficiency.py
+@router.post("/line-loss")
+async def evaluate_line_loss(req: LineLossRequest, ...):
+    # KSERC Normative Target Trajectory (Regulation 13.1)
+    normative_targets = {
+        "2022-23": 14.55, "2023-24": 14.00, "2024-25": 13.50,
+        "2025-26": 13.00, "2026-27": 12.50,
+    }
+    target = normative_targets.get(req.financial_year)
+    is_violation = req.actual_line_loss_percent > target
+    
+    overshoot = req.actual_line_loss_percent - target if is_violation else 0
+    penalty_estimate_crores = overshoot * 0.01 * 12000  # Normative calc
+    
+    return LineLossResponse(
+        target_loss_percent=target,
+        actual_loss_percent=req.actual_line_loss_percent,
+        is_violation=is_violation,
+        penalty_estimate_crores=penalty_estimate_crores,
+    )
+```
+
+#### 2b. Historical Trends - `GET /history/trends`
+
+**File:** `backend/api/history.py`
+
+Returns 5 years of aggregated ARR truing-up data (Power Purchase, O&M, Revenue Gap, Line Loss %). In a production deployment, this queries a PostgreSQL database. For the demo, it serves a pre-loaded realistic dataset representing FY2019-20 through FY2023-24.
+
+```python
+# backend/api/history.py
+@router.get("/trends", response_model=List[HistoricalTrendResponse])
+async def get_historical_trends(current_user: TokenData = Depends(get_current_user), ...):
+    historical_data = [
+        {"financial_year": "2019-20", "power_purchase_cost": 650000000.0,
+         "o_and_m_cost": 120000000.0, "line_loss_percent": 14.2, ...},
+        {"financial_year": "2022-23", "power_purchase_cost": 850000000.0,  # Spike year
+         "o_and_m_cost": 140000000.0, "line_loss_percent": 12.1, ...},
+        # ... 5 years total
+    ]
+    return [HistoricalTrendResponse(**data) for data in historical_data]
+```
+
+The frontend renders this JSON response onto interactive **Recharts** bar and line charts.
+
+---
+
+## 📄 STEP 3 - Uploading PDFs (The Core Pipeline Entry Point)
+
+### What You See:
+Click **"Upload PDF"** in the sidebar navigation. Drag and drop one of the PDFs from your `data/` folder:
+- `ARR 2022-27 dated 25.06.2022.pdf` (493 pages)
+- `Input.pdf` (237 pages)
+
+A spinner runs while the backend processes the document. When complete, the page reports how many fields were extracted.
+
+### What Happens in the Backend - A 5-Stage Pipeline:
+
+---
+
+#### 🔵 Stage 1: File Reception & Validation
+**File:** `backend/api/extraction.py` - `POST /extract/upload`
+
+The uploaded file is received by a **FastAPI** async endpoint that enforces RBAC (requires `extraction.upload` permission), validates the file type, and enforces a 50MB size limit.
+
+```python
+# backend/api/extraction.py
+@router.post("/upload", response_model=ExtractionResponse)
+async def extract_tables_from_pdf(
+    file: UploadFile = File(...),
+    current_user: TokenData = Depends(get_current_user),
+    _perm=Depends(require_permission("extraction.upload")),
+):
+    # Validate file type
+    allowed_extensions = (".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".bmp")
+    if not file.filename.lower().endswith(allowed_extensions):
+        raise HTTPException(status_code=400, detail="Only PDF and Image files are accepted.")
+
+    contents = await file.read()
+    file_size_mb = len(contents) / (1024 * 1024)
+    if file_size_mb > 50:
+        raise HTTPException(status_code=413, detail="File exceeds 50MB limit.")
+    
+    # Generate a unique job ID for tracking
+    job_id = f"ext-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+```
+
+---
+
+#### 🔵 Stage 2: PDF Text Reading
+**File:** `backend/api/extraction.py` + **Library:** `PyPDF2` + **Library:** `pytesseract` (OCR fallback)
+**File:** `backend/api/ocr_service.py`
+
+The backend first tries to extract raw text from the PDF natively using **`PyPDF2`**. This is the fast path - it works for text-based PDFs (like the regulatory petitions in `data/`). `asyncio.to_thread` is used so this CPU-intensive work doesn't block other API requests.
+
+```python
+# backend/api/extraction.py
+def _extract_text_sync(pdf_bytes):
+    pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
+    text_pages = {}
+    total_len = 0
+    for i, page in enumerate(pdf_reader.pages):
+        text = page.extract_text() or ""
+        text_pages[i + 1] = text       # page number -> raw text
+        total_len += len(text.strip())
+    return text_pages, total_len
+
+# Run in a thread so FastAPI stays non-blocking
+raw_pages, total_text_length = await asyncio.to_thread(_extract_text_sync, contents)
+
+# If the PDF has very little text (< 50 characters total),
+# it's almost certainly a SCANNED image PDF -> switch to OCR
+if total_text_length < 50:
+    raw_pages = ocr_service.process_pdf(contents)  # Tesseract OCR
+```
+
+The `ocr_service.process_pdf()` call uses **`pytesseract`** (a Python wrapper for Google's Tesseract OCR engine) to visually "read" each page as an image, converting scanned documents into machine-readable text.
+
+---
+
+#### 🔵 Stage 3: The AI Extraction State Machine
+**File:** `backend/api/extraction_graph.py` - **Library:** `LangGraph` + `Python re` (regex)
+
+This is the intelligence hub. **LangGraph** (by LangChain) is used to build a stateful processing pipeline with human-in-the-loop capability. The "State" object travels through multiple processing nodes:
+
+```python
+# backend/api/extraction_graph.py
+from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
+
+class ExtractionState(TypedDict):
+    """Shared state that travels through every node in the graph."""
+    job_id: str
+    filename: str
+    raw_ocr_pages: Dict[int, str]      # Page number -> text content
+    extracted_fields: List[Dict]        # Filled by extract_data node
+    retry_count: int                    # For self-correction loop
+    requires_human_review: bool         # Routes to human review if True
+```
+
+The `extract_data` node calls `_extract_fields_from_text()`, which scans all pages using **20+ regex patterns** to find financial figures. The regex patterns are designed to match the various ways Indian regulatory documents write monetary values:
+
+```python
+# backend/api/extraction_graph.py
+
+# Regex patterns that match ALL common Indian currency formats:
+# "Rs. 2021.00 Cr", "₹2021 Crore", "2021.00 Crores", "₹ 2,021.89"
+_MONEY_PATTERNS = [
+    r'(?:Rs\.?|₹)\s*([\d,]+\.?\d*)\s*(?:Cr(?:ore)?|cr)',  # Rs./₹ ... Cr/Crore
+    r'(?:Rs\.?|₹)\s*([\d,]+\.?\d*)\s*(?:Lakh|lakh)',       # Rs./₹ ... Lakh
+    r'([\d,]+\.?\d*)\s*(?:Cr(?:ore)?|cr)',                  # Plain number ... Cr
+]
+
+# Each field has its own keyword-matching pattern:
+_FIELD_PATTERNS = [
+    {
+        "pattern": r'(?:O\s*[&]\s*M|Operation\s+(?:and|&)\s+Maintenance)[\s:]*',
+        "field_name": "O&M Cost",
+        "head": "O&M",
+        "category": "Controllable",
+        "sbu_code": "SBU-D",
+    },
+    {
+        "pattern": r'(?:Power\s+Purchase|Cost\s+of\s+Power\s+Purchase)[\s:]*',
+        "field_name": "Power Purchase Cost",
+        "head": "Power_Purchase",
+        "category": "Uncontrollable",
+        "sbu_code": "SBU-G",
+    },
+    # ... 10 more field patterns for Interest, Depreciation, Employee Cost, etc.
+]
+```
+
+For each field pattern, the system searches the adjacent text for a monetary value using the `_MONEY_PATTERNS`. If found, confidence = 0.95. If not found on the expected page, confidence = 0.40 and `review_required = True`.
+
+The graph's routing logic determines what to do next:
+
+```python
+# backend/api/extraction_graph.py
+def should_self_correct(state: ExtractionState) -> str:
+    """Routing function: decides next node after extraction."""
+    if state["requires_human_review"] and state["retry_count"] < 2:
+        return "self_correction"   # Try again with broader patterns
+    elif state["requires_human_review"] and state["retry_count"] >= 2:
+        return "human_review"      # Give up, flag for human
+    else:
+        return END                 # All good, move on
+```
+
+The final state contains the populated `extracted_fields` list with every discovered value.
+
+---
+
+#### 🔵 Stage 4: Auto-Mapping to Regulatory Cost Heads
+**File:** `backend/api/mapping.py` - called by `backend/api/extraction.py`
+
+Once extraction completes, the results are immediately classified into the **KSERC Chart of Accounts** regulatory framework. The `generate_mappings_from_fields()` function keyword-matches each field name to a regulatory cost head.
+
+```python
+# backend/api/mapping.py
+_HEAD_CLASSIFICATION = {
+    "O&M": {
+        "keywords": ["o&m", "operation", "maintenance", "employee", "staff",
+                     "r&m", "repair", "a&g", "admin"],
+        "category": "Controllable",
+        "reasoning_template": "{field} maps to O&M under KSERC Regulation 5.1."
+    },
+    "Power_Purchase": {
+        "keywords": ["power purchase", "energy purchase", "cost of power"],
+        "category": "Uncontrollable",
+        "reasoning_template": "{field} maps to Power Purchase under Regulation 4.3."
+    },
+    "Interest": {
+        "keywords": ["interest", "finance charge", "debt", "loan", "borrowing"],
+        "category": "Uncontrollable",
+        "reasoning_template": "{field} maps to Interest under Regulation 6.3."
+    },
+    # ... + Depreciation, Return_on_Equity
+}
+
+def _classify_field(field_name: str) -> tuple:
+    """Match field name to cost head by keyword lookup."""
+    lower = field_name.lower()
+    for head, config in _HEAD_CLASSIFICATION.items():
+        for keyword in config["keywords"]:
+            if keyword in lower:
+                # Returns (cost_head, category, reasoning_text)
+                return head, config["category"], config["reasoning_template"].format(field=field_name)
+    return "Other", "Controllable", f"{field_name} could not be auto-classified."
+```
+
+#### 🔵 Stage 5: Storing Data for Reports
+**File:** `backend/api/reports.py` - `store_extraction_for_reports()` + `store_mapping_for_reports()`
+
+Finally, the extracted and mapped data is registered in the report engine's in-memory store so the Analytical Report can use it:
+
+```python
+# backend/api/extraction.py (at the end of the upload endpoint)
 raw_fields = final_state.get("extracted_fields", [])
 if raw_fields:
-    mappings = generate_mappings_from_fields(raw_fields)
-    store_extraction_for_reports(job_id, raw_fields)
-    store_mapping_for_reports([m.model_dump() for m in mappings])
+    mappings = generate_mappings_from_fields(raw_fields)      # Stage 4
+    store_extraction_for_reports(job_id, raw_fields)          # Stage 5a
+    store_mapping_for_reports([m.model_dump() for m in mappings])  # Stage 5b
 ```
 
-By the time the loading spinner on your screen stops, this entire pipeline has processed hundreds of pages, extracted the math, flagged the anomalies, and mapped the data to the regulatory framework!
+**The extraction is complete.** Total time for a 493-page document: ~60–90 seconds.
 
 ---
 
-## 🤖 6. Validating AI Intelligence (Mapping Workbench)
+## 🤖 STEP 4 - Mapping Workbench (Human-in-the-Loop Review)
 
-This is the **Human-in-the-Loop** stage — the heart of the system's "zero-hallucination" policy. The AI does not silently alter data; it operates as an assistant, requiring explicit human confirmation before any data enters the regulatory calculation engine.
+### What You See:
+Click **"Mapping"** in the sidebar. You'll see a table of all AI suggestions - one row per extracted field showing the field name, extracted value, source page, confidence score, suggested regulatory head, and category.
 
-### Steps:
+### What Happens in the Backend:
 
-1. Click **"Mapping Workbench"** in the top navigation bar.
-2. You will see the **"Pending AI Suggestions"** — data the AI extracted from uploaded petitions.
+**File:** `backend/api/mapping.py` - `GET /mapping/pending`
 
-### Key Features to Highlight:
+The frontend calls this endpoint to retrieve all mappings with status `"Pending"`. These were auto-generated during Stage 4 above so they already exist by the time you arrive.
 
-**a) Confidence Scores**
-- Each extracted value shows a percentage confidence score.
-- High-confidence items (85%+) are typically correct but still require human sign-off.
-- Low-confidence items (<70%) are flagged with a warning — these **must** be manually reviewed.
+Each mapping is a `MappingSuggestion` object:
+```python
+# backend/api/mapping.py
+class MappingSuggestion(BaseModel):
+    mapping_id: int
+    sbu_code: str                # SBU-G, SBU-T, SBU-D
+    source_field: str            # e.g., "Interest & Finance Charges"
+    suggested_head: str          # e.g., "Interest"
+    suggested_category: str      # e.g., "Uncontrollable"
+    confidence: float            # 0.0 to 1.0
+    reasoning: str               # Regulatory reference explaining the suggestion
+    status: str                  # "Pending", "Confirmed", "Overridden", "Rejected"
+    extracted_value: float       # e.g., 2141.68 (Crores)
+    source_page: int             # Page number in the original PDF
+```
 
-**b) Source Traceability**
-- Every value includes its provenance: exactly which **page**, **table**, and **cell** it was extracted from (e.g., "Page 12, Table 1, Cell C4").
-- This allows the auditor to open the original PDF and verify the AI's reading.
+### Confirming a Mapping:
 
-**c) Standardization**
-- The AI maps raw, messy text values (e.g., "Rs. 180.00 Cr") into the standardized **KSERC Chart of Accounts** database categories (e.g., "O&M (Controllable)", "Power_Purchase (Uncontrollable)").
+**File:** `backend/api/mapping.py` - `POST /mapping/confirm`
 
-**d) Confirm or Override**
+When you click **Confirm**, the frontend sends:
 
-| Action | When to Use | What Happens |
-|--------|-------------|--------------|
-| ✅ **Confirm** (Checkmark) | AI suggestion is correct | Value is locked into the regulatory ledger |
-| ✏️ **Override** | AI misclassified a value | Human corrects the category; a mandatory comment is required |
-| ❌ **Reject** | Extracted value is wrong | Value is discarded; logged for audit trail |
+```json
+{
+  "mapping_id": 3,
+  "decision": "Confirmed",
+  "comment": "AI suggestion verified and accepted",
+  "officer_name": "System Administrator"
+}
+```
 
-**e) Live Demo — Override Scenario:**
-- Find a mapping with lower confidence (e.g., 67%).
-- Click **Override** and change the category (e.g., from "O&M" to "Admin").
-- Add a comment: *"Legal fees include regulatory compliance work — reclassifying as Admin per Regulation 7.2"*.
-- Click **Submit**. Notice that every override is permanently logged with a timestamp, user identity, original value, new value, and mandatory comment.
+The backend validates the request with **Pydantic**, checks that the mapping exists and is still `"Pending"`, locks in the decision, and returns a full audit record:
 
-> **Why this matters:** This proves to regulators that no data enters the system without human authorization. The audit trail is immutable — it can be reviewed years later for compliance verification.
+```python
+# backend/api/mapping.py
+@router.post("/confirm", response_model=MappingConfirmResponse)
+async def confirm_mapping(req: MappingConfirmRequest, ...):
+    mapping = _mapping_store.get(req.mapping_id)
+    if not mapping:
+        raise HTTPException(status_code=404, detail=f"Mapping ID {req.mapping_id} not found.")
+    if mapping.status != "Pending":
+        raise HTTPException(status_code=409, detail=f"Mapping already decided: {mapping.status}.")
 
----
+    if req.decision == "Confirmed":
+        final_head = mapping.suggested_head
+        audit_note = f"AI suggestion accepted by {req.officer_name}."
+    elif req.decision == "Overridden":
+        final_head = req.override_head        # Officer's corrected category
+        audit_note = f"Overridden by {req.officer_name}: {mapping.suggested_head} -> {final_head}."
+    else:  # Rejected
+        final_head = "REJECTED"
+        audit_note = f"Rejected by {req.officer_name}. Reason: {req.comment}"
 
-## 📈 7. Generating Analytical Reports
+    mapping.status = req.decision
+    return MappingConfirmResponse(audit_note=audit_note, decided_at=datetime.now(...), ...)
+```
 
-The ultimate goal of the system — reducing weeks of manual calculation to a single click.
-
-### Steps:
-
-1. Click **"Reports"** in the top navigation bar.
-2. Select **Financial Year: 2024-25**.
-3. Optionally select a specific SBU filter, or leave it blank to see all SBUs.
-4. Click **"Generate Report"**.
-
-### What the Report Shows:
-
-**a) Instant Variance Calculation**
-- The system immediately compares the AI-extracted **"Actual"** figures (confirmed by the human in Step 6) against the MYT **"Approved"** baseline.
-- It computes the exact **net variance** in Crores (e.g., "₹-30.00 Cr, -1.2%").
-
-**b) Regulatory Disposition Rules**
-- The **Deterministic Rule Engine** automatically applies the correct KSERC mathematical formulas:
-  - **Controllable gains** (e.g., O&M savings): Shared 2/3 to Utility, 1/3 to Consumer (per Regulation 9.2).
-  - **Uncontrollable losses** (e.g., Power Purchase spikes): 100% pass-through to consumers (per Regulation 9.4).
-  - **Controllable losses**: Automatically disallowed — the utility bears the full cost.
-- The AI **never guesses** these numbers. They are calculated by hardcoded strict logic.
-
-**c) Anomaly Detection**
-- The system flags **severe deviations** that require manual auditing (e.g., a sudden 50% jump in Power Purchase costs from the previous year).
-- These are highlighted with warning icons and threshold breach indicators.
-
-**d) AI-Generated Insights & Recommendations**
-- Scroll down to the **"AI Insights"** section. The system writes the initial draft of a regulatory narrative:
-  > 💡 *"The O&M head for SBU-D shows a controllable GAIN of ₹30 Crores. This represents efficient management of controllable factors. Per Regulation 9.2, savings are shared 2/3 to Utility, 1/3 to Consumer."*
-  
-  > ⚠️ *"ALERT: Power Purchase for SBU-G shows an uncontrollable LOSS of ₹50 Crores due to market price spikes. Fully passed through per Regulation 9.4."*
-
-**e) Tariff Draft Generation (LLM-Powered)**
-- Scroll to the **"Regulatory Executive Draft"** section.
-- Click **"Generate Draft"** to invoke the GPT-4o-mini language model.
-- The system auto-generates a 3-paragraph regulatory narrative based on the computed variances.
-- **Crucially, the human can edit this draft text before saving** — the AI assists, the human decides.
+**Why it matters:** No extracted value enters the regulatory calculation engine without explicit human sign-off. Every decision is permanently recorded with who did it, when, and why.
 
 ---
 
-## 🔧 8. Troubleshooting Common Issues
+## 📈 STEP 5 - Analytical Reports (Variance Engine)
 
-### Backend won't start
+### What You See:
+Click **"Reports"** in the sidebar. Select **Financial Year: 2024-25** and click **Generate Report**. The page shows the complete ARR variance analysis.
 
-| Symptom | Solution |
-|---------|----------|
-| `python: command not found` | Ensure Python 3.10+ is installed and added to your system PATH. Try `python3` instead of `python`. |
-| `ModuleNotFoundError` | You forgot to activate the virtual environment. Run `.\venv\Scripts\activate` (Windows) or `source venv/bin/activate` (Mac/Linux) first. |
-| `Address already in use (port 8000)` | Another process is using port 8000. On Windows, run `netstat -ano | findstr :8000` to find and stop it. |
-| `pip install` fails | Ensure you have internet access. If behind a corporate proxy, configure pip with `pip install --proxy http://proxy:port -r requirements.txt`. |
+### What Happens in the Backend:
 
-### Frontend won't start
+**File:** `backend/api/reports.py` - `GET /reports/analytical`
 
-| Symptom | Solution |
-|---------|----------|
-| `npm: command not found` | Ensure Node.js 18+ is installed. Download from [nodejs.org](https://nodejs.org/). |
-| Build errors after `npm start` | Delete `node_modules` and reinstall: `cd frontend && rmdir /s /q node_modules && npm install` (Windows) or `cd frontend && rm -rf node_modules && npm install` (Mac/Linux). |
-| Blank page in browser | Check that the backend is running on port 8000. The frontend proxies API calls to `http://localhost:8000`. |
+The report engine reads the stored extraction data (from Step 3, Stage 5) and computes variance for every cost head:
 
-### Login issues
+```python
+# backend/api/reports.py
+def _build_report_from_data(financial_year: str, sbu_scope: List[str]) -> Dict:
+    # Collect all extracted fields from all uploaded PDFs
+    all_fields = []
+    for fields in _extracted_data_store.values():
+        all_fields.extend(fields)
 
-| Symptom | Solution |
-|---------|----------|
-| "Invalid credentials" | Double-check: email is `regulatory.officer@kserc.gov.in`, password is `DemoPass123!` (case-sensitive, with exclamation mark). |
-| "Network Error" | Ensure the backend server (Terminal 1) is running. Check the terminal for error messages. |
-| Page stuck on "Loading..." | Clear your browser's `localStorage`: open DevTools (F12) → Application → Local Storage → Clear All. Then refresh. |
+    # Build cost breakdown: actual vs. approved (estimated from normative targets)
+    cost_head_breakdown = {}
+    for item in all_fields:
+        head = item.get("suggested_head", item.get("field_name", "Other"))
+        actual_value = item.get("extracted_value") or 0.0
+        approved_est = actual_value * 0.90  # Approved is ~90% of actual (normative)
+
+        if head not in cost_head_breakdown:
+            cost_head_breakdown[head] = {"approved": 0.0, "actual": 0.0}
+
+        cost_head_breakdown[head]["actual"] += actual_value
+        cost_head_breakdown[head]["approved"] += approved_est
+        cost_head_breakdown[head]["variance"] = (
+            cost_head_breakdown[head]["approved"] - cost_head_breakdown[head]["actual"]
+        )
+```
+
+The **`InsightGenerator`** class then applies KSERC regulatory rules to write plain-language insights:
+
+```python
+# backend/api/reports.py
+class InsightGenerator:
+    @staticmethod
+    def generate_variance_insight(cost_head: str, variance: float, category: str) -> str:
+        if variance > 0 and category == "Controllable":
+            return (
+                f"The {cost_head} head shows a controllable GAIN of ₹{variance:,.2f}. "
+                f"Per Regulation 9.2, savings are shared 2/3 to Utility, 1/3 to Consumer."
+            )
+        elif variance < 0 and category == "Controllable":
+            return (
+                f"ALERT: The {cost_head} head shows a controllable LOSS of ₹{abs(variance):,.2f}. "
+                f"Per Regulation 9.3, this amount is DISALLOWED and borne 100% by the Utility."
+            )
+        else:
+            return (
+                f"The {cost_head} head shows an uncontrollable variance of ₹{variance:,.2f}. "
+                f"Per Regulation 9.4, fully passed through to consumers."
+            )
+```
+
+The response returned to the frontend includes all the data needed to render the charts:
+- Preliminary summary (total approved vs. actual ARR)
+- Variance trend for each cost head
+- Flagged deviations / anomalies
+- Gap analysis (controllable gap vs. uncontrollable gap)
+- AI-generated insights and recommendations
+- An SHA-256 cryptographic checksum over the report data for tamper-evident audit trails
 
 ---
 
-## 🗂️ 9. Project Structure Reference
+## 🔧 STEP 6 - Troubleshooting
 
-For those who want to understand where things live:
+> **LLM Key Notice:** The **only** endpoint that requires an `OPENAI_API_KEY` is `POST /tariff/generate-draft` in `backend/api/tariff_generator.py`.
+> This powers the "Generate Draft" button in the Reports section. All other features - PDF upload, extraction, mapping, variance reports, efficiency analysis, and historical trends - work fully without any API key configured.
+> If the key is missing, clicking "Generate Draft" will return a `500 Internal Server Error` with the message `"OpenAI API key not configured"`. All other buttons on the page remain functional.
+
+| Symptom | File to Check | Fix |
+|---------|---------------|-----|
+| Login fails "Invalid Credentials" | `backend/api/auth.py` | Ensure username is `admin` (not an email), password `Admin@12345678` |
+| Upload fails (no response) | `backend/api/extraction.py` | Check that the backend is running on port 8000 |
+| Upload returns 422 | `backend/api/extraction.py` | The Content-Type header issue was fixed in `frontend/src/services/api.ts` - ensure the frontend is reloaded |
+| 0 fields extracted | `backend/api/extraction_graph.py` | PDF may be image-only; OCR fallback in `backend/api/ocr_service.py` handles this |
+| Mapping page empty | `backend/api/mapping.py` | Upload a PDF first - mappings are auto-generated post-extraction |
+| Report shows ₹0 | `backend/api/reports.py` | No extraction data stored yet - upload a PDF, then generate the report |
+| "Generate Draft" button fails with 500 | `backend/api/tariff_generator.py` | Set `OPENAI_API_KEY` in `backend/.env`. This is the ONLY feature that requires it. |
+| Backend won't start | `backend/main.py` | Ensure venv is activated: `(venv)` should appear in your terminal |
+
+---
+
+## 🗂️ Codebase Map
 
 ```
 Decision-Support-System/
-├── backend/                    # Python FastAPI server
-│   ├── main.py                 # Application entry point (routes, middleware, CORS)
-│   ├── api/                    # All API route handlers
-│   │   ├── auth.py             # Login, JWT tokens, RBAC
-│   │   ├── extraction.py       # PDF upload & AI data extraction
-│   │   ├── mapping.py          # Human-in-the-loop mapping workbench
-│   │   ├── reports.py          # Report generation & variance analysis
-│   │   ├── tariff_generator.py # LLM-powered tariff draft generation
-│   │   ├── efficiency.py       # Line loss & T&D efficiency analysis
-│   │   ├── history.py          # Multi-year historical trend data
-│   │   ├── kserc_scraper.py    # Live KSERC regulatory portal sync
-│   │   └── ocr_service.py      # Tesseract OCR fallback for scanned PDFs
-│   ├── engine/                 # Deterministic rule engine (strict math)
-│   ├── security/               # JWT, rate limiting, security headers
-│   ├── demo/                   # Demo data fixtures & initialization scripts
-│   └── tests/                  # Automated test suite
-├── frontend/                   # React TypeScript UI
-│   └── src/
-│       ├── App.tsx             # Main router (Dashboard, Upload, Mapping, Reports)
-│       ├── components/         # UI components (auth, dashboard, extraction, mapping, reports)
-│       ├── contexts/           # React authentication context
-│       └── services/           # API service layer (Axios)
-├── data/demo_files/            # Sample PDF petitions for demo
-├── docs/                       # Extended documentation
-│   ├── BEGINNERS_GUIDE.md      # Regulatory context & core features
-│   ├── DEMO_GUIDE.md           # Technical demo scenarios (6 detailed walkthroughs)
-│   ├── SECURITY.md             # RBAC, authentication, rate-limiting deep dive
-│   └── design_system.md        # UI design tokens & aesthetic standards
-├── requirements.txt            # Python package dependencies (68 packages)
-├── .env.example                # Template for environment variables
-├── docker-compose.yml          # One-command production deployment
-└── generate_demo_data.py       # Script to regenerate sample PDFs
+│
+├── backend/
+│   ├── main.py                 # App entry point - registers all routers, CORS, middleware
+│   ├── api/
+│   │   ├── auth.py             # POST /auth/login, GET /auth/me
+│   │   ├── extraction.py       # POST /extract/upload - THE PIPELINE ENTRY POINT
+│   │   ├── extraction_graph.py # LangGraph state machine + regex parser (intelligence hub)
+│   │   ├── ocr_service.py      # Tesseract OCR fallback for scanned PDFs
+│   │   ├── mapping.py          # GET /mapping/pending, POST /mapping/confirm
+│   │   ├── reports.py          # GET /reports/analytical - variance engine
+│   │   ├── efficiency.py       # POST /efficiency/line-loss - line loss calculator
+│   │   ├── history.py          # GET /history/trends - multi-year dataset
+│   │   └── tariff_generator.py # POST /tariff/generate-draft - LLM narrative
+│   └── security/
+│       └── auth.py             # JWT, bcrypt, RBAC, rate-limiting
+│
+├── frontend/src/
+│   ├── services/api.ts         # All HTTP calls to the backend (uses fetch)
+│   ├── services/config.ts      # API_BASE_URL = "http://localhost:8000"
+│   ├── components/
+│   │   ├── auth/Login.tsx      # Login form
+│   │   ├── extraction/PDFUploader.tsx   # Upload drag-and-drop
+│   │   ├── mapping/MappingWorkbench.tsx # Human review table
+│   │   └── reports/AnalyticsReport.tsx  # Report display with charts
+│   └── contexts/AuthContext.tsx # Stores JWT token, manages session
+│
+└── data/
+    ├── ARR 2022-27 dated 25.06.2022.pdf  # 493-page ARR petition sample
+    └── Input.pdf                          # 237-page financial input sample
 ```
 
 ---
 
-## 🎉 Conclusion
+## Key Libraries Reference
 
-You have just experienced a workflow that traditionally takes **weeks** of manual data entry, PDF scrubbing, and spreadsheet calculation. The **ARR Truing-Up Decision Support System** has reduced it to a matter of clicks, dramatically increasing speed, accuracy, and regulatory confidence.
+| Library | Used In | Purpose |
+|---------|---------|---------|
+| **FastAPI** | All `backend/api/*.py` | Web server framework - handles HTTP, validation, async |
+| **Pydantic** | All `backend/api/*.py` | Data validation - ensures API inputs/outputs match exact schema |
+| **LangGraph** | `extraction_graph.py` | Stateful AI workflow engine for the extraction pipeline |
+| **PyPDF2** | `extraction.py` | Reads native text from PDF files page-by-page |
+| **pytesseract** | `ocr_service.py` | Tesseract OCR - reads text from scanned image PDFs |
+| **python-jose** | `security/auth.py` | Creates and verifies JWT authentication tokens |
+| **passlib (bcrypt)** | `security/auth.py` | Secure password hashing - never stores plain text passwords |
+| **Python `re`** | `extraction_graph.py` | Regular expressions for financial pattern matching |
+| **React + TypeScript** | `frontend/src/` | Browser UI framework |
+| **Recharts** | Dashboard components | Interactive charts for historical trend visualization |
 
-### What Makes This System Enterprise-Grade:
+---
 
-- ✅ **Zero-Hallucination Policy** — The AI assists, the human decides. No unverified data enters calculations.
-- ✅ **Full Audit Trail** — Every action (extraction, confirmation, override, report generation) is permanently logged with timestamps, user identity, and checksums.
-- ✅ **Role-Based Security** — JWT authentication with SBU-level data isolation. Different roles see different capabilities.
-- ✅ **Deterministic Math** — The rule engine uses hardcoded KSERC MYT formulas. It never guesses financial outcomes.
-- ✅ **Production-Ready Architecture** — Asynchronous processing, in-memory caching, route-level code splitting, rate limiting, and Docker containerization.
+## 🎉 What This System Achieves
 
-For deeper technical details, see the [`docs/`](./docs/) directory.
+| Traditional Process | With This System |
+|--------------------|-----------------|
+| 3-4 weeks manual data entry | ~2–3 minutes per PDF |
+| Error-prone spreadsheet math | Deterministic, auditable formulas |
+| No regulatory traceability | Every number linked to exact source page |
+| Manual narrative writing | AI-assisted draft in 1 click |
+| Annual compliance scramble | Real-time multi-year trend tracking |
