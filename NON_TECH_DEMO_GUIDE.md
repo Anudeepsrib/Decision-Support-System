@@ -217,27 +217,97 @@ Upon logging in, you will land on the **Dashboard**. This is the executive overv
 
 ## 📄 5. Ingesting Petitions (PDF Uploader)
 
-Now we simulate receiving a massive, unstructured PDF petition from a utility company — the core use case of the system.
+Now we simulate receiving a massive, unstructured PDF petition from a utility company — the core use case of the system. In this step, we will dive under the hood to see exactly how the backend code processes the documents.
 
-### Steps:
+### Steps in the UI:
 
 1. Click **"Upload PDF"** in the top navigation bar.
-2. Open your computer's file explorer and navigate to the `data/demo_files/` folder inside this project.
-3. **Drag and drop** the file named **`1_True_Up_Petition_SBU_D_FY25.pdf`** into the upload zone (or click to browse).
-4. Watch the progress indicator as the AI engine processes the document.
+2. Open your computer's file explorer and navigate to the `data/` folder inside this project.
+3. **Drag and drop** the file named **`ARR 2022-27 dated 25.06.2022.pdf`** into the upload zone.
+4. Watch the progress indicator as the AI engine processes the 400+ page document.
 
-### What Happens Behind the Scenes:
+### What Happens Behind the Scenes (The Backend Flow):
 
-The system executes a sophisticated multi-step pipeline:
+When you drop the PDF into the browser, a complex orchestration of **Python** backend code is triggered. Here is the exact flow:
 
-1. **PDF Parsing** — The engine reads the document using multiple extractors (PyPDF2, pdfplumber, Camelot) to handle different PDF formats.
-2. **Table Detection** — AI identifies structured tables embedded within paragraphs of unstructured text.
-3. **Value Extraction** — Key financial metrics are intelligently identified (e.g., "Rs. 180.00 Cr" for O&M Cost, "Rs. 150.00 Cr (Audited)" for actual values).
-4. **Confidence Scoring** — Each extracted value receives a confidence percentage based on text clarity, table structure, and contextual clues.
-5. **Source Provenance** — The system records exactly where each number was found (page number, table index, cell reference) for full auditability.
-6. **OCR Fallback** — If a PDF is a scanned image (no native text layer), the system automatically falls back to Tesseract OCR to read the document.
+#### Step A: Receiving the File (`backend/api/extraction.py`)
+The frontend sends the file to the FastAPI backend endpoint `POST /extract/upload`. 
+The backend handles the upload asynchronously and assigns it a unique Job ID.
 
-> **Demo Tip:** After uploading, you can also upload the other two sample files (`2_Audited_Financials_SBU_G_FY25.pdf` and `3_Transmission_Loss_Report_FY25.pdf`) to show the system handles multiple SBUs and document types.
+#### Step B: Reading the PDF (`backend/api/ocr_service.py` & `PyPDF2`)
+The system first attempts to extract the raw text from the PDF using the `PyPDF2` library. This is extremely fast but only works if the PDF has a native text layer (i.e., it wasn't scanned from a physical piece of paper).
+If the PDF is a scanned image, the system falls back to **Tesseract OCR** (Optical Character Recognition) via the `pytesseract` library to visually "read" the text from the images.
+
+#### Step C: The Extraction State Machine (`backend/api/extraction_graph.py` & `LangGraph`)
+The core intelligence lives in a **LangGraph** state machine. LangGraph is a framework for building cyclical, agentic workflows. 
+The system defines a `State` object that holds the raw text pages and a list of `ExtractedField` objects.
+
+```python
+# From backend/api/extraction_graph.py
+class ExtractionState(TypedDict):
+    raw_ocr_pages: List[str]
+    extracted_fields: List[Dict[str, Any]]
+    requires_human_review: bool
+    retry_count: int
+```
+
+The state machine runs through the text page-by-page. We use **Regular Expressions (Regex)** (via the standard Python `re` library) to intelligently hunt for specific financial patterns, rather than relying blindly on an LLM.
+
+```python
+# From backend/api/extraction_graph.py
+# Example of the Regex Engine hunting for O&M Costs
+def _extract_fields_from_text(pages: List[str]) -> List[Dict[str, Any]]:
+    # ... setup ...
+    patterns = {
+        "O&M Cost": [
+            r"O\s*&\s*M\s*(?:Expenses|Cost)?\s*[\:\-]?\s*(?:Rs\.?|₹)?\s*([\d\,\.]+)\s*(?:Cr\.?|Lakh)?",
+            r"Operation and Maintenance.*?(?:Rs\.?|₹)?\s*([\d\,\.]+)"
+        ],
+        # ... other cost heads ...
+    }
+```
+
+#### Step D: Confidence Scoring & Flagging
+For every number found, the system assigns a **confidence score**. 
+- If it confidently extracts a value like ₹2,021.00 Crore for Total ARR, it scores it at `0.95` (95%).
+- If the regex engine cannot find a specific cost head in the context it expects, it outputs `N/A` and flags the field as `requires_human_review = True`. 
+
+```python
+# From backend/api/extraction_graph.py
+if best_val is not None:
+    fields.append({
+        "field_name": head,
+        "extracted_value": best_val,
+        "source_page": best_page,
+        "confidence_score": 0.95,
+        "review_required": False
+    })
+else:
+    # Flag for human review if nothing found
+    fields.append({
+        "field_name": head,
+        "extracted_value": None,
+        "source_page": None,
+        "confidence_score": 0.40, 
+        "review_required": True
+    })
+```
+
+#### Step E: Auto-Populating Mappings (`backend/api/mapping.py`)
+Once the LangGraph pipeline finishes, the `backend/api/extraction.py` endpoint takes the extracted fields and automatically sends them to the **Mapping Workbench**.
+The backend intelligently classifies each field (e.g., mapping "Employee Cost" to the "O&M" regulatory cost head and marking it as a "Controllable" expense).
+
+```python
+# From backend/api/extraction.py
+# Auto-populate the mapping workbench and store data for reports
+raw_fields = final_state.get("extracted_fields", [])
+if raw_fields:
+    mappings = generate_mappings_from_fields(raw_fields)
+    store_extraction_for_reports(job_id, raw_fields)
+    store_mapping_for_reports([m.model_dump() for m in mappings])
+```
+
+By the time the loading spinner on your screen stops, this entire pipeline has processed hundreds of pages, extracted the math, flagged the anomalies, and mapped the data to the regulatory framework!
 
 ---
 

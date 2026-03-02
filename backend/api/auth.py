@@ -16,7 +16,9 @@ from backend.security.auth import (
     UserRole,
     SBUAccess,
     get_user,
-    MOCK_USERS,
+    get_current_user,
+    TokenData,
+    USERS,
 )
 from backend.security.rate_limit import brute_force_protection
 
@@ -79,7 +81,6 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
     # Check if MFA is required
     if user.get("mfa_enabled", False):
         # In production, verify MFA code here
-        # For now, we'll simulate MFA check
         pass
     
     # Clear failed attempts on success
@@ -154,37 +155,38 @@ async def refresh_token(refresh_token: str):
 @router.post("/logout")
 async def logout():
     """Logout user (client should discard tokens)"""
-    # In production, add token to revocation list
     return {"message": "Logout successful", "detail": "Please discard your tokens"}
 
 # ─── User Profile ───
 @router.get("/me", response_model=UserProfileResponse)
-async def get_profile(current_user: dict = Depends(lambda: get_user("regulatory.officer@kserc.gov.in"))):
+async def get_profile(current_user: TokenData = Depends(get_current_user)):
     """Get current user profile"""
-    if not current_user:
+    user = get_user(current_user.username)
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated"
         )
     
     return UserProfileResponse(
-        username=current_user["username"],
-        email=current_user["email"],
-        full_name=current_user["full_name"],
-        role=current_user["role"],
-        sbu_access=[s.value for s in current_user["sbu_access"]],
-        permissions=current_user.get("permissions", []),
-        mfa_enabled=current_user.get("mfa_enabled", False)
+        username=user["username"],
+        email=user["email"],
+        full_name=user["full_name"],
+        role=user["role"],
+        sbu_access=[s.value for s in user["sbu_access"]],
+        permissions=user.get("permissions", []),
+        mfa_enabled=user.get("mfa_enabled", False)
     )
 
 # ─── Password Change ───
 @router.post("/change-password")
 async def change_password(
     request: PasswordChangeRequest,
-    current_user: dict = Depends(lambda: get_user("regulatory.officer@kserc.gov.in"))
+    current_user: TokenData = Depends(get_current_user)
 ):
     """Change user password"""
-    if not current_user:
+    user = get_user(current_user.username)
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated"
@@ -193,7 +195,7 @@ async def change_password(
     # Verify current password
     if not SecurityManager.verify_password(
         request.current_password, 
-        current_user["hashed_password"]
+        user["hashed_password"]
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -210,7 +212,7 @@ async def change_password(
         )
     
     # In production, update password in database
-    # current_user["hashed_password"] = new_hash
+    # user["hashed_password"] = new_hash
     
     return {"message": "Password changed successfully"}
 

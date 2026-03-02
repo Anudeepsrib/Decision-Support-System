@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from backend.security.auth import get_current_user, require_permission, TokenData
 from backend.api.extraction_graph import extraction_graph, ExtractedField
 from backend.api.ocr_service import ocr_service
+from backend.api.mapping import generate_mappings_from_fields
+from backend.api.reports import store_extraction_for_reports, store_mapping_for_reports
 import io
 import PyPDF2
 import asyncio
@@ -118,13 +120,20 @@ async def extract_tables_from_pdf(
 
     fields_needing_review = sum(1 for f in result_fields if f.review_required)
 
+    # Auto-populate the mapping workbench and store data for reports
+    raw_fields = final_state.get("extracted_fields", [])
+    if raw_fields:
+        mappings = generate_mappings_from_fields(raw_fields)
+        store_extraction_for_reports(job_id, raw_fields)
+        store_mapping_for_reports([m.model_dump() for m in mappings])
+
     return ExtractionResponse(
         job_id=job_id,
         filename=file.filename,
         total_pages_processed=len(initial_state["raw_ocr_pages"]),
         total_fields_extracted=len(result_fields),
         fields_requiring_review=fields_needing_review,
-        extraction_method="LangGraph + ChatOpenAI",
+        extraction_method="LangGraph + RegexParser",
         timestamp=datetime.now(timezone.utc).isoformat(),
         fields=result_fields
     )

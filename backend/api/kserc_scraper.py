@@ -32,22 +32,7 @@ class KSERCScraper:
             #     tables = soup.find_all("table")
             #     # ... parsing logic ...
             
-            # Simulated Data to avoid breaking during development if the live site structure changes
-            simulated_data = [
-                {
-                    "financial_year": "2024-25",
-                    "metric_name": "Approved_O_and_M_Cost",
-                    "metric_value": 2500000000.0,
-                    "source_url": "https://www.erckerala.org/orders/2024"
-                },
-                {
-                    "financial_year": "2024-25",
-                    "metric_name": "Target_Distribution_Loss_Percent",
-                    "metric_value": 11.5,
-                    "source_url": "https://www.erckerala.org/orders/2024"
-                }
-            ]
-            return simulated_data
+            return []
             
         except httpx.RequestError as e:
             print(f"Failed to reach KSERC portal: {str(e)}")

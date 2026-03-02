@@ -162,34 +162,3 @@ class AnomalyDetector:
         return reasoning
 
 
-# --- Demo Execution Block ---
-if __name__ == "__main__":
-    np.random.seed(42)
-    historical_prices = np.random.normal(loc=4.0, scale=0.3, size=1000)
-    history_df = pd.DataFrame(
-        {
-            "cost_head": ["Power_Purchase"] * 1000,
-            "price_per_unit": historical_prices,
-            "volume_mw": np.random.normal(loc=500, scale=50, size=1000),
-        }
-    )
-
-    detector = AnomalyDetector(contamination=0.01)
-
-    # F-18: Train per-SBU
-    detector.load_historical_data(
-        history_df, feature_columns=["price_per_unit", "volume_mw"], sbu_code="SBU-G"
-    )
-
-    new_petition_df = pd.DataFrame(
-        {
-            "cost_head": ["Power_Purchase"] * 3,
-            "price_per_unit": [4.1, 4.3, 12.5],  # 12.5 is the spike
-            "volume_mw": [510, 480, 800],
-        }
-    )
-
-    report = detector.analyze_petition_data(new_petition_df, sbu_code="SBU-G")
-
-    print("\n--- AI Prudence Check Report (Calibrated) ---")
-    print(json.dumps(report, indent=2))

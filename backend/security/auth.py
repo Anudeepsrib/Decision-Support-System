@@ -70,6 +70,7 @@ ROLE_PERMISSIONS: Dict[UserRole, List[str]] = {
         "reports.read",
         "audit.read",
         "extraction.read",
+        "extraction.upload",
         "data.read_all_sbus",
         "system.read_config",
     ],
@@ -286,60 +287,37 @@ require_senior_auditor = require_permission("mapping.override")
 require_data_entry = require_permission("extraction.upload")
 require_audit_access = require_permission("audit.read")
 
-# ─── Mock User Database (Production: Use PostgreSQL) ───
-# F-14: Lazy-load hashes to avoid ~300ms cold-start penalty per hash
-_DEMO_PASSWORD = "TempPass123!"
-_cached_hash: Optional[str] = None
+# ─── User Store (Production: Use PostgreSQL) ───
+_ADMIN_PASSWORD = "Admin@12345678"
+_cached_admin_hash: Optional[str] = None
 
 
-def _get_demo_hash() -> str:
-    """Lazily compute the demo password hash (once, on first login attempt)."""
-    global _cached_hash
-    if _cached_hash is None:
-        _cached_hash = pwd_context.hash(_DEMO_PASSWORD)
-    return _cached_hash
+def _get_admin_hash() -> str:
+    """Lazily compute the admin password hash (once, on first login attempt)."""
+    global _cached_admin_hash
+    if _cached_admin_hash is None:
+        _cached_admin_hash = pwd_context.hash(_ADMIN_PASSWORD)
+    return _cached_admin_hash
 
 
-class _LazyMockUsers:
+class _LazyUsers:
     """Lazy dict that computes password hashes only on first access."""
     _users: Optional[Dict[str, Any]] = None
 
     @classmethod
-    def _build(cls) -> Dict[str, Any]:
-        h = _get_demo_hash()
+    def _build(cls) -> Dict[str, Dict[str, Any]]:
+        h = _get_admin_hash()
         return {
-            "regulatory.officer@kserc.gov.in": {
-                "username": "regulatory.officer@kserc.gov.in",
-                "email": "regulatory.officer@kserc.gov.in",
-                "full_name": "Senior Regulatory Officer",
-                "role": UserRole.REGULATORY_OFFICER,
+            "admin": {
+                "username": "admin",
+                "email": "admin@kserc.gov.in",
+                "full_name": "System Administrator",
+                "role": UserRole.SUPER_ADMIN,
                 "sbu_access": [SBUAccess.ALL],
                 "hashed_password": h,
                 "is_active": True,
-                "mfa_enabled": True,
-                "permissions": ROLE_PERMISSIONS[UserRole.REGULATORY_OFFICER],
-            },
-            "auditor@utility.com": {
-                "username": "auditor@utility.com",
-                "email": "auditor@utility.com",
-                "full_name": "Senior Auditor",
-                "role": UserRole.SENIOR_AUDITOR,
-                "sbu_access": [SBUAccess.SBU_D],
-                "hashed_password": h,
-                "is_active": True,
                 "mfa_enabled": False,
-                "permissions": ROLE_PERMISSIONS[UserRole.SENIOR_AUDITOR],
-            },
-            "data.entry@utility.com": {
-                "username": "data.entry@utility.com",
-                "email": "data.entry@utility.com",
-                "full_name": "Data Entry Agent",
-                "role": UserRole.DATA_ENTRY_AGENT,
-                "sbu_access": [SBUAccess.SBU_D],
-                "hashed_password": h,
-                "is_active": True,
-                "mfa_enabled": False,
-                "permissions": ROLE_PERMISSIONS[UserRole.DATA_ENTRY_AGENT],
+                "permissions": ROLE_PERMISSIONS[UserRole.SUPER_ADMIN],
             },
         }
 
@@ -350,11 +328,12 @@ class _LazyMockUsers:
         return cls._users.get(key)
 
 
-MOCK_USERS = _LazyMockUsers()
+USERS = _LazyUsers()
+
 
 def get_user(username: str) -> Optional[Dict[str, Any]]:
-    """Get user from database (mock implementation)"""
-    return MOCK_USERS.get(username)
+    """Get user from the user store."""
+    return USERS.get(username)
 
 # ─── Login Function ───
 async def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:

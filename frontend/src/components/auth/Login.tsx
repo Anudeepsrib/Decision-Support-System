@@ -57,7 +57,7 @@ export function Login() {
               onChange={(e) => setUsername(e.target.value)}
               onFocus={() => setFocusedField('username')}
               onBlur={() => setFocusedField(null)}
-              placeholder="regulatory.officer@kserc.gov.in"
+              placeholder="admin"
               style={{
                 ...styles.input,
                 ...(focusedField === 'username' ? styles.inputFocused : {}),
@@ -125,9 +125,9 @@ export function Login() {
         <div style={styles.credentialsBox}>
           <p style={styles.credLabel}>Test credentials:</p>
           <p style={styles.credValue}>
-            <strong>regulatory.officer@kserc.gov.in</strong>
+            <strong>admin</strong>
           </p>
-          <p style={styles.credValue}>TempPass123!</p>
+          <p style={styles.credValue}>Admin@12345678</p>
         </div>
 
         {/* Footer */}

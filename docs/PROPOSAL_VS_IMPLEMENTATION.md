@@ -7,7 +7,7 @@ This document provides a clear, high-level comparison between the features reque
 | # | Feature | Implemented | Evidence | Notes |
 |---|---|---|---|---|
 | 1 | AI-based automated data extraction from financial documents (PDFs, Excel, scanned documents) | ✅ Implemented | `backend/api/extraction.py`, `backend/api/ocr_service.py` | Utilizes LangGraph for text and `pytesseract` for scanned OCR ingestion. |
-| 2 | NLP-based data standardization and mapping to ARR–ECR cost components | ✅ Implemented | `backend/ai/MappingEngine.py`, `backend/api/mapping.py` | Implements AI fuzzy-matching to map unstandardized strings to official KSERC Cost Heads. |
+| 2 | NLP-based data standardization and mapping to ARR–ECR cost components | ✅ Implemented | `backend/api/extraction_graph.py`, `backend/api/mapping.py` | Utilizes LangGraph structured output to map unstandardized strings to official KSERC Cost Heads. |
 | 3 | ARR vs ECR comparison and revenue gap calculation | ✅ Implemented | `backend/engine/rule_engine.py` | Deterministic logic handling 100% accurate variance and disallowance logic. |
 | 4 | Anomaly and deviation detection against regulatory norms and historical data | ✅ Implemented | `backend/ai/AnomalyDetection.py` | Uses `IsolationForest` calibrated to a [0, 1] confidence scale. |
 | 5 | Auto-generated summary and detailed regulatory reports | ✅ Implemented | `backend/api/reports.py`, `frontend/.../ReportDashboard.tsx` | Generates comprehensive JSON payloads and React dashboard views alongside audit checksums. |

@@ -62,9 +62,13 @@ class HttpClient {
 
     // Default headers
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
       ...((options.headers as Record<string, string>) || {}),
     };
+
+    // F-13: Do not set Content-Type for FormData to allow browser to insert boundary
+    if (!(options.body instanceof FormData) && !headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json';
+    }
 
     // Add auth token if available
     const token = TokenManager.getAccessToken();
