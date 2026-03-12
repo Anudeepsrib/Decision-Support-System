@@ -272,6 +272,52 @@ export interface EfficiencyResponse {
   penalty_estimate_cr: number;
 }
 
+// ─── Order Comparison Types ───
+
+export interface FieldComparison {
+  order_value: string;
+  reference_value: string;
+  status: string;
+  reason: string;
+}
+
+export interface ItemComparison {
+  product_name_order: string;
+  product_name_reference: string;
+  quantity_order: string;
+  quantity_reference: string;
+  unit_price_order: string;
+  unit_price_reference: string;
+  total_price_order: string;
+  total_price_reference: string;
+  status: string;
+  reason: string;
+}
+
+export interface ComparisonSummary {
+  total_items_order: string;
+  matched_items: string;
+  mismatched_items: string;
+  missing_items: string;
+  extra_items: string;
+  overall_status: string;
+}
+
+export interface OrderComparisonResponse {
+  job_id: string;
+  order_filename: string;
+  reference_filename: string;
+  timestamp: string;
+  order_level_comparison: Record<string, FieldComparison>;
+  items_comparison: ItemComparison[];
+  missing_items_in_reference: string[];
+  extra_items_in_reference: string[];
+  summary: ComparisonSummary;
+  confidence_score: string;
+  executive_report: string;
+  llm_report?: string;
+}
+
 // ─── Error Types ───
 
 export interface ApiErrorResponse {

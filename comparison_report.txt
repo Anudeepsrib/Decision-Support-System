@@ -1,0 +1,11 @@
+ORDER COMPARISON REPORT
+========================================
+Total Items: 1019  |  Matched: 0  |  Mismatched: 0
+Missing: 1019  |  Extra: 0  |  Status: CRITICAL_DISCREPANCY
+
+Risk: HIGH
+Action: Reject or escalate for manual review
+
+Discrepancies:
+  - shipping_address: Similarity 0.34 below threshold 0.85: 'ed separately since these issues are not directly related' vs 'the matters indicated above, the Commission has published the Draft Kerala'
+  - order_date: Values differ: '0202-02-12' vs '2012-05-09'

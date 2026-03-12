@@ -14,7 +14,8 @@ import {
   MappingConfirmRequest,
   AnalyticalReport,
   HistoricalTrendData,
-  EfficiencyResponse
+  EfficiencyResponse,
+  OrderComparisonResponse
 } from './types';
 
 // ─── Token Management ───
@@ -421,6 +422,19 @@ export const EfficiencyService = {
       financial_year: financialYear,
       actual_line_loss_percent: actualLineLossPercent
     });
+  },
+};
+
+/**
+ * Order Comparison Service — Compare order vs reference PDFs
+ */
+export const ComparisonService = {
+  async compareOrders(orderFile: File, referenceFile: File): Promise<OrderComparisonResponse> {
+    const formData = new FormData();
+    formData.append('order_file', orderFile);
+    formData.append('reference_file', referenceFile);
+
+    return httpClient.upload<OrderComparisonResponse>('/compare/upload', formData);
   },
 };
 

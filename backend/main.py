@@ -2,7 +2,8 @@
 Enterprise FastAPI Application Entry Point
 Production-grade security, monitoring, and compliance
 =====================================================
-Combines former main.py and main_secure.py.
+Refactored: Non-comparison features commented out.
+Focus: Document Comparison & Anomaly Detection only.
 """
 
 import os
@@ -14,19 +15,24 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from contextlib import asynccontextmanager
 import asyncio
 
-from backend.api.extraction import router as extraction_router
-from backend.api.mapping import router as mapping_router
-from backend.api.reports import router as reports_router
+# ─── Active Routers (Comparison + Auth) ───
 from backend.api.auth import router as auth_router
-from backend.api.tariff_generator import router as tariff_router
-from backend.api.history import router as history_router
-from backend.api.efficiency import router as efficiency_router
+from backend.api.order_comparison import router as comparison_router
+
+# ─── Commented Out: Non-comparison features ───
+# from backend.api.extraction import router as extraction_router
+# from backend.api.mapping import router as mapping_router
+# from backend.api.reports import router as reports_router
+# from backend.api.tariff_generator import router as tariff_router
+# from backend.api.history import router as history_router
+# from backend.api.efficiency import router as efficiency_router
+# from backend.api.scheduler import kserc_periodic_sync_loop
+
 from backend.security.rate_limit import (
     RateLimitMiddleware,
     SecurityHeadersMiddleware,
     ip_filter,
 )
-from backend.api.scheduler import kserc_periodic_sync_loop
 
 # ─── Environment Configuration ───
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
@@ -40,37 +46,26 @@ CORS_ALLOWED_ORIGINS = os.getenv(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown events"""
-    # Start the continuous background KSERC synchronization task
-    kserc_sync_task = asyncio.create_task(kserc_periodic_sync_loop(interval_seconds=86400))
+    # KSERC sync commented out — not needed for comparison-only mode
+    # kserc_sync_task = asyncio.create_task(kserc_periodic_sync_loop(interval_seconds=86400))
     yield
-    # Safely cancel background task on shutdown
-    kserc_sync_task.cancel()
+    # kserc_sync_task.cancel()
 
 # ─── Application Initialization ───
 app = FastAPI(
-    title="ARR Truing-Up Decision Support System",
+    title="Document Comparison & Anomaly Detection System",
     description=(
-        "Enterprise-grade AI-augmented engine for Annual Revenue Requirement "
-        "Truing-Up under the KSERC MYT 2022-27 Framework. "
-        "Designed for 100% mathematical fidelity and full regulatory traceability."
+        "Deterministic order vs reference document comparison engine. "
+        "Uses regex extraction, difflib similarity, and rule-based anomaly detection. "
+        "No LLM required for comparison — LLM is optional for report generation only."
     ),
-    version="1.0.0",
-    terms_of_service="http://example.com/terms/",
-    contact={
-        "name": "Regulatory Engine Support",
-        "url": "http://example.com/support",
-        "email": "support@example.com",
-    },
-    license_info={
-        "name": "Internal Enterprise License",
-        "url": "http://example.com/license",
-    },
+    version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
     swagger_ui_parameters={
-        "defaultModelsExpandDepth": -1, # Hide schemas by default
-        "displayRequestDuration": True, # Show request times for latency tracking
+        "defaultModelsExpandDepth": -1,
+        "displayRequestDuration": True,
         "filter": True,
     },
     lifespan=lifespan,
@@ -91,7 +86,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={
             "error": "Internal Server Error",
-            "message": "An unexpected error occurred processing the regulatory data.",
+            "message": "An unexpected error occurred.",
             "reference_id": request.headers.get("X-Request-ID", "unknown")
         }
     )
@@ -111,32 +106,34 @@ app.add_middleware(
     max_age=600,
 )
 
-# ─── Register API Routes ───
+# ─── Register API Routes (Comparison + Auth only) ───
 app.include_router(auth_router)
-app.include_router(extraction_router)
-app.include_router(mapping_router)
-app.include_router(reports_router)
-app.include_router(tariff_router)
-app.include_router(history_router)
-app.include_router(efficiency_router)
+app.include_router(comparison_router)
+
+# Commented out: Non-comparison routers
+# app.include_router(extraction_router)
+# app.include_router(mapping_router)
+# app.include_router(reports_router)
+# app.include_router(tariff_router)
+# app.include_router(history_router)
+# app.include_router(efficiency_router)
 
 
 # ─── Health Check Endpoints ───
 @app.get("/", tags=["Health"])
 async def root():
     return {
-        "service": "ARR Truing-Up DSS",
-        "version": "1.0.0",
-        "framework": "KSERC MYT 2022-27",
+        "service": "Document Comparison & Anomaly Detection",
+        "version": "2.0.0",
+        "mode": "deterministic",
         "status": "operational",
         "environment": ENVIRONMENT,
-        "security_level": "enterprise"
     }
 
 
 @app.get("/health", tags=["Health"])
 async def health_check():
-    return {"status": "healthy", "engine": "KSERC-MYT-2022-27-v1.0", "security": "active"}
+    return {"status": "healthy", "engine": "deterministic-comparator-v2.0"}
 
 @app.get("/security/status", tags=["Security"])
 async def security_status():

@@ -5,11 +5,14 @@ import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Login } from './components/auth/Login';
 import { Layout } from './components/layout/Layout';
 
-// Route-level code splitting for heavy modules
+// Route-level code splitting
 const Dashboard = React.lazy(() => import('./components/dashboard/Dashboard').then(module => ({ default: module.Dashboard })));
-const PDFUploader = React.lazy(() => import('./components/extraction/PDFUploader').then(module => ({ default: module.PDFUploader })));
-const MappingWorkbench = React.lazy(() => import('./components/mapping/MappingWorkbench').then(module => ({ default: module.MappingWorkbench })));
-const ReportDashboard = React.lazy(() => import('./components/reports/ReportDashboard').then(module => ({ default: module.ReportDashboard })));
+const OrderComparison = React.lazy(() => import('./components/comparison/OrderComparison').then(module => ({ default: module.OrderComparison })));
+
+// Commented out: Non-comparison routes
+// const PDFUploader = React.lazy(() => import('./components/extraction/PDFUploader').then(module => ({ default: module.PDFUploader })));
+// const MappingWorkbench = React.lazy(() => import('./components/mapping/MappingWorkbench').then(module => ({ default: module.MappingWorkbench })));
+// const ReportDashboard = React.lazy(() => import('./components/reports/ReportDashboard').then(module => ({ default: module.ReportDashboard })));
 
 function App() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -28,9 +31,11 @@ function App() {
         <Suspense fallback={<div className="flex items-center justify-center p-8">Loading view...</div>}>
           <Routes>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/upload" element={<PDFUploader onUploadComplete={(r) => console.log(r)} />} />
-            <Route path="/mapping" element={<MappingWorkbench />} />
-            <Route path="/reports" element={<ReportDashboard />} />
+            <Route path="/compare" element={<OrderComparison />} />
+            {/* Commented out: Non-comparison routes */}
+            {/* <Route path="/upload" element={<PDFUploader onUploadComplete={(r) => console.log(r)} />} /> */}
+            {/* <Route path="/mapping" element={<MappingWorkbench />} /> */}
+            {/* <Route path="/reports" element={<ReportDashboard />} /> */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
