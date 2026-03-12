@@ -1,20 +1,20 @@
-# Data-Dense Executive Dashboard — Design System
+# Front-end Design System
 
 ## Core Aesthetic Principles
-The Front-end is rigorously optimized for viewing mass quantities of financial extraction data efficiently without scroll-fatigue.
+The `OrderComparison.tsx` UI is rigorously optimized for visually triaging structural data comparisons instantly under pressure. The layout was heavily upgraded utilizing tailwind primitives.
 
-1. **Space Optimization:** Extreme space efficiency through padding reductions and minimized whitespace bridging tabular data displays.
-2. **Precision Typography:** Monospaced typefaces (`Fira Code` for digits) to align accounting decimals perfectly. Legible sans-serifs (`Fira Sans`) for overarching descriptions.
-3. **Contrast and Legibility:** Deep sophisticated dark modes mixed with specific accent colors to identify system states cleanly without blinding users in low-light office environments.
+1. **Space Optimization:** Extreme space efficiency dividing the screen into left (Order Document) and right (Reference Document) hemispheres seamlessly.
+2. **Instant Visual Triage (Emojis):** The visual system deploys heavy Anomaly Emojis for zero-latency human comprehension of the discrepancy tables.
+   - ✅ **Match:** Verified items.
+   - ❌ **Mismatch:** Identified mismatches between documents (fails difflib/numeric tolerances).
+   - ⚠️ **Missing:** Items identified in the order document not found in the reference document.
+   - ℹ️ **Extra:** Spurious items found in the reference document not claimed in the order document.
+   - 🚨 **Risk / Alert:** Highlighting severe confidence drops.
 
-## Color Tracking Tokens
-- **Backgrounds:** `#0f172a` (Slate 900)
-- **Surfaces/Cards:** `#1e293b` (Slate 800)
-- **Primary Text:** `#f8fafc` (Slate 50) 
-- **Muted Text:** `#94a3b8` (Slate 400)
-- **Action/Primary Buttons:** `#3b82f6` (Blue 500)
-- **Success States (Validation):** `#10b981` (Emerald 500)
-- **Destructive/Error States:** `#ef4444` (Red 500)
+3. **Contrast and Legibility:** Deep sophisticated dark modes (`slate-900`) mixed with precise border coloring. 
+   - Strict red backgrounds (`#ef4444`) trigger actively behind any `MISMATCH` table rows, ensuring humans physically cannot miss discrepancies.
+   - Emerald borders frame absolute matches.
+   - Yellow frames highlight partial omissions.
 
 ## Implementation Artifacts
-The entire application adopts TailwindCSS natively referencing these variables through `index.css` inside `frontend/src`. Heroicons are utilized natively for all vector graphics seamlessly avoiding bulky PNG/JPG artifacts.
+The entire application adopts TailwindCSS natively. A custom SVG Confidence Ring dynamically renders circle circumferences calculated mathematically from the Confidence Metric output array. CSS-only distribution bars chart absolute findings.

@@ -1,198 +1,97 @@
-# Annual Revenue Requirement (ARR) Decision Support System
-## Comprehensive End-to-End Stakeholder Guide
+# Deterministic Document Comparison System
+## Zero-Hallucination Order & Reference Comparator
 
 ![Status](https://img.shields.io/badge/Status-Enterprise_Ready-success?style=for-the-badge&logo=checkmark)
 ![License](https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge)
 <br>
 ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)
-![LangGraph](https://img.shields.io/badge/LangGraph-1C1C1C?style=for-the-badge&logo=openai)
 ![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
-![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
 
-Welcome to the ARR Decision Support System. This document serves as a complete, plain-language guide covering everything from the underlying business strategy to running a live enterprise deployment.
+Welcome to the **Deterministic Document Comparison System**. This system provides a 100% rule-based, reproducible, zero-hallucination pipeline for comparing Order PDFs against Reference PDFs to detect anomalies, missing items, and financial discrepancies.
 
 ---
 
-## 1. Requirements — What the Project Needs and Why
+## 1. System Objective
 
-**The Challenge:** 
-Regulatory agencies, such as the Kerala State Electricity Board (KSEB), analyze vast amounts of financial data submitted by utility companies for establishing Annual Revenue Requirements. Searching through hundreds of PDF pages to extract financial tables, verify the math, and apply rigid regulatory rules is traditionally a slow, error-prone, and highly manual process.
+The core objective of this system is to remove the unreliability and hallucination risks associated with Large Language Models (LLMs) when processing rigid financial or supply chain documents. 
 
-**The Solution:**
-We need an intelligent, automated system that acts as a digital assistant to Regulatory Officers. The system must reliably extract data from rigid PDFs, apply regulatory rules mathematically without guessing or making up numbers ("Zero Hallucination"), and ultimately keep a human in control of the final decision. 
+Instead of asking an AI to "compare these two documents," this system strictly extracts, normalizes, and mathematically compares data using Python standard libraries (`re`, `difflib`, `datetime`), ensuring that the same two documents will **always** produce the exact same variance report.
 
-**Why it matters:** 
-By automating the data entry and basic math checks, the agency significantly reduces the time it takes to review financial claims, minimizes costly human errors, and maintains an auditable trail of every decision made.
+## 2. Core Features
 
----
+- **Rule-Based Extraction Engine:** 
+  Utilizes targeted regex patterns to extract Order Numbers, Dates, Customer Names, and structured Line Items from unformatted PDF text.
+- **Table Parsing Heuristics:**
+  Intelligently splits table rows using multi-space and tab delimiters to isolate product names from quantities, unit prices, and total prices.
+- **Deterministic Field Matching:**
+  - **Exact Matching:** For hard identifiers like Order Numbers and normalized Dates.
+  - **Fuzzy Mathing (`difflib`):** For Customer Names (threshold >= 0.70) and Shipping Addresses.
+  - **Item Resolution:** Maps line items between the Order and Reference documents using a strictly calibrated `0.80` string similarity threshold.
+- **Mathematical Variance Engine:**
+  Highlights quantity mismatches and flags unit price derivations strictly beyond a ±1.0% tolerance.
+- **Deterministic Confidence Scoring:**
+  A mathematical formula calculates extraction confidence (0-100%) by penalizing "NOT_FOUND" fields and unmatched items, entirely bypassing arbitrary LLM confidence guessing.
+- **Headless CLI & Rich UI:**
+  Run heavy batch comparisons headlessly via `compare.py` or interact with the beautiful React frontend featuring Anomaly Emojis (✅❌⚠️🚨) and interactive CSS distribution charts.
 
-## 2. Features — System Breakdown & Business Value
+## 3. Architecture & Tech Stack
 
-- **Automated AI Data Extraction:**
-  - *What it does:* Uses artificial intelligence to "read" PDF reports and extract specific financial tables natively into the system.
-  - *Value:* Saves hours of manual data transcription and prevents copy-paste errors.
-
-- **Human-in-the-Loop Mapping Workbench:**
-  - *What it does:* Pauses the AI process to show the extracted numbers to a human user. The user can review, correct, or approve the numbers before any financial calculations occur.
-  - *Value:* Builds trust. The AI is purely an assistant; the human remains the final authority and auditor.
-
-- **Deterministic Rule Engine (The Math Checker):**
-  - *What it does:* Runs the exact mathematical formulas required by regulatory law (e.g., KSERC MYT Framework) on the structured, human-approved data.
-  - *Value:* Guarantees 100% mathematical accuracy. The AI never guesses the final financial outcome; hardcoded strict logic calculators do.
-
-- **Intelligent Anomaly Detection:**
-  - *What it does:* Scans the incoming data against historical baselines to flag unusual spikes in costs (like a sudden historical 50% jump in Power Purchase pricing).
-  - *Value:* Instantly highlights suspicious data naturally, directing the human auditor's attention exactly where it's needed most efficiently.
-
-- **Data-Dense Executive Dashboard & Historical Trends:**
-  - *What it does:* Displays the final accepted vs. rejected costs in a clean, comprehensive digital interface, alongside year-over-year interactive Recharts for multi-year tracking.
-  - *Value:* Provides immediate, digestible insights to executives and stakeholders without needing to read a 100-page report.
-
-- **Advanced Extensions Module:**
-  - **Scanned Document OCR:** Fallback data extraction via Tesseract for image-based PDFs without native text layers.
-  - **LLM-Based Tariff Generation:** Auto-drafts human-editable 3-paragraph regulatory narratives using `gpt-4o-mini` based on computed variance.
-  - **Live KSERC Benchmark Sync:** Natively scrapes and caches the latest regulatory orders from `erckerala.org` in the background.
-  - **Line Loss & Efficiency Analysis:** Dynamically tracks T&D trajectory deviations, computing estimated penalty Crores for violations.
-
-- **Enterprise Performance Architecture:**
-  - **Asynchronous Data Extraction Threading:** Offloads CPU-intensive PDF parsing text-extraction processes to prevent blocking core FastAPI pipelines.
-  - **Time-To-Live (TTL) Caching:** Utilizes robust in-memory caching for read-heavy executive analytical endpoints (e.g. SBU Summaries and Analytical Variance). 
-  - **Route-Level Code Splitting:** Frontend React router initialized with `React.lazy` and Suspense boundaries for heavily reduced production bundle sizes and drastically faster application boot times.
+- **Backend:** Python + FastAPI
+- **Extraction & Logic:** `PyPDF2`, `re`, `difflib`, `dateutil`
+- **Optional Reporting:** `langchain-openai` (Isolated specifically for generating a human-readable summary if an API key is provided).
+- **Frontend:** React + Tailwind CSS + Recharts
+- **Deployment:** Ready for Docker containerization.
 
 ---
 
-## 3. Implementation Overview
+## 4. Run the Application Local Demo
 
-How is the solution actually built? Imagine an automated factory assembly line with three main stations:
-
-1. **The Brain (Backend AI Pipeline):** When a user uploads a PDF, the system's "Brain" reads the document. If it gets confused, it attempts to self-correct. Once it extracts the data, it pauses the assembly line.
-2. **The Inspection Station (Frontend User Interface):** The system alerts the human worker. The human reviews the data on a clean, digital dashboard, fixes any typos the AI might have made, and hits "Approve".
-3. **The Strict Calculator (Rule Engine):** Once approved, the data flows into a strict calculator. The calculator applies the heavy regulatory math and spits out the final approved budgets and variance reports. 
-
-Everything is securely saved to a digital filing cabinet (the database) so the history of the document can be audited years later via an Audit Trail.
-
----
-
-## 4. Software & Dependencies (Plain Language)
-
-To build this modern assembly line securely, we use specific industry-standard tools:
-
-- **React, TailwindCSS & Recharts (The "Look and Feel"):** These are the tools used to build the website you click on. They ensure the dashboard is fast, interactive, and looks highly professional on any screen, utilizing Recharts for dynamic historical plotting.
-- **FastAPI (The "Traffic Cop"):** This framework handles all the data traveling between the user's screen and the server. It manages speed, scale, and ensures data is routed quickly and securely.
-- **PostgreSQL (The "Digital Filing Cabinet"):** A highly secure, enterprise-grade database that permanently stores user profiles, historical financial records, and every audit report securely.
-- **LangGraph & LangSmith (The "AI Managers"):** These tools manage the AI operations. *LangGraph* creates the step-by-step workflow for the AI to follow, ensuring it knows when to pause for human review. *LangSmith* acts as a security camera, recording every single decision the AI makes.
-- **Tesseract OCR & BeautifulSoup (The "Extractors"):** Built-in native dependencies that act as fallbacks for scanning images into text and silently fetching live internet updates from regulatory portals.
-- **Docker (The "Shipping Container"):** Docker wraps all the code, settings, and tools into a tidy isolated box. This ensures the software runs identically on any computer or cloud server in the world, preventing the classic "it works on my machine" problem.
-
----
-
-## 5. Environment Configuration
-
-Before the system can boot up, it needs a set of digital keys and instructions. These are stored in hidden configuration files called `.env` (Environment Variables). 
-
-### Where to put them
-You need to create a `.env` file inside the `backend/` folder and another `.env` file in the `frontend/` folder.
-
-### What goes inside `backend/.env`
-```env
-# The environment setting: "development" for testing on your laptop, "production" for the live internet.
-ENVIRONMENT=development
-
-# Database Connection: Tells the backend exactly where the PostgreSQL filing cabinet is located natively.
-DATABASE_URL=postgresql+asyncpg://dss_user:dss_pass@localhost:5432/arr_dss
-
-# AI Keys: Your private passwords to use OpenAI's brain and LangSmith's tracking cameras securely.
-OPENAI_API_KEY=sk-your-private-key-here
-LANGCHAIN_API_KEY=lsv2_your-private-key-here
-LANGCHAIN_TRACING_V2=true
-LANGCHAIN_PROJECT=arr_dss_pipeline
-```
-*Note: Never share these keys or post them online!*
-
-### What goes inside `frontend/.env`
-```env
-# Tells the internet browser where exactly to send data to reach the backend traffic cop operations.
-VITE_API_URL=http://localhost:8000
-```
-
----
-
-## 6. Demo Guide
-
-If you need to show the system to a client or stakeholder, follow these simple steps to start a local demonstration entirely on your laptop:
-
-**Step 1: Start the Backend (The Engine)**
-1. Open your computer's **Terminal** (on Mac, search for "Terminal"; on Windows, search for "Command Prompt").
-2. Tell the Terminal to go into the backend folder by typing this exactly and pressing Enter: 
-   ```bash
-   cd backend
-   ```
-3. Activate the secure Python workspace so the engine knows what tools to use:
-   - On Windows, type: `venv\Scripts\activate`
-   - On Mac/Linux, type: `source venv/bin/activate`
-4. Start the engine securely by typing: 
-   ```bash
-   uvicorn main:app --reload
-   ```
-   *(Leave this Terminal window open! It is quietly running the engine in the background.)*
-
-**Step 2: Start the Frontend (The User Interface)**
-1. Open a **brand new** Terminal window (do not close the first one).
-2. Tell this new Terminal to go into the frontend folder:
-   ```bash
-   cd frontend
-   ```
-3. Start drawing the website by typing: 
-   ```bash
-   npm run dev
-   ```
-
-**Step 3: Run the Demonstration**
-1. Open your everyday web browser (like Chrome or Edge) and type `http://localhost:5173` into the top address bar.
-2. **Show the Upload:** You will see the ARR Dashboard. Upload a sample KSEB PDF document here.
-3. **Show Human-in-the-Loop:** Navigate to the "Mapping Workbench" screen. Show your stakeholders how the AI extracted the numbers from the PDF. Crucially, demonstrate manually changing one number to prove the human has ultimate control.
-4. **Show the Results:** Click "Approve" and navigate to the Main Dashboard to show the final, highly accurate mathematical outputs.
-
----
-
-## 7. Production Deployment (Going Live)
-
-When it is time to move the system off your laptop and onto the live internet for real users, we use **Docker**. Docker is like a universal shipping container—it packages our entire factory up so it runs perfectly on any company server in the world.
-
-**Step 1: Prepare the Live Server**
-Ensure the live company server (like AWS, Azure, or your internal IT server) has **Docker** and **Docker Compose** installed. (Your IT team can do this in one click).
-
-**Step 2: Transfer Files and Setup Keys**
-Copy this entire project folder to the live server. Create your `.env` password files exactly as described in Section 5. 
-*Important:* Only change `ENVIRONMENT=development` to `ENVIRONMENT=production` in the backend so the system knows it is live. Ensure you replace `sk-your-private-key-here` with your actual, real passwords from OpenAI!
-
-**Step 3: Build and Launch**
-Open the server's Terminal. Ensure you are inside the main, top-level project folder (where the `docker-compose.yml` file is located). Type this single command:
-
+### 4.1 CLI Headless Execution
+You can run the core pipeline without starting the web servers:
 ```bash
-docker-compose up --build -d
+python compare.py path/to/order.pdf path/to/reference.pdf
+```
+This produces three files:
+1. `comparison_result.json`
+2. `comparison_report.txt` (Deterministic Report)
+3. `comparison_report_llm.txt` (Optional, if `OPENAI_API_KEY` is set)
+
+### 4.2 Web User Interface
+Start the backend API and the frontend UI in two separate terminals.
+
+**Terminal 1 (Backend):**
+```bash
+python -m venv venv
+venv\Scripts\activate  # Windows
+# source venv/bin/activate  # Mac/Linux
+pip install -r requirements.txt
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-**Step 4: What this single command does autonomously:**
-1. It reads the master blueprint (`docker-compose.yml`).
-2. It builds the secure PostgreSQL database locally.
-3. It installs all the Python tools and boots up the `run_prod.py` script. This script automatically checks how powerful the server is and scales the engine to run as fast as biologically possible.
-4. It builds the React website so users can log in.
-5. It ties everything together into a secure network. 
-6. The `-d` at the end of the command tells the system to run "detached"—meaning you can safely close your Terminal window and the software will stay online forever.
+**Terminal 2 (Frontend):**
+```bash
+cd frontend
+npm install
+npm start
+```
 
-The Decision Support System is now live, robust, and running securely for enterprise consumption!
+### 4.3 Navigating the UI
+1. Open `http://localhost:3000` in your browser.
+2. Login with the default credentials:
+   - **User:** `admin`
+   - **Password:** `Admin@12345678`
+3. Navigate to the **Order Compare** tab in the sidebar.
+4. Drag and drop your Order and Reference PDFs to instantly see the deterministic comparison and anomaly visualization.
 
 ---
 
-## 8. Further Reading (Documentation)
+## 5. Security & Optional LLM Setup
 
-For deeper insights into the project's sub-systems, refer to our comprehensive manuals located in the `docs/` directory:
+**No LLM Required for Core Logic**
+The system is built to run 100% offline and deterministically. However, if you would like a short 3-paragraph executive summary generated at the bottom of the comparison report:
 
-- [`docs/BEGINNERS_GUIDE.md`](./docs/BEGINNERS_GUIDE.md) - Understanding the regulatory context and core features.
-- [`docs/DEMO_GUIDE.md`](./docs/DEMO_GUIDE.md) - How to run demo data payloads and sandbox the AI logic.
-- [`docs/SECURITY.md`](./docs/SECURITY.md) - Deep dive into RBAC, authentication logic, and rate-limiting protocols.
-- [`docs/design_system.md`](./docs/design_system.md) - UI design principles, aesthetic standards, and color tokens.
+1. Create a `backend/.env` file.
+2. Add your key: `OPENAI_API_KEY=sk-...`
+
+If the key is missing or invalid, the system gracefully disables the LLM route and relies exclusively on the generated plain-text deterministic report.
