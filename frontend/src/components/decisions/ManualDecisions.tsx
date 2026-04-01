@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { AuthService } from '../../services/api';
 
 // Types matching backend API
 interface DecisionItem {
-  ai_decision_id: number;
-  deviation_report_id: number;
+  ai_decision_id: string;
+  deviation_report_id: string;
   sbu_code: string;
   cost_head: string;
   financial_year: string;
@@ -37,7 +38,7 @@ interface WorkbenchData {
 }
 
 interface JustificationForm {
-  ai_decision_id: number;
+  ai_decision_id: string;
   officer_decision: 'APPROVE' | 'PARTIAL' | 'DISALLOW';
   final_value: number;
   justification_text: string;
@@ -48,7 +49,8 @@ interface JustificationForm {
 }
 
 export const ManualDecisions: React.FC = () => {
-  const { token, user } = useAuth();
+  const { user } = useAuth();
+  const token = AuthService.getToken();
   const [selectedSBU, setSelectedSBU] = useState<string>('SBU-D');
   const [workbench, setWorkbench] = useState<WorkbenchData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -67,7 +69,7 @@ export const ManualDecisions: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/manual-decisions/workbench/${selectedSBU}`, {
+      const response = await fetch(`/api/v1/justifications/workbench/${selectedSBU}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -113,7 +115,7 @@ export const ManualDecisions: React.FC = () => {
     setError(null);
 
     try {
-      const response = await fetch('/api/manual-decisions/submit', {
+      const response = await fetch('/api/v1/justifications', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -121,7 +123,7 @@ export const ManualDecisions: React.FC = () => {
         },
         body: JSON.stringify({
           ...formData,
-          officer_name: user.username || user.email || 'Unknown Officer'
+          officer_value: formData.final_value,
         })
       });
 

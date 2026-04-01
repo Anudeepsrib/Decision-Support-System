@@ -40,6 +40,8 @@ CORS_ALLOWED_ORIGINS = os.getenv(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown events"""
+    from backend.models.database import init_db
+    init_db()
     yield
 
 # ─── Application Initialization ───

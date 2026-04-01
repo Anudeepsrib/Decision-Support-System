@@ -49,7 +49,7 @@ class TestExternalFactorDetector:
     def test_detect_capex_overrun_numerical(self):
         detector = ExternalFactorDetector()
         # 35% overrun (>30% threshold)
-        result = detector.detect("", 100, 135)
+        result = detector.detect("", 100, 100, 135)
         
         assert result.detected is True
         assert result.category == ExternalFactorCategory.CAPEX_OVERRUN

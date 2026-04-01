@@ -32,7 +32,7 @@ class TestOrderGenerator:
                 approved_value=1450000000,
                 actual_value=1480000000,
                 final_value=1480000000,
-                ai_recommendation=DecisionType.APPROVE,
+                ai_recommendation=DecisionType.APPROVE, ai_value=0.0, officer_value=None,
                 officer_decision=None,
                 decision_mode=DecisionMode.AI_AUTO,
                 ai_justification="Variance within limits",
@@ -69,7 +69,7 @@ class TestOrderGenerator:
                 approved_value=1450000000,
                 actual_value=None,
                 final_value=0,
-                ai_recommendation=DecisionType.PARTIAL,
+                ai_recommendation=DecisionType.PARTIAL, ai_value=0.0, officer_value=None,
                 officer_decision=None,
                 decision_mode=DecisionMode.PENDING_MANUAL,
                 ai_justification="High variance detected",
@@ -95,7 +95,8 @@ class TestOrderGenerator:
             order_id="TU-2024-25-SBU-D-003",
             financial_year="2024-25",
             sbu_code="SBU-D",
-            order_date="31.03.2024"
+            order_date="31.03.2024",
+            is_draft=False
         )
         
         decisions = [
@@ -107,7 +108,7 @@ class TestOrderGenerator:
                 approved_value=1450000000,
                 actual_value=1480000000,
                 final_value=1460000000,
-                ai_recommendation=DecisionType.APPROVE,
+                ai_recommendation=DecisionType.APPROVE, ai_value=0.0, officer_value=None,
                 officer_decision=DecisionType.PARTIAL,
                 decision_mode=DecisionMode.MANUAL_OVERRIDE,
                 ai_justification="AI recommended approval",
@@ -121,7 +122,7 @@ class TestOrderGenerator:
         result = generator.generate(metadata, decisions)
         
         assert result.is_draft is False
-        assert "Commission's Analysis and Justification" in result.html_content
+        assert "Commission’s Analysis and Justification:" in result.html_content
         assert "Officer reviewed and approved partial" in result.html_content
         assert "CapEx_Overrun" in result.html_content
     
@@ -137,7 +138,7 @@ class TestOrderGenerator:
                 approved_value=1450000000,
                 actual_value=1480000000,
                 final_value=1480000000,
-                ai_recommendation=DecisionType.APPROVE,
+                ai_recommendation=DecisionType.APPROVE, ai_value=0.0, officer_value=None,
                 officer_decision=None,
                 decision_mode=DecisionMode.AI_AUTO,
                 ai_justification="Variance within limits",
@@ -165,7 +166,7 @@ class TestOrderGenerator:
                 approved_value=1450000000,
                 actual_value=None,
                 final_value=0,
-                ai_recommendation=DecisionType.PARTIAL,
+                ai_recommendation=DecisionType.PARTIAL, ai_value=0.0, officer_value=None,
                 officer_decision=None,
                 decision_mode=DecisionMode.PENDING_MANUAL,
                 ai_justification="High variance",
@@ -194,7 +195,7 @@ class TestOrderGenerator:
                 approved_value=1450000000,
                 actual_value=1480000000,
                 final_value=1460000000,
-                ai_recommendation=DecisionType.APPROVE,
+                ai_recommendation=DecisionType.APPROVE, ai_value=0.0, officer_value=None,
                 officer_decision=DecisionType.PARTIAL,
                 decision_mode=DecisionMode.MANUAL_OVERRIDE,
                 ai_justification="AI recommended approval",
@@ -230,7 +231,7 @@ class TestOrderGenerator:
                 approved_value=1450000000,
                 actual_value=1480000000,
                 final_value=1480000000,
-                ai_recommendation=DecisionType.APPROVE,
+                ai_recommendation=DecisionType.APPROVE, ai_value=0.0, officer_value=None,
                 officer_decision=None,
                 decision_mode=DecisionMode.AI_AUTO,
                 ai_justification="Within limits",
@@ -273,7 +274,7 @@ class TestOrderGenerator:
                 approved_value=1450000000,
                 actual_value=1480000000,
                 final_value=1480000000,
-                ai_recommendation=DecisionType.APPROVE,
+                ai_recommendation=DecisionType.APPROVE, ai_value=0.0, officer_value=None,
                 officer_decision=None,
                 decision_mode=DecisionMode.AI_AUTO,
                 ai_justification="Within limits",
@@ -290,7 +291,7 @@ class TestOrderGenerator:
                 approved_value=4200000000,
                 actual_value=4800000000,
                 final_value=4500000000,
-                ai_recommendation=DecisionType.PARTIAL,
+                ai_recommendation=DecisionType.PARTIAL, ai_value=0.0, officer_value=None,
                 officer_decision=DecisionType.PARTIAL,
                 decision_mode=DecisionMode.MANUAL_OVERRIDE,
                 ai_justification="High variance",
@@ -326,7 +327,7 @@ class TestOrderGenerator:
                 approved_value=4200000000,
                 actual_value=4800000000,
                 final_value=4500000000,
-                ai_recommendation=DecisionType.PARTIAL,
+                ai_recommendation=DecisionType.PARTIAL, ai_value=0.0, officer_value=None,
                 officer_decision=DecisionType.PARTIAL,
                 decision_mode=DecisionMode.MANUAL_OVERRIDE,
                 ai_justification="High variance detected",

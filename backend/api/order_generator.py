@@ -34,12 +34,16 @@ class DecisionInput(BaseModel):
     actual_value: Optional[float] = None
     final_value: float
     ai_recommendation: str
+    ai_value: float
     officer_decision: Optional[str] = None
+    officer_value: Optional[float] = None
     decision_mode: str
     ai_justification: str
     officer_justification: Optional[str] = None
     regulatory_clause: str
     external_factor_category: Optional[str] = None
+    created_by: Optional[str] = None
+    created_at: Optional[str] = None
 
 
 class GenerateOrderRequest(BaseModel):
@@ -115,12 +119,16 @@ def _to_decision_items(inputs: List[DecisionInput]) -> List[DecisionItem]:
             actual_value=inp.actual_value,
             final_value=inp.final_value,
             ai_recommendation=inp.ai_recommendation,
+            ai_value=inp.ai_value,
             officer_decision=inp.officer_decision,
+            officer_value=inp.officer_value,
             decision_mode=inp.decision_mode,
             ai_justification=inp.ai_justification,
             officer_justification=inp.officer_justification,
             regulatory_clause=inp.regulatory_clause,
             external_factor_category=inp.external_factor_category,
+            created_by=inp.created_by,
+            created_at=inp.created_at,
             decision_marker=marker
         ))
     return items
@@ -150,6 +158,15 @@ async def generate_order(
     
     # Validate can finalize
     can_finalize, issues = generator.validate_order_can_finalize(decision_items)
+    
+    if not req.force_draft and not can_finalize:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Cannot finalize order — pending manual decisions or blocking issues found",
+                "issues": issues
+            }
+        )
     
     # Calculate totals
     total_approved = sum(d.approved_value for d in decision_items)
@@ -266,9 +283,9 @@ async def finalize_order(
     
     if not can_finalize:
         raise HTTPException(
-            status_code=400,
+            status_code=409,
             detail={
-                "message": "Cannot finalize order — blocking issues found",
+                "message": "Cannot finalize order — pending manual decisions or blocking issues found",
                 "issues": issues
             }
         )

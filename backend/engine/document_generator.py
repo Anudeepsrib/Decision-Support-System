@@ -56,7 +56,9 @@ class DecisionItem:
     
     # Decision
     ai_recommendation: str
+    ai_value: float
     officer_decision: Optional[str]
+    officer_value: Optional[float]
     decision_mode: str
     
     # Justification
@@ -69,6 +71,10 @@ class DecisionItem:
     
     # Marker
     decision_marker: str  # [A], [M], [P]
+    
+    # Audit info
+    created_by: Optional[str] = None
+    created_at: Optional[str] = None
 
 
 @dataclass
@@ -200,7 +206,7 @@ class KSERCOrderGenerator:
             <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg);
                         font-size: 72px; color: rgba(255, 0, 0, 0.15); font-weight: bold;
                         pointer-events: none; z-index: 1000;">
-                DRAFT — PENDING REVIEW
+                DRAFT — MANUAL DECISIONS PENDING
             </div>
             """
         
@@ -336,6 +342,8 @@ class KSERCOrderGenerator:
             if d.external_factor_category:
                 external_factor_note = f"<br><em>External Factor Detected: {d.external_factor_category}</em>"
             
+            actual_str = f"₹{d.actual_value:,.2f}" if d.actual_value is not None else "₹0.00"
+            
             findings += f"""
             <div style="margin: 15px 0; padding: 10px; border-left: 3px solid {'#4CAF50' if d.decision_mode == DecisionMode.AI_AUTO.value else '#FF9800'};">
                 <p style="margin: 0; font-weight: bold;">
@@ -343,7 +351,7 @@ class KSERCOrderGenerator:
                 </p>
                 <p style="margin: 5px 0; font-size: 11px;">
                     Approved: ₹{d.approved_value:,.2f} | 
-                    Actual: ₹{d.actual_value:,.2f if d.actual_value else 0:,.2f} | 
+                    Actual: {actual_str} | 
                     Variance: {variance_pct:.1f}%
                     {external_factor_note}
                 </p>
@@ -386,17 +394,21 @@ class KSERCOrderGenerator:
             # Justification block
             justification_block = ""
             if d.decision_mode == DecisionMode.MANUAL_OVERRIDE.value and d.officer_justification:
+                officer_val_str = f"₹{d.officer_value:,.2f}" if d.officer_value is not None else "N/A"
                 justification_block = f"""
                 <div style="background-color: #FFF8E1; padding: 10px; margin: 10px 0; border: 1px solid #FFB74D;">
                     <p style="margin: 0; font-weight: bold; color: #E65100;">
-                        Commission's Analysis and Justification:
+                        Commission’s Analysis and Justification:
                     </p>
+                    <ul style="margin: 5px 0; font-size: 11px;">
+                        <li>AI Recommendation: ₹{d.ai_value:,.2f}</li>
+                        <li>Final Decision: {officer_val_str}</li>
+                    </ul>
                     <p style="margin: 5px 0; font-size: 11px;">
-                        <strong>AI Recommendation:</strong> {d.ai_recommendation}<br>
-                        <strong>Final Decision:</strong> {final_decision}<br>
-                        <strong>Officer Justification:</strong> {d.officer_justification}
+                        {d.officer_justification}
                     </p>
-                    {f"<p style='margin: 5px 0; font-size: 11px;'><em>External Factor: {d.external_factor_category}</em></p>" if d.external_factor_category else ""}
+                    {f"<p style='margin: 5px 0; font-size: 11px;'>External Factor: {d.external_factor_category}</p>" if d.external_factor_category else ""}
+                    {f"<p style='margin: 5px 0; font-size: 11px;'>Decision By: {d.created_by}<br>Date: {d.created_at}</p>" if d.created_by else ""}
                 </div>
                 """
             

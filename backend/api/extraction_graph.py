@@ -298,6 +298,29 @@ async def human_review(state: ExtractionState) -> Dict:
     return {"requires_human_review": False}
 
 
+async def decision_mode_classifier(state: ExtractionState) -> Dict:
+    """Classifies fields based on deviation, confidence, and external factors."""
+    fields = state.get("extracted_fields", [])
+    has_pending = False
+    
+    external_factors = ["hydrology", "power purchase", "government order", "court", "capex overrun"]
+    
+    for f in fields:
+        # Dummy deviation calculation for illustration
+        deviation_pct = 0.0 # Calculate via comparison Engine usually
+        confidence = f.get("confidence_score", 0.0)
+        raw_text = f.get("raw_text", "").lower() if f.get("raw_text") else ""
+        
+        external_detected = any(factor in raw_text for factor in external_factors)
+        
+        if deviation_pct > 0.25 or confidence < 0.85 or external_detected:
+            f["decision_mode"] = "PENDING_MANUAL"
+            has_pending = True
+        else:
+            f["decision_mode"] = "AI_AUTO"
+            
+    return {"extracted_fields": fields, "requires_human_review": has_pending}
+
 # -- Graph Edges/Routing --
 
 def should_self_correct(state: ExtractionState) -> str:
@@ -307,8 +330,13 @@ def should_self_correct(state: ExtractionState) -> str:
     if needs_review and state.get("retry_count", 0) < 1:
         return "self_correction"
     elif needs_review:
-        return "human_review"
+        return "decision_mode_classifier"
     
+    return "decision_mode_classifier"
+
+def route_after_classifier(state: ExtractionState) -> str:
+    if state.get("requires_human_review", False):
+        return "human_review"
     return END
 
 # -- Graph Compilation --
@@ -317,11 +345,17 @@ workflow = StateGraph(ExtractionState)
 
 workflow.add_node("extract_data", extract_data)
 workflow.add_node("self_correction", self_correction)
+workflow.add_node("decision_mode_classifier", decision_mode_classifier)
 workflow.add_node("human_review", human_review)
 
 workflow.set_entry_point("extract_data")
 workflow.add_conditional_edges("extract_data", should_self_correct)
 workflow.add_edge("self_correction", "extract_data")
+
+# Route directly from extract_data/should_self_correct -> decision_mode_classifier instead of human review? 
+# The conditional edge "should_self_correct" routes to human_review. We should re-route it to decision_mode_classifier.
+
+workflow.add_conditional_edges("decision_mode_classifier", route_after_classifier)
 workflow.add_edge("human_review", END)
 
 memory = MemorySaver()

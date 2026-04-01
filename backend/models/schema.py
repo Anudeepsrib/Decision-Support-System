@@ -6,9 +6,11 @@ Database: PostgreSQL (relational) for audited ARR heads.
 
 from datetime import datetime
 from enum import Enum as PyEnum
+import uuid
+
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean, DateTime, Text, JSON,
-    ForeignKey, Enum, UniqueConstraint, Index
+    ForeignKey, Enum, UniqueConstraint, Index, Uuid
 )
 from sqlalchemy.orm import relationship, declarative_base
 
@@ -80,7 +82,7 @@ class ARRComponent(Base):
     """
     __tablename__ = "arr_components"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
     sbu_code = Column(Enum(SBUType), nullable=False, index=True)  # SBU Partitioning: SBU-G, SBU-T, SBU-D
     financial_year = Column(String(10), nullable=False, index=True)  # e.g., "2024-25"
     cost_head = Column(Enum(CostHeadType), nullable=False)
@@ -88,6 +90,7 @@ class ARRComponent(Base):
     approved_amount = Column(Float, nullable=False)
     actual_amount = Column(Float, nullable=True)  # Null until human-verified
     variance = Column(Float, nullable=True)
+    decision_mode = Column(Enum(DecisionMode), default=DecisionMode.AI_AUTO) # Added per requirement
     is_human_verified = Column(Boolean, default=False)
     verified_by = Column(String(100), nullable=True)
     verified_at = Column(DateTime, nullable=True)
@@ -113,7 +116,7 @@ class RuleSet(Base):
     """
     __tablename__ = "rule_sets"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
     version = Column(String(50), nullable=False, unique=True)  # e.g., "KSERC-MYT-2022-27-v1.0"
     order_date = Column(String(20), nullable=False)
     description = Column(Text, nullable=True)
@@ -137,12 +140,12 @@ class AuditTrail(Base):
     """
     __tablename__ = "audit_trails"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
     checksum = Column(String(64), nullable=False, unique=True, index=True)  # SHA-256 for integrity
     sbu_code = Column(Enum(SBUType), nullable=False, index=True)  # SBU Partitioning
-    rule_set_id = Column(Integer, ForeignKey("rule_sets.id"), nullable=False)
-    arr_component_id = Column(Integer, ForeignKey("arr_components.id"), nullable=True)
+    rule_set_id = Column(Uuid, ForeignKey("rule_sets.id"), nullable=False)
+    arr_component_id = Column(Uuid, ForeignKey("arr_components.id"), nullable=True)
     scenario_label = Column(String(100), nullable=False)
     cost_head = Column(String(50), nullable=False)
     variance_category = Column(String(20), nullable=False)
@@ -174,9 +177,9 @@ class MappingRecord(Base):
     """
     __tablename__ = "mapping_records"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
     sbu_code = Column(Enum(SBUType), nullable=False, index=True)  # SBU Partitioning
-    arr_component_id = Column(Integer, ForeignKey("arr_components.id"), nullable=False)
+    arr_component_id = Column(Uuid, ForeignKey("arr_components.id"), nullable=False)
     ai_suggested_head = Column(String(100), nullable=False)
     ai_suggested_category = Column(String(50), nullable=False)
     ai_confidence = Column(Float, nullable=False)  # 0.0 to 1.0
@@ -202,9 +205,9 @@ class ExtractionEvidence(Base):
     """
     __tablename__ = "extraction_evidence"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
     sbu_code = Column(Enum(SBUType), nullable=False, index=True)  # SBU Partitioning
-    arr_component_id = Column(Integer, ForeignKey("arr_components.id"), nullable=False)
+    arr_component_id = Column(Uuid, ForeignKey("arr_components.id"), nullable=False)
     source_filename = Column(String(255), nullable=False)
     page_number = Column(Integer, nullable=False)
     table_index = Column(Integer, nullable=True)  # Which table on the page
@@ -228,7 +231,7 @@ class KSERCBenchmark(Base):
     """
     __tablename__ = "kserc_benchmarks"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
     financial_year = Column(String(10), nullable=False, index=True)
     metric_name = Column(String(100), nullable=False) # e.g., "Approved_Distribution_Loss_Percent"
     metric_value = Column(Float, nullable=False)
@@ -249,7 +252,7 @@ class HistoricalRecord(Base):
     """
     __tablename__ = "historical_records"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
     financial_year = Column(String(10), nullable=False, unique=True, index=True) # e.g. "2022-23"
     
     # Core Aggregates 
@@ -275,7 +278,7 @@ class PetitionData(Base):
     """
     __tablename__ = "petition_data"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
     sbu_code = Column(Enum(SBUType), nullable=False, index=True)
     financial_year = Column(String(10), nullable=False, index=True)
     petition_id = Column(String(100), nullable=False, index=True)
@@ -314,7 +317,7 @@ class ARRData(Base):
     """
     __tablename__ = "arr_data"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
     sbu_code = Column(Enum(SBUType), nullable=False, index=True)
     financial_year = Column(String(10), nullable=False, index=True)
     order_reference = Column(String(100), nullable=False)  # e.g., "OP 15/2025"
@@ -352,7 +355,7 @@ class DeviationReport(Base):
     """
     __tablename__ = "deviation_reports"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
     sbu_code = Column(Enum(SBUType), nullable=False, index=True)
     financial_year = Column(String(10), nullable=False, index=True)
     cost_head = Column(Enum(CostHeadType), nullable=False)
@@ -393,8 +396,8 @@ class AIDecision(Base):
     """
     __tablename__ = "ai_decisions"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    deviation_report_id = Column(Integer, ForeignKey("deviation_reports.id"), nullable=False)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    deviation_report_id = Column(Uuid, ForeignKey("deviation_reports.id"), nullable=False)
     
     # AI Recommendation
     decision = Column(Enum(DecisionType), nullable=False)
@@ -430,42 +433,44 @@ class AIDecision(Base):
 class ManualJustification(Base):
     """
     Officer's manual override with mandatory justification.
-    Part of the Human-in-the-Loop system.
+    Updated per master prompt.
     """
     __tablename__ = "manual_justifications"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    ai_decision_id = Column(Integer, ForeignKey("ai_decisions.id"), nullable=False)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    case_id = Column(Uuid, ForeignKey("petition_data.id"), nullable=True) # Assuming case maps to PetitionData
+    ai_decision_id = Column(Uuid, ForeignKey("ai_decisions.id"), nullable=False)
     
-    # Officer Information
-    officer_name = Column(String(100), nullable=False)
-    officer_designation = Column(String(100), nullable=True)
-    decided_at = Column(DateTime, default=datetime.utcnow)
+    sbu = Column(String(50), nullable=False)
+    section_code = Column(String(100), nullable=True)
+    line_item_label = Column(String(200), nullable=False)
     
-    # Decision Override
-    officer_decision = Column(Enum(DecisionType), nullable=False)
-    final_value = Column(Float, nullable=False, default=0.0)
+    ai_recommendation = Column(String(50), nullable=False) # e.g. "APPROVE", "DISALLOW"
+    ai_value = Column(Float, nullable=False, default=0.0)
+    
+    officer_decision = Column(String(50), nullable=False)
+    officer_value = Column(Float, nullable=False, default=0.0)
     
     # Justification (MANDATORY for overrides)
     justification_text = Column(Text, nullable=False)
-    external_factor_category = Column(Enum(ExternalFactorCategory), nullable=True)
-    external_factor_description = Column(Text, nullable=True)
+    external_factor_category = Column(String(100), nullable=True)
     
-    # Audit Metadata
-    ip_address = Column(String(50), nullable=True)
-    session_id = Column(String(100), nullable=True)
+    is_override = Column(Boolean, nullable=False, default=False)
+    created_by = Column(String(100), nullable=False)
     
-    # Compliance Reference
-    electricity_act_section = Column(String(50), nullable=True)
-    kserc_regulation_ref = Column(String(100), nullable=True)
+    document_section_ref = Column(String(100), nullable=True)
+    
+    # Soft deletion
+    is_deleted = Column(Boolean, default=False)
     
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     ai_decision = relationship("AIDecision")
 
     def __repr__(self):
-        return f"<ManualJustification(officer={self.officer_name}, decision={self.officer_decision.value})>"
+        return f"<ManualJustification(created_by={self.created_by}, decision={self.officer_decision})>"
 
 
 class FinalOrder(Base):
@@ -475,7 +480,7 @@ class FinalOrder(Base):
     """
     __tablename__ = "final_orders"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
     order_id = Column(String(100), nullable=False, unique=True, index=True)
     
     # Order Metadata
@@ -528,12 +533,12 @@ class OverrideAuditLog(Base):
     """
     __tablename__ = "override_audit_logs"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
     
     # Action Reference
     action_type = Column(String(50), nullable=False)  # "OVERRIDE", "EDIT", "GENERATE"
     entity_type = Column(String(50), nullable=False)  # "AIDecision", "ManualJustification", "FinalOrder"
-    entity_id = Column(Integer, nullable=False)
+    entity_id = Column(Uuid, nullable=False)
     
     # Actor Information
     officer_name = Column(String(100), nullable=False)
@@ -566,3 +571,4 @@ class OverrideAuditLog(Base):
 
     def __repr__(self):
         return f"<OverrideAuditLog(action={self.action_type}, officer={self.officer_name})>"
+
