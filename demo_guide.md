@@ -324,7 +324,7 @@ Use default demo credentials:
 
 | Issue | Solution |
 |-------|----------|
-| "No decisions in workbench" | Backend has sample data pre-loaded. If empty, run `populate_sample_decisions()` in Python console |
+| "No decisions in workbench" | The system requires initialized data via `python demo_e2e.py` or database migrations. |
 | "Cannot submit decision" | Check justification length—must be 20+ chars (50+ for overrides) |
 | "Order generation fails" | Verify all decisions are reviewed (no [P] Pending remaining) |
 | "PDF extraction fails" | Ensure PDF contains extractable text (not scanned images without OCR) |
@@ -336,7 +336,9 @@ Use default demo credentials:
 1. **Reset Demo Data** (optional):
    ```bash
    cd backend
-   python -c "from api.manual_decisions import _manual_decision_store, _ai_decision_store; _manual_decision_store.clear(); _ai_decision_store.clear(); populate_sample_decisions()"
+   # Delete the local SQLite DB to start fresh
+   rm kserc_truing_up.db
+   # The database tables will be auto-recreated on next startup
    ```
 
 2. **Export Demo Report**:

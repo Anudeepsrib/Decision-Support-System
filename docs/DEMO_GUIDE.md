@@ -450,7 +450,7 @@ Use demo credentials:
 
 | Issue | Solution |
 |-------|----------|
-| "No decisions in workbench" | Sample data auto-populates. If empty, restart backend or run `populate_sample_decisions()` |
+| "No decisions in workbench" | Sample data auto-populates on db creation. If empty, restart backend or run `python demo_e2e.py` |
 | "Cannot submit decision" | Check justification length — must be 20+ chars (50+ for overrides) |
 | "Order generation fails" | Verify all decisions reviewed (no [P] Pending remaining) |
 | "PDF extraction fails" | Ensure PDF contains extractable text, not just scanned images |
@@ -486,13 +486,10 @@ Use demo credentials:
 2. **Reset Demo Data** (if needed):
    ```bash
    cd backend
-   python -c "
-   from api.manual_decisions import _manual_decision_store, _ai_decision_store
-   _manual_decision_store.clear()
-   _ai_decision_store.clear()
-   populate_sample_decisions()
-   print('Demo data reset complete')
-   "
+   # Discard local SQlite database
+   rm kserc_truing_up.db
+   # The application will automatically rebuild tables on restart
+   echo 'Demo data reset complete'
    ```
 
 ### Feedback Collection

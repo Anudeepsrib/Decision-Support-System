@@ -226,12 +226,9 @@ frontend/
 
 ## Next Steps
 
-1. **Database Migration**: Create Alembic migration for new models
-2. **Frontend Integration**: Connect to backend APIs (currently using mock data)
-3. **PDF Export**: Add PDF generation capability to order generator
-4. **Role-Based Access**: Fine-tune permissions for decision.write vs decision.read
-5. **Email Notifications**: Alert officers when decisions require review
-6. **LangGraph Pipeline**: Full workflow orchestration (optional enhancement)
+1. **PDF Export**: Add PDF generation capability to order generator
+2. **Role-Based Access**: Fine-tune permissions for decision.write vs decision.read
+3. **Email Notifications**: Alert officers when decisions require review
 
 ---
 
@@ -245,6 +242,6 @@ frontend/
 
 ---
 
-**Implementation Date**: March 31, 2026  
+**Implementation Date**: April 2026 (Updated)  
 **Version**: 3.0.0  
-**Status**: Production Ready (Pending Database Migration)
+**Status**: Production Ready
