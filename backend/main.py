@@ -1,9 +1,8 @@
 """
 Enterprise FastAPI Application Entry Point
-Production-grade security, monitoring, and compliance
-=====================================================
-Refactored: Non-comparison features commented out.
-Focus: Document Comparison & Anomaly Detection only.
+Production-grade AI + Human-in-the-Loop Regulatory Decision Support System
+============================================================================
+KSERC Truing-Up Order Generation with full auditability and compliance.
 """
 
 import os
@@ -15,19 +14,14 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from contextlib import asynccontextmanager
 import asyncio
 
-# ─── Active Routers (Comparison + Auth) ───
+# ─── Active Routers ───
 from backend.api.auth import router as auth_router
 from backend.api.order_comparison import router as comparison_router
+from backend.api.mapping import router as mapping_router
+from backend.api.manual_decisions import router as manual_decisions_router
+from backend.api.order_generator import router as order_generator_router
 
-# ─── Commented Out: Non-comparison features ───
-# from backend.api.extraction import router as extraction_router
-# from backend.api.mapping import router as mapping_router
-# from backend.api.reports import router as reports_router
-# from backend.api.tariff_generator import router as tariff_router
-# from backend.api.history import router as history_router
-# from backend.api.efficiency import router as efficiency_router
-# from backend.api.scheduler import kserc_periodic_sync_loop
-
+# ─── Security Middleware ───
 from backend.security.rate_limit import (
     RateLimitMiddleware,
     SecurityHeadersMiddleware,
@@ -46,20 +40,17 @@ CORS_ALLOWED_ORIGINS = os.getenv(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown events"""
-    # KSERC sync commented out — not needed for comparison-only mode
-    # kserc_sync_task = asyncio.create_task(kserc_periodic_sync_loop(interval_seconds=86400))
     yield
-    # kserc_sync_task.cancel()
 
 # ─── Application Initialization ───
 app = FastAPI(
-    title="Document Comparison & Anomaly Detection System",
+    title="KSERC Truing-Up Decision Support System",
     description=(
-        "Deterministic order vs reference document comparison engine. "
-        "Uses regex extraction, difflib similarity, and rule-based anomaly detection. "
-        "No LLM required for comparison — LLM is optional for report generation only."
+        "AI + Human-in-the-Loop regulatory decision system for KSERC Truing-Up Order generation. "
+        "Features: Document comparison, AI-assisted analysis, manual officer overrides, "
+        "audit logging, and KSERC-compliant order generation with embedded justifications."
     ),
-    version="2.0.0",
+    version="3.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
@@ -106,34 +97,41 @@ app.add_middleware(
     max_age=600,
 )
 
-# ─── Register API Routes (Comparison + Auth only) ───
+# ─── Register API Routes ───
 app.include_router(auth_router)
 app.include_router(comparison_router)
-
-# Commented out: Non-comparison routers
-# app.include_router(extraction_router)
-# app.include_router(mapping_router)
-# app.include_router(reports_router)
-# app.include_router(tariff_router)
-# app.include_router(history_router)
-# app.include_router(efficiency_router)
+app.include_router(mapping_router)
+app.include_router(manual_decisions_router)
+app.include_router(order_generator_router)
 
 
 # ─── Health Check Endpoints ───
 @app.get("/", tags=["Health"])
 async def root():
     return {
-        "service": "Document Comparison & Anomaly Detection",
-        "version": "2.0.0",
-        "mode": "deterministic",
+        "service": "KSERC Truing-Up Decision Support System",
+        "version": "3.0.0",
+        "mode": "ai-human-in-the-loop",
         "status": "operational",
         "environment": ENVIRONMENT,
+        "features": [
+            "document_comparison",
+            "ai_decision_support",
+            "manual_override",
+            "kserc_order_generation",
+            "audit_trail"
+        ]
     }
 
 
 @app.get("/health", tags=["Health"])
 async def health_check():
-    return {"status": "healthy", "engine": "deterministic-comparator-v2.0"}
+    return {
+        "status": "healthy",
+        "engine": "rule-engine-v1.0",
+        "decision_modes": ["AI_AUTO", "PENDING_MANUAL", "MANUAL_OVERRIDE"],
+        "compliance": ["Electricity Act 2003", "KSERC MYT Regulations 2021"]
+    }
 
 @app.get("/security/status", tags=["Security"])
 async def security_status():
@@ -142,7 +140,8 @@ async def security_status():
             "authentication": "JWT with RBAC",
             "rate_limiting": "enabled",
             "brute_force_protection": "enabled",
-            "security_headers": "enabled"
+            "security_headers": "enabled",
+            "audit_logging": "enabled"
         },
         "environment": ENVIRONMENT
     }

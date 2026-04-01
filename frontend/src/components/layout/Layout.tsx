@@ -28,10 +28,9 @@ export function Layout({ children }: LayoutProps) {
 
   const navItems = [
     { path: '/', label: 'Dashboard', icon: '📊' },
-    // { path: '/upload', label: 'Upload PDF', icon: '📤' },
-    // { path: '/mapping', label: 'Mapping Workbench', icon: '🔗' },
-    // { path: '/reports', label: 'Reports', icon: '📈' },
-    { path: '/compare', label: 'Order Compare', icon: '📋' },
+    { path: '/compare', label: 'Order Compare', icon: '�' },
+    { path: '/mapping', label: 'Mapping Workbench', icon: '🔗' },
+    { path: '/decisions', label: 'Manual Decisions', icon: '✓' },
   ];
 
   const roleColor: Record<string, string> = {

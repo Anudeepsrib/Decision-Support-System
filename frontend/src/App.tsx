@@ -8,11 +8,8 @@ import { Layout } from './components/layout/Layout';
 // Route-level code splitting
 const Dashboard = React.lazy(() => import('./components/dashboard/Dashboard').then(module => ({ default: module.Dashboard })));
 const OrderComparison = React.lazy(() => import('./components/comparison/OrderComparison').then(module => ({ default: module.OrderComparison })));
-
-// Commented out: Non-comparison routes
-// const PDFUploader = React.lazy(() => import('./components/extraction/PDFUploader').then(module => ({ default: module.PDFUploader })));
-// const MappingWorkbench = React.lazy(() => import('./components/mapping/MappingWorkbench').then(module => ({ default: module.MappingWorkbench })));
-// const ReportDashboard = React.lazy(() => import('./components/reports/ReportDashboard').then(module => ({ default: module.ReportDashboard })));
+const ManualDecisions = React.lazy(() => import('./components/decisions/ManualDecisions').then(module => ({ default: module.ManualDecisions })));
+const MappingWorkbench = React.lazy(() => import('./components/mapping/MappingWorkbench').then(module => ({ default: module.MappingWorkbench })));
 
 function App() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -32,10 +29,8 @@ function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/compare" element={<OrderComparison />} />
-            {/* Commented out: Non-comparison routes */}
-            {/* <Route path="/upload" element={<PDFUploader onUploadComplete={(r) => console.log(r)} />} /> */}
-            {/* <Route path="/mapping" element={<MappingWorkbench />} /> */}
-            {/* <Route path="/reports" element={<ReportDashboard />} /> */}
+            <Route path="/decisions" element={<ManualDecisions />} />
+            <Route path="/mapping" element={<MappingWorkbench />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
