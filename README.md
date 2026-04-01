@@ -1,166 +1,130 @@
 <div align="center">
+  <img src="frontend/public/dss_logo.png" alt="KSERC DSS Logo" width="150" style="border-radius: 20%; margin-bottom: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
+  
+  <h1 style="margin-top: 0;">KSERC Decision Support System ⚡</h1>
+  
+  <p><b>"AI-Assisted Regulatory Decisions. Zero Hallucination. 100% Audit Trail."</b></p>
+  
+  <p>An enterprise-grade, Human-in-the-Loop AI platform for generating KSERC Truing-Up Orders under the Multi-Year Tariff Framework 2022-27.</p>
 
-# ⚡ KSERC Truing-Up AI Decision Support System
+  <p>
+    <a href="https://github.com/Anudeepsrib/Decision-Support-System">
+      <img src="https://img.shields.io/github/stars/Anudeepsrib/Decision-Support-System?style=for-the-badge&logo=github" alt="GitHub stars" />
+    </a>
+    <a href="https://github.com/Anudeepsrib/Decision-Support-System">
+      <img src="https://img.shields.io/github/forks/Anudeepsrib/Decision-Support-System?style=for-the-badge&logo=github" alt="GitHub forks" />
+    </a>
+    <a href="https://github.com/Anudeepsrib/Decision-Support-System/blob/main/LICENSE">
+      <img src="https://img.shields.io/github/license/Anudeepsrib/Decision-Support-System?style=for-the-badge" alt="License" />
+    </a>
+  </p>
 
-**Enterprise-Grade Regulatory Decision Platform with Human-in-the-Loop Intelligence**
+  <p>
+    <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white" alt="Python" />
+    <img src="https://img.shields.io/badge/FastAPI-0.100+-005571?style=flat&logo=fastapi" alt="FastAPI" />
+    <img src="https://img.shields.io/badge/React-18+-20232A?style=flat&logo=react&logoColor=61DAFB" alt="React" />
+    <img src="https://img.shields.io/badge/PostgreSQL-14+-336791?style=flat&logo=postgresql&logoColor=white" alt="PostgreSQL" />
+    <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker&logoColor=white" alt="Docker" />
+  </p>
 
-[![Status](https://img.shields.io/badge/Status-Production_Ready-success?style=for-the-badge&logo=checkmark&color=2E7D32)](https://github.com/Anudeepsrib/Decision-Support-System)
-[![Version](https://img.shields.io/badge/Version-3.0.0-blue?style=for-the-badge&logo=semver&color=1565C0)](https://github.com/Anudeepsrib/Decision-Support-System/releases)
-[![License](https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge)](LICENSE)
-
-![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-005571?style=flat&logo=fastapi)
-![React](https://img.shields.io/badge/React-18+-20232A?style=flat&logo=react&logoColor=61DAFB)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14+-336791?style=flat&logo=postgresql&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker&logoColor=white)
-
-**KSERC Compliant | Zero Hallucination | 100% Audit Trail**
-
-[Quick Start](#quick-start) • [Features](#key-features) • [Architecture](#architecture) • [Documentation](#documentation) • [API Reference](#api-reference)
-
+  <p>
+    <a href="#-core-features">Features</a> •
+    <a href="#-quick-start">Quick Start</a> •
+    <a href="#%EF%B8%8F-tech-stack">Tech Stack</a> •
+    <a href="#-architecture">Architecture</a> •
+    <a href="#-api-reference">API Reference</a>
+  </p>
+  
+  <a href="https://github.com/Anudeepsrib/Decision-Support-System">
+    <img src="https://github-readme-stats.vercel.app/api/pin/?username=Anudeepsrib&repo=Decision-Support-System&theme=radical&show_owner=true" alt="Readme Card" />
+  </a>
 </div>
 
 ---
 
-## 🎯 Overview
+## ⚡ What is Truing-Up?
 
-The **KSERC Truing-Up AI Decision Support System** is a production-grade regulatory platform designed for the **Kerala State Electricity Regulatory Commission (KSERC)**. It automates the generation of Truing-Up Orders under the Multi-Year Tariff (MYT) Framework 2022-27 while ensuring strict compliance with the Electricity Act, 2003.
+Truing-Up is the regulatory process of reconciling the **Approved Annual Revenue Requirement (ARR)** against **Actual audited expenditure** at the end of each financial year. The Commission must compare petition claims, apply gain/loss sharing mechanisms per Regulation 9, and generate legally defensible orders with full justifications.
 
-### What is Truing-Up?
-
-Truing-Up is the regulatory process of reconciling the **Approved Annual Revenue Requirement (ARR)** against **Actual audited expenditure** at the end of each financial year. The Commission must:
-- Compare Petition claims vs Approved vs Actual figures
-- Apply Gain/Loss Sharing mechanisms per Regulation 9
-- Generate legally defensible orders with full justifications
-
-This system transforms weeks of manual spreadsheet analysis into a **3-hour AI-assisted workflow** with mandatory human oversight.
+**This system transforms weeks of manual spreadsheet analysis into a 3-hour AI-assisted workflow with mandatory human oversight.**
 
 ---
 
-## 🚀 Key Features
+## 🛡️ Compliance & Auditability Promise
 
-### 1. 🤖 AI + Human-in-the-Loop Decision Engine
+Every decision made within this platform is traceable, justifiable, and legally defensible.
 
-| Decision Mode | Description | Trigger |
-|--------------|-------------|---------|
-| **[A] AI Auto** | Fully automated approval | Variance < 25%, confidence ≥ 0.85, no external factors |
-| **[P] Pending Manual** | Requires officer review | Variance ≥ 25%, external factors detected, low confidence |
-| **[M] Manual Override** | Officer overrides AI | Mandatory justification required (min 50 chars) |
-
-### 2. 🔍 External Factor Detection
-
-Automatically detects and flags:
-- **Hydrology**: Poor monsoon, drought, flood conditions
-- **Power Purchase Volatility**: Fuel price spikes, market volatility
-- **Government Mandates**: Policy changes, subsidy adjustments
-- **Court Orders**: Legal interventions affecting tariffs
-- **CapEx Overruns**: Capital expenditure exceeding 30% threshold
-- **Force Majeure**: Natural disasters, pandemics
-
-### 3. 📋 KSERC-Compliant Document Generation
-
-Generates structured Truing-Up Orders with 8 mandatory sections:
-1. Introduction
-2. Regulatory Framework (Electricity Act 2003, Sections 61, 62, 64)
-3. Petition Summary
-4. SBU-wise Analysis (SBU-G, SBU-T, SBU-D)
-5. Deviations & Findings
-6. Commission Decisions
-7. Final Order
-8. Appendix (Manual Decisions Summary)
-
-**Hard Compliance Rules:**
-- ✅ No hallucination of financial values
-- ✅ Mandatory justification for all overrides
-- ✅ Draft watermark blocks finalization if pending decisions exist
-- ✅ Embedded decision markers [A], [M], [P] for audit trail
-
-### 4. 🛡️ Enterprise Security & Audit
-
-- **JWT Authentication** with Role-Based Access Control (RBAC)
-- **SHA-256 Checksums** for document integrity
-- **Immutable Audit Logs** — Every override tracked with officer identity, timestamp, IP
-- **Zero-Hallucination Enforcement** — Actual values require human verification
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>🚫 Zero Hallucination</h3>
+      <p>Financial values are never fabricated. The rule engine enforces that all actual figures require human verification before entering any order.</p>
+    </td>
+    <td width="50%" valign="top">
+      <h3>🔒 Enterprise Security</h3>
+      <p>JWT Authentication with Role-Based Access Control (RBAC). SHA-256 checksums ensure document integrity across the entire pipeline.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>📜 Immutable Audit Trail</h3>
+      <p>Every override is permanently tracked with officer identity, timestamp, IP address, and full justification. Nothing is ever silently changed.</p>
+    </td>
+    <td width="50%" valign="top">
+      <h3>⚖️ KSERC Regulatory Compliance</h3>
+      <p>Full alignment with the Electricity Act 2003 (Sections 61, 62, 64) and KSERC MYT Regulations 2021 including gain/loss sharing mechanisms.</p>
+    </td>
+  </tr>
+</table>
 
 ---
 
-## 🏗️ Architecture
+## ✨ Core Features
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    TRUING-UP PIPELINE                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐       │
-│   │  Petition   │    │    ARR      │    │   Actuals   │       │
-│   │   PDF       │    │   Orders    │    │   Audited   │       │
-│   └──────┬──────┘    └──────┬──────┘    └──────┬──────┘       │
-│          │                  │                  │              │
-│          ▼                  ▼                  ▼              │
-│   ┌─────────────────────────────────────────────────────┐    │
-│   │          EXTRACTION LAYER (PyPDF2 + OCR)              │    │
-│   │   • Layout-aware table parsing                       │    │
-│   │   • Confidence scoring                               │    │
-│   │   • Source provenance (page, table, cell refs)     │    │
-│   └─────────────────────┬───────────────────────────────┘    │
-│                         │                                      │
-│                         ▼                                      │
-│   ┌─────────────────────────────────────────────────────┐    │
-│   │        DECISION MODE CLASSIFIER                     │    │
-│   │   • Variance analysis (>25% threshold)               │    │
-│   │   • External factor detection                      │    │
-│   │   • Confidence evaluation (<0.85 threshold)        │    │
-│   └─────────────────────┬───────────────────────────────┘    │
-│                         │                                      │
-│           ┌─────────────┼─────────────┐                       │
-│           ▼             ▼             ▼                       │
-│      ┌────────┐    ┌────────┐    ┌────────┐                   │
-│      │ AI_AUTO│    │ PENDING│    │ MANUAL │                   │
-│      │  [A]   │    │ [P]    │    │OVERRIDE│                   │
-│      └────┬───┘    └───┬────┘    └───┬────┘                   │
-│           │            │            │                         │
-│           │            ▼            │                         │
-│           │    ┌──────────────┐    │                         │
-│           │    │ Officer Review│    │                         │
-│           │    │ + Justification│   │                         │
-│           │    └──────────────┘    │                         │
-│           │            │            │                         │
-│           └────────────┼────────────┘                         │
-│                        ▼                                      │
-│   ┌─────────────────────────────────────────────────────┐    │
-│   │      DOCUMENT GENERATOR (KSERC 8-Section Format)   │    │
-│   │   • Draft watermark (if pending decisions)          │    │
-│   │   • Justification insertion                       │    │
-│   │   • Regulatory clause citations                     │    │
-│   └─────────────────────────────────────────────────────┘    │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Tech Stack
-
-| Layer | Technology | Purpose |
-|-------|-----------|---------|
-| **Backend** | Python 3.10+, FastAPI | High-performance API server |
-| **Frontend** | React 18, TypeScript, Tailwind CSS | Responsive enterprise UI |
-| **Database** | PostgreSQL 14+ | Relational data with JSON support |
-| **Document Processing** | PyPDF2, Tesseract OCR | PDF text and table extraction |
-| **AI/ML** | Custom classifiers (no LLM for core logic) | Decision mode classification |
-| **Security** | JWT, bcrypt, RBAC | Enterprise authentication |
-| **Deployment** | Docker, Docker Compose | Containerized deployment |
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <b>🤖 AI + Human-in-the-Loop</b><br/>
+      Three decision modes: <b>[A] AI Auto</b> for low-variance items, <b>[P] Pending</b> for flagged items requiring officer review, and <b>[M] Manual Override</b> with mandatory justification.
+    </td>
+    <td width="33%" valign="top">
+      <b>🔍 External Factor Detection</b><br/>
+      Automatically detects hydrology events, power purchase volatility, government mandates, court orders, CapEx overruns, and force majeure conditions.
+    </td>
+    <td width="33%" valign="top">
+      <b>📋 8-Section Order Generation</b><br/>
+      Generates structured KSERC Truing-Up Orders with regulatory citations, SBU-wise analysis, deviation findings, and embedded decision markers.
+    </td>
+  </tr>
+  <tr>
+    <td width="33%" valign="top">
+      <b>📄 Intelligent Extraction</b><br/>
+      Layout-aware PDF parsing with confidence scoring and source provenance tracking (page, table, cell references) for every extracted value.
+    </td>
+    <td width="33%" valign="top">
+      <b>🎛️ Manual Decision Workbench</b><br/>
+      A dedicated officer workspace for reviewing flagged items, submitting justifications, and overriding AI recommendations with full audit logging.
+    </td>
+    <td width="33%" valign="top">
+      <b>🐳 Production-Ready Deployment</b><br/>
+      Fully containerized with Docker Compose. Includes PostgreSQL persistence, health checks, and a production deployment checklist.
+    </td>
+  </tr>
+</table>
 
 ---
 
-## ⚡ Quick Start
+## 🚀 Quick Start
+
+Get the platform running locally in under 10 minutes.
 
 ### Prerequisites
-
 - Python 3.10+
 - Node.js 18+
 - PostgreSQL 14+
-- (Optional) Tesseract OCR for scanned documents
+- (Optional) Tesseract OCR for scanned document support
 
-### 1. Clone & Setup
+### 1. Clone & Bootstrap
 
 ```bash
 git clone https://github.com/Anudeepsrib/Decision-Support-System.git
@@ -200,36 +164,148 @@ cd backend
 alembic upgrade head
 ```
 
-### 4. Start Development Servers
+### 4. Launch
 
+Launch two terminal windows to start the backend engine and frontend interface.
+
+**Terminal 1 — Backend API Server:**
 ```bash
-# Terminal 1: Backend
 cd backend
+source venv/bin/activate  # Windows: venv\Scripts\activate
 uvicorn main:app --reload --port 8000
+```
 
-# Terminal 2: Frontend
+**Terminal 2 — React Frontend:**
+```bash
 cd frontend
 npm start
 ```
 
 ### 5. Access the Application
 
-- **Web UI**: http://localhost:3000
-- **API Docs**: http://localhost:8000/docs
-- **Admin Login**: `admin` / `Admin@12345678` (change in production)
+| Endpoint | URL |
+|----------|-----|
+| **Web UI** | [http://localhost:3000](http://localhost:3000) |
+| **API Docs** | [http://localhost:8000/docs](http://localhost:8000/docs) |
+| **Admin Login** | `admin` / `Admin@12345678` (change in production) |
 
 ---
 
-## 📚 Documentation
+## 🛠️ Tech Stack
 
-| Document | Description |
-|----------|-------------|
-| [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) | Complete technical implementation details |
-| [docs/BEGINNERS_GUIDE.md](docs/BEGINNERS_GUIDE.md) | Plain-English guide for new users |
-| [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md) | Step-by-step demo scenarios |
-| [docs/SECURITY.md](docs/SECURITY.md) | Security architecture & compliance |
-| [docs/design_system.md](docs/design_system.md) | UI/UX design principles |
-| [docs/PROPOSAL_VS_IMPLEMENTATION.md](docs/PROPOSAL_VS_IMPLEMENTATION.md) | Feature mapping & roadmap |
+<table>
+  <tr>
+    <th width="50%">Frontend (React SPA)</th>
+    <th width="50%">Backend (Decision Engine)</th>
+  </tr>
+  <tr>
+    <td valign="top">
+      <ul>
+        <li><b>Framework:</b> React 18 + TypeScript</li>
+        <li><b>Styling:</b> Tailwind CSS</li>
+        <li><b>Build:</b> Create React App</li>
+        <li><b>Language:</b> TypeScript</li>
+      </ul>
+    </td>
+    <td valign="top">
+      <ul>
+        <li><b>API:</b> FastAPI (Python 3.10+)</li>
+        <li><b>Database:</b> PostgreSQL 14+</li>
+        <li><b>AI/ML:</b> Custom Decision Classifiers</li>
+        <li><b>Security:</b> JWT + bcrypt + RBAC</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <th width="50%">Document Processing</th>
+    <th width="50%">Infrastructure</th>
+  </tr>
+  <tr>
+    <td valign="top">
+      <ul>
+        <li><b>PDF Extraction:</b> PyPDF2</li>
+        <li><b>OCR:</b> Tesseract (optional)</li>
+        <li><b>Table Parsing:</b> Layout-aware engine</li>
+        <li><b>Integrity:</b> SHA-256 checksums</li>
+      </ul>
+    </td>
+    <td valign="top">
+      <ul>
+        <li><b>Containers:</b> Docker + Docker Compose</li>
+        <li><b>Migrations:</b> Alembic</li>
+        <li><b>Orchestration:</b> Kubernetes (k8s)</li>
+        <li><b>Monitoring:</b> Prometheus / Grafana</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+---
+
+## 🏗️ Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                     TRUING-UP PIPELINE                          │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐        │
+│   │  Petition   │    │    ARR      │    │   Actuals   │        │
+│   │   PDF       │    │   Orders    │    │   Audited   │        │
+│   └──────┬──────┘    └──────┬──────┘    └──────┬──────┘        │
+│          │                  │                   │               │
+│          ▼                  ▼                   ▼               │
+│   ┌──────────────────────────────────────────────────────┐     │
+│   │          EXTRACTION LAYER (PyPDF2 + OCR)             │     │
+│   │   • Layout-aware table parsing                       │     │
+│   │   • Confidence scoring                               │     │
+│   │   • Source provenance (page, table, cell refs)        │     │
+│   └─────────────────────┬────────────────────────────────┘     │
+│                         │                                       │
+│                         ▼                                       │
+│   ┌──────────────────────────────────────────────────────┐     │
+│   │        DECISION MODE CLASSIFIER                      │     │
+│   │   • Variance analysis (>25% threshold)               │     │
+│   │   • External factor detection                        │     │
+│   │   • Confidence evaluation (<0.85 threshold)          │     │
+│   └─────────────────────┬────────────────────────────────┘     │
+│                         │                                       │
+│           ┌─────────────┼─────────────┐                        │
+│           ▼             ▼             ▼                        │
+│      ┌────────┐    ┌────────┐    ┌────────┐                    │
+│      │ AI_AUTO│    │ PENDING│    │ MANUAL │                    │
+│      │  [A]   │    │  [P]   │    │OVERRIDE│                    │
+│      └────┬───┘    └───┬────┘    └───┬────┘                    │
+│           │            │             │                          │
+│           │            ▼             │                          │
+│           │    ┌──────────────┐      │                          │
+│           │    │ Officer Review│     │                          │
+│           │    │+ Justification│     │                          │
+│           │    └──────────────┘      │                          │
+│           │            │             │                          │
+│           └────────────┼─────────────┘                          │
+│                        ▼                                        │
+│   ┌──────────────────────────────────────────────────────┐     │
+│   │      DOCUMENT GENERATOR (KSERC 8-Section Format)     │     │
+│   │   • Draft watermark (if pending decisions)           │     │
+│   │   • Justification insertion                          │     │
+│   │   • Regulatory clause citations                      │     │
+│   └──────────────────────────────────────────────────────┘     │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🤖 Decision Modes
+
+The system classifies every line item into one of three decision modes based on variance, confidence, and external factors.
+
+| Mode | Label | Trigger Criteria | Action |
+|------|-------|------------------|--------|
+| **AI Auto** | `[A]` | Variance < 25%, confidence ≥ 0.85, no external factors | Fully automated approval |
+| **Pending Manual** | `[P]` | Variance ≥ 25%, external factors detected, low confidence | Requires officer review |
+| **Manual Override** | `[M]` | Officer overrides AI recommendation | Mandatory justification (min 50 chars) |
 
 ---
 
@@ -271,42 +347,36 @@ POST   /api/mapping/confirm
 
 ---
 
-## 🎭 Demo Scenarios
+## ⚙️ Configuration
 
-### Scenario 1: AI Auto-Approval (Happy Path)
-1. Upload Petition PDF with 2% variance from Approved ARR
-2. System classifies as **[A] AI Auto**
-3. Decision appears in Final Order automatically
+Your instance can be customized via the `.env` file:
 
-### Scenario 2: External Factor Detection
-1. Upload Petition citing "monsoon failure" and 30% variance
-2. System detects **Hydrology** external factor
-3. Flags as **[P] Pending Manual** for officer review
-4. Officer reviews and confirms with justification
+```env
+# Database Connection
+DATABASE_URL=postgresql://user:pass@localhost/kserc_dss
 
-### Scenario 3: Manual Override
-1. AI recommends **DISALLOW** for controllable loss
-2. Officer overrides to **PARTIAL** with 50-char justification
-3. System marks **[M] Manual Override** in Appendix
-4. Justification embedded verbatim in Final Order
+# JWT Authentication
+JWT_SECRET_KEY=your-secret-key-here
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# Optional: AI-assisted executive summaries
+# OPENAI_API_KEY=sk-...
+
+# Core decision logic is fully offline — no external AI dependency
+```
 
 ---
 
-## 🧪 Testing
+## 📊 Success Metrics
 
-```bash
-# Run all tests
-cd backend
-pytest tests/ -v --tb=short
-
-# Run specific test suites
-pytest tests/test_decision_classifier.py -v
-pytest tests/test_document_generator.py -v
-pytest tests/test_order_comparison.py -v
-
-# With coverage
-pytest --cov=backend --cov-report=html
-```
+| Metric | Target | Status |
+|--------|--------|--------|
+| **Extraction Accuracy** | ≥ 90% | ✅ Implemented |
+| **Decision Alignment** | ≥ 85% | ✅ AI + Human Review |
+| **Audit Traceability** | 100% | ✅ SHA-256 + Immutable Logs |
+| **Zero Hallucination** | 0 fabricated values | ✅ Rule Engine Enforcement |
+| **Order Generation Time** | < 3 hours | ✅ (vs. 2 weeks manual) |
 
 ---
 
@@ -335,49 +405,39 @@ docker-compose up -d
 
 ---
 
-## 📊 Success Metrics
+## 📚 Documentation
 
-| Metric | Target | Status |
-|--------|--------|--------|
-| Extraction Accuracy | ≥ 90% | ✅ Implemented |
-| Decision Alignment | ≥ 85% | ✅ AI + Human Review |
-| Audit Traceability | 100% | ✅ SHA-256 + Immutable Logs |
-| Zero Hallucination | 0 fabricated values | ✅ Rule Engine Enforcement |
-| Order Generation Time | < 3 hours | ✅ (vs. 2 weeks manual) |
+| Document | Description |
+|----------|-------------|
+| [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) | Complete technical implementation details |
+| [Beginner's Guide](docs/BEGINNERS_GUIDE.md) | Plain-English guide for new users |
+| [Demo Guide](docs/DEMO_GUIDE.md) | Step-by-step demo scenarios |
+| [Security Architecture](docs/SECURITY.md) | Security architecture & compliance |
+| [Design System](docs/design_system.md) | UI/UX design principles |
 
 ---
 
-## ⚖️ Compliance & Regulatory Framework
+## ⚖️ Regulatory Framework
+
+This platform is built for strict compliance with Indian electricity regulation:
 
 - **Electricity Act, 2003** — Sections 61, 62, 64
 - **KSERC Multi-Year Tariff Regulations, 2021**
-- **Regulation 5.1** — O&M Escalation (CPI:WPI 70:30)
-- **Regulation 6.3** — Normative Interest (SBI EBLR + 2%)
-- **Regulation 7.4** — T&D Loss Target Trajectory
-- **Regulation 9.2** — Controllable Gains Sharing (2/3 Utility, 1/3 Consumer)
-- **Regulation 9.3** — Controllable Loss Disallowance (100% Utility borne)
-- **Regulation 9.4** — Uncontrollable Pass-Through (100% Consumer recovery)
+  - **Regulation 5.1** — O&M Escalation (CPI:WPI 70:30)
+  - **Regulation 6.3** — Normative Interest (SBI EBLR + 2%)
+  - **Regulation 7.4** — T&D Loss Target Trajectory
+  - **Regulation 9.2** — Controllable Gains Sharing (2/3 Utility, 1/3 Consumer)
+  - **Regulation 9.3** — Controllable Loss Disallowance (100% Utility borne)
+  - **Regulation 9.4** — Uncontrollable Pass-Through (100% Consumer recovery)
 
 ---
 
-## 🤝 Contributing
-
-This is a proprietary system developed for KSERC. For issues or feature requests, please contact:
-
-**Project Maintainer**: [Anudeep Sribhashyam](mailto:anudeep.sribhashyam@example.com)
-
----
-
-## 📜 License
-
-**Proprietary Software** — All rights reserved. Unauthorized use, reproduction, or distribution is strictly prohibited.
+## ⚠️ Disclaimer
+**Regulatory Decision Support Only:** This platform is a decision-support tool designed to assist regulatory officers. It does **not** replace the legal authority of the Commission. All final decisions carry legal weight only when approved and signed by authorized KSERC officers.
 
 ---
 
 <div align="center">
-
-**Built with ❤️ for Kerala State Electricity Regulatory Commission**
-
-*Ensuring Fair, Transparent, and Efficient Tariff Regulation*
-
+  <p>Built with ❤️ for the Kerala State Electricity Regulatory Commission</p>
+  <p><i>Ensuring Fair, Transparent, and Efficient Tariff Regulation</i></p>
 </div>
