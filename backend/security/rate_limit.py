@@ -3,7 +3,8 @@ Rate Limiting & DDoS Protection Module
 Implements enterprise-grade request throttling and abuse prevention
 """
 
-from fastapi import Request, HTTPException, status
+from fastapi import Request, status
+from fastapi.responses import JSONResponse
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from typing import Dict, Tuple, Optional
@@ -14,8 +15,8 @@ import hashlib
 # ─── Rate Limiting Configuration ───
 RATE_LIMIT_CONFIG = {
     "default": {"requests": 100, "window": 60},  # 100 requests per minute
-    "auth": {"requests": 5, "window": 60},      # 5 login attempts per minute
-    "upload": {"requests": 10, "window": 60},    # 10 uploads per minute
+    "auth": {"requests": 100, "window": 60},     # INCREASED: 100 login/me attempts per min
+    "upload": {"requests": 50, "window": 60},    # 50 uploads per minute
     "api": {"requests": 1000, "window": 60},     # 1000 API calls per minute
     "sensitive": {"requests": 10, "window": 60}, # 10 sensitive operations per minute
 }
@@ -92,9 +93,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         )
         
         if not is_allowed:
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Rate limit exceeded. Try again in {reset_time} seconds.",
+                content={"detail": f"Rate limit exceeded. Try again in {reset_time} seconds."},
                 headers={
                     "X-RateLimit-Limit": str(config["requests"]),
                     "X-RateLimit-Remaining": "0",

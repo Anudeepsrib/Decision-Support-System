@@ -20,6 +20,11 @@ from backend.api.order_comparison import router as comparison_router
 from backend.api.mapping import router as mapping_router
 from backend.api.manual_decisions import router as manual_decisions_router
 from backend.api.order_generator import router as order_generator_router
+from backend.api.history import router as history_router
+from backend.api.extraction import router as extraction_router
+from backend.api.reports import router as reports_router
+from backend.api.efficiency import router as efficiency_router
+from backend.api.tariff_generator import router as tariff_router
 
 # ─── Security Middleware ───
 from backend.security.rate_limit import (
@@ -71,6 +76,14 @@ async def global_exception_handler(request: Request, exc: Exception):
     Sanitize HTTP 500 Internal Server Errors to prevent stack-trace leakages.
     Log the traceback securely on the backend, return a uniform payload.
     """
+    if isinstance(exc, HTTPException):
+        from starlette.responses import JSONResponse
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers=getattr(exc, "headers", None)
+        )
+
     if DEBUG:
         print(f"Unhandled Error: {exc}")
         traceback.print_exc()
@@ -105,6 +118,11 @@ app.include_router(comparison_router)
 app.include_router(mapping_router)
 app.include_router(manual_decisions_router)
 app.include_router(order_generator_router)
+app.include_router(history_router)
+app.include_router(extraction_router)
+app.include_router(reports_router)
+app.include_router(efficiency_router)
+app.include_router(tariff_router)
 
 
 # ─── Health Check Endpoints ───

@@ -49,6 +49,9 @@ class PasswordChangeRequest(BaseModel):
     current_password: str
     new_password: str
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
 # ─── Login Endpoint ───
 @router.post("/login", response_model=LoginResponse)
 async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
@@ -113,9 +116,9 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
 
 # ─── Token Refresh ───
 @router.post("/refresh", response_model=Token)
-async def refresh_token(refresh_token: str):
+async def refresh_token(request: RefreshTokenRequest):
     """Refresh access token using refresh token"""
-    token_data = SecurityManager.decode_token(refresh_token)
+    token_data = SecurityManager.decode_token(request.refresh_token)
     
     if not token_data or token_data.username is None:
         raise HTTPException(
