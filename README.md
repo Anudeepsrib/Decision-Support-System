@@ -3,9 +3,9 @@
   
   <h1 style="margin-top: 0;">KSERC Decision Support System ⚡</h1>
   
-  <p><b>"AI-Assisted Regulatory Decisions. Zero Hallucination. 100% Audit Trail."</b></p>
+  <p><b>"AI-Assisted Regulatory Decisions. Zero Hallucination. 100% Audit Trail. Demo Mode Available."</b></p>
   
-  <p>An enterprise-grade, Human-in-the-Loop AI platform for generating KSERC Truing-Up Orders under the Multi-Year Tariff Framework 2022-27.</p>
+  <p>An enterprise-grade, Human-in-the-Loop AI platform for generating KSERC Truing-Up Orders under the Multi-Year Tariff Framework 2022-27. Features dual-mode operation: Production mode for regulatory use and Demo mode for frictionless demonstrations.</p>
 
   <p>
     <a href="https://github.com/Anudeepsrib/Decision-Support-System">
@@ -32,7 +32,8 @@
     <a href="#-quick-start">Quick Start</a> •
     <a href="#%EF%B8%8F-tech-stack">Tech Stack</a> •
     <a href="#-architecture">Architecture</a> •
-    <a href="#-api-reference">API Reference</a>
+    <a href="#-api-reference">API Reference</a> •
+    <a href="#-demo-mode">Demo Mode</a>
   </p>
   
   <a href="https://github.com/Anudeepsrib/Decision-Support-System">
@@ -153,6 +154,11 @@ JWT_SECRET_KEY=your-secret-key-here
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 
+# Demo Mode Configuration
+DEMO_MODE=false                    # Set to 'true' for demo mode
+REACT_APP_DEMO_MODE=false         # Frontend demo flag
+DEMO_CASE_ID=demo-case-001        # Demo case identifier
+
 # Optional: OpenAI for executive summaries only
 # OPENAI_API_KEY=sk-...  # Core logic works 100% offline
 ```
@@ -188,10 +194,60 @@ npm start
 | **Web UI** | [http://localhost:3000](http://localhost:3000) |
 | **API Docs** | [http://localhost:8000/docs](http://localhost:8000/docs) |
 | **Admin Login** | `admin` / `Admin@12345678` (change in production) |
+| **Demo Mode** | Set `DEMO_MODE=true` in `.env` and restart |
 
 ---
 
-## 🛠️ Tech Stack
+## 🎭 Demo Mode
+
+The system features a dual-mode architecture for both production use and frictionless demonstrations:
+
+### 🎬 Demo Mode Features
+
+When `DEMO_MODE=true`, the system provides:
+- **🚀 Auto-logged demo user** - No authentication required
+- **📊 Pre-seeded demo data** - Sample case with realistic financial data
+- **⚡ Automated decisions** - All `PENDING_MANUAL` auto-converted to `MANUAL_OVERRIDE`
+- **📝 Auto-generated justifications** - Marked `[AUTO-GENERATED IN DEMO MODE]`
+- **� Draft-only PDF generation** - Demo watermark: "DEMO MODE — NOT FOR REGULATORY USE"
+- **🔓 Bypassed validations** - No blocking validation gates
+- **🎨 Demo UI indicators** - Banner and info panels showing demo status
+
+### 🏭 Production Mode Features
+
+When `DEMO_MODE=false` (default):
+- **🔐 Full authentication** - JWT with role-based access control
+- **📋 Manual data input** - No auto-seeded data
+- **⚖️ Strict validations** - All regulatory rules enforced
+- **📄 Full PDF generation** - Both DRAFT and FINAL modes available
+- **🚫 Blocking rules** - FINAL PDF blocked if pending decisions exist
+- **📝 Manual justifications** - Required for all overrides
+
+### 🔄 Switching Modes
+
+```bash
+# Enable Demo Mode
+echo "DEMO_MODE=true" >> .env
+echo "REACT_APP_DEMO_MODE=true" >> frontend/.env
+
+# Disable Demo Mode (Production)
+sed -i 's/DEMO_MODE=true/DEMO_MODE=false/' .env
+sed -i 's/REACT_APP_DEMO_MODE=true/REACT_APP_DEMO_MODE=false/' frontend/.env
+
+# Restart services after changing mode
+# Backend: Ctrl+C and restart uvicorn
+# Frontend: Ctrl+C and restart npm start
+```
+
+### 📖 Demo Guide
+
+For complete demo scenarios and scripts, see:
+- [Demo Guide](demo_guide.md) - Quick demo scenarios
+- [Complete Demo Guide](docs/DEMO_GUIDE.md) - Detailed walkthrough
+
+---
+
+## �🛠️ Tech Stack
 
 <table>
   <tr>
@@ -412,8 +468,10 @@ docker-compose up -d
 | [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) | Complete technical implementation details |
 | [Beginner's Guide](docs/BEGINNERS_GUIDE.md) | Plain-English guide for new users |
 | [Demo Guide](docs/DEMO_GUIDE.md) | Step-by-step demo scenarios |
+| [Quick Demo Guide](demo_guide.md) | Fast demo scenarios for presentations |
 | [Security Architecture](docs/SECURITY.md) | Security architecture & compliance |
 | [Design System](docs/design_system.md) | UI/UX design principles |
+| [Demo vs Production Validation](docs/DEMO_VALIDATION_REPORT.md) | Complete validation report for dual-mode system |
 
 ---
 

@@ -1,6 +1,30 @@
 # Quick Demo Guide: KSERC Truing-Up AI Decision Support System
 
-*Quick-start scenarios for demonstrating the Human-in-the-Loop regulatory decision platform.*
+*Quick-start scenarios for demonstrating the Human-in-the-Loop regulatory decision platform with Demo Mode support.*
+
+---
+
+## 🎭 Demo Mode Overview
+
+This system supports **dual-mode operation**:
+- **🏭 Production Mode**: Full authentication, manual data input, strict validations
+- **🎬 Demo Mode**: Frictionless demonstrations with auto-seeded data and bypassed validations
+
+### Quick Demo Mode Setup
+
+```bash
+# Enable Demo Mode
+echo "DEMO_MODE=true" >> .env
+echo "REACT_APP_DEMO_MODE=true" >> frontend/.env
+
+# Restart services
+# Backend: Ctrl+C and restart uvicorn
+# Frontend: Ctrl+C and restart npm start
+
+# Access Demo
+# Web UI: http://localhost:3000 (auto-logged in as Demo Admin)
+# Demo case pre-loaded: demo-case-001
+```
 
 ---
 
@@ -49,7 +73,9 @@ npm start
 
 ### Step 4: Login
 
-Use default demo credentials:
+**Demo Mode**: Auto-logged in as "Demo Admin" (no login required)
+
+**Production Mode**: Use demo credentials:
 
 | Username | Password | Role |
 |----------|----------|------|
@@ -58,6 +84,16 @@ Use default demo credentials:
 ---
 
 ## 🎭 Demo Scenarios
+
+### 🎬 Demo Mode Quick Flow (2 minutes)
+
+**Perfect for presentations** - Demo Mode provides a frictionless experience:
+
+1. **Enable Demo Mode** (see setup above)
+2. **Access Web UI** - Auto-logged as Demo Admin
+3. **Demo Case Pre-loaded** - `demo-case-001` with sample data
+4. **All Decisions Auto-processed** - No manual input required
+5. **Generate Demo PDF** - Draft with "DEMO MODE — NOT FOR REGULATORY USE" watermark
 
 ### Scenario 1: AI Auto-Approval (Happy Path) ⭐
 
@@ -320,7 +356,37 @@ Use default demo credentials:
 
 ---
 
-## 🛠️ Troubleshooting Demo Issues
+## � Demo Mode vs Production Mode
+
+| Feature | Demo Mode | Production Mode |
+|---------|-----------|----------------|
+| **Authentication** | Auto-login as Demo Admin | Full JWT login required |
+| **Data Source** | Pre-seeded demo data | Manual upload/entry required |
+| **Decision Processing** | Auto-convert PENDING → OVERRIDE | Manual review required |
+| **Justifications** | Auto-generated with `[AUTO-GENERATED IN DEMO MODE]` | Manual entry required |
+| **PDF Generation** | Draft only with demo watermark | Draft + Final modes available |
+| **Validations** | Bypassed for frictionless demo | Strictly enforced |
+| **UI Indicators** | Demo banner and info panels | Standard production UI |
+
+---
+
+## 🎯 Demo Mode Talking Points
+
+### For Stakeholders
+- "**Zero setup required** - Demo mode runs out-of-the-box with sample data"
+- "**Complete workflow** - From data ingestion to PDF generation in 3 minutes"
+- "**Safe for demos** - All outputs marked 'NOT FOR REGULATORY USE'"
+- "**Production ready** - Same codebase, just flip the environment switch"
+
+### Technical Benefits
+- "**Dual-mode architecture** - Single codebase supports both demo and production"
+- "**No data leakage** - Demo data never appears in production mode"
+- "**Full feature parity** - All functionality available in both modes"
+- "**Instant setup** - No database migrations or data preparation required"
+
+---
+
+## �🛠️ Troubleshooting Demo Issues
 
 | Issue | Solution |
 |-------|----------|
@@ -333,30 +399,48 @@ Use default demo credentials:
 
 ## 📝 Post-Demo Actions
 
-1. **Reset Demo Data** (optional):
-   ```bash
-   cd backend
-   # Delete the local SQLite DB to start fresh
-   rm kserc_truing_up.db
-   # The database tables will be auto-recreated on next startup
-   ```
+### Reset Demo Data (Demo Mode)
 
-2. **Export Demo Report**:
-   - Navigate to Order Preview
-   - Click "Export PDF" (if implemented)
-   - Share generated order document
+```bash
+# Clear demo data (optional)
+cd backend
+python -m backend.scripts.seed_demo_data --clear
 
-3. **Feedback Collection**:
-   - What features were most impressive?
-   - What additional functionality is needed?
-   - Timeline for production deployment?
+# Or just restart - demo data auto-seeds fresh
+```
+
+### Export Demo Report
+- Navigate to PDF Generation Center
+- Click "Generate Demo PDF"
+- Download generated order with demo watermark
+
+### Switch to Production Mode
+
+```bash
+# Disable Demo Mode
+sed -i 's/DEMO_MODE=true/DEMO_MODE=false/' .env
+sed -i 's/REACT_APP_DEMO_MODE=true/REACT_APP_DEMO_MODE=false/' frontend/.env
+
+# Restart services
+# Backend: Ctrl+C and restart uvicorn
+# Frontend: Ctrl+C and restart npm start
+```
+
+### Feedback Collection
+- Which demo scenario was most impressive?
+- How does this compare to current manual processes?
+- Timeline for production deployment?
+- Additional features needed?
 
 ---
 
 <div align="center">
 
-**Demo Script Version 3.0.0**
+**Demo Script Version 3.1.0 - With Demo Mode Support**
 
 *For questions: support@kserc-dss.gov.in*
+
+**🎬 Demo Mode: Enable frictionless demonstrations**
+**🏭 Production Mode: Full regulatory compliance**
 
 </div>

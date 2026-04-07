@@ -47,6 +47,14 @@ async def lifespan(app: FastAPI):
     """Application startup and shutdown events"""
     from backend.models.database import init_db
     init_db()
+    
+    # Seed demo data if in demo mode
+    try:
+        from backend.scripts.seed_demo_data import seed_demo_data_if_needed
+        seed_demo_data_if_needed()
+    except Exception as e:
+        print(f"Warning: Demo data seeding failed: {e}")
+    
     yield
 
 # ─── Application Initialization ───

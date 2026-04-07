@@ -1,8 +1,8 @@
 # 🎬 KSERC Truing-Up DSS — Complete Demo Guide
 
-**Version:** 3.0.0 | **Last Updated:** March 31, 2026
+**Version:** 3.1.0 | **Last Updated:** April 6, 2026
 
-This guide walks you through a complete demonstration of the AI + Human-in-the-Loop Decision Support System using the included demo data.
+This guide walks you through a complete demonstration of the AI + Human-in-the-Loop Decision Support System using the included demo data. Features dual-mode operation for both production use and frictionless demonstrations.
 
 ---
 
@@ -39,9 +39,19 @@ cd ..
 
 ### Step 2: Initialize Demo Data
 
+**Demo Mode (Recommended for demos):**
 ```bash
-# The backend automatically populates sample decisions on startup
-# No manual initialization required
+# Enable Demo Mode
+echo "DEMO_MODE=true" >> .env
+echo "REACT_APP_DEMO_MODE=true" >> frontend/.env
+
+# Demo data auto-seeds on startup - no manual initialization required
+```
+
+**Production Mode:**
+```bash
+# Demo mode disabled by default
+# Data must be manually uploaded via the UI
 ```
 
 ### Step 3: Start the Backend
@@ -69,7 +79,13 @@ Frontend will start at: `http://localhost:3000`
 
 ### Step 5: Login
 
-Use demo credentials:
+**Demo Mode:**
+- Auto-logged in as "Demo Admin"
+- No authentication required
+- Demo case `demo-case-001` pre-loaded
+
+**Production Mode:**
+- Use demo credentials:
 
 | Username | Password | Role | Demo Features |
 |----------|----------|------|---------------|
@@ -77,9 +93,56 @@ Use demo credentials:
 
 ---
 
+## 🎭 Demo Mode Overview
+
+The system supports **dual-mode operation**:
+
+### 🎬 Demo Mode Features (`DEMO_MODE=true`)
+- **🚀 Auto-logged demo user** - No authentication required
+- **📊 Pre-seeded demo data** - Sample case with realistic financial data
+- **⚡ Automated decisions** - All `PENDING_MANUAL` auto-converted to `MANUAL_OVERRIDE`
+- **📝 Auto-generated justifications** - Marked `[AUTO-GENERATED IN DEMO MODE]`
+- **📄 Draft-only PDF generation** - Demo watermark: "DEMO MODE — NOT FOR REGULATORY USE"
+- **🔓 Bypassed validations** - No blocking validation gates
+- **🎨 Demo UI indicators** - Banner and info panels showing demo status
+
+### 🏭 Production Mode Features (`DEMO_MODE=false`)
+- **🔐 Full authentication** - JWT with role-based access control
+- **📋 Manual data input** - No auto-seeded data
+- **⚖️ Strict validations** - All regulatory rules enforced
+- **📄 Full PDF generation** - Both DRAFT and FINAL modes available
+- **🚫 Blocking rules** - FINAL PDF blocked if pending decisions exist
+- **📝 Manual justifications** - Required for all overrides
+
+### 🔄 Quick Mode Switch
+
+```bash
+# Enable Demo Mode
+echo "DEMO_MODE=true" >> .env
+echo "REACT_APP_DEMO_MODE=true" >> frontend/.env
+
+# Disable Demo Mode (Production)
+sed -i 's/DEMO_MODE=true/DEMO_MODE=false/' .env
+sed -i 's/REACT_APP_DEMO_MODE=true/REACT_APP_DEMO_MODE=false/' frontend/.env
+
+# Restart services after changing mode
+```
+
+---
+
 ## 🎭 Demo Scenarios
 
-### Scenario 1: AI Auto-Approval Workflow ⭐
+### 🎬 Demo Mode Quick Flow (2 minutes)
+
+**Perfect for presentations** - Demo Mode provides a frictionless experience:
+
+1. **Enable Demo Mode** (see setup above)
+2. **Access Web UI** - Auto-logged as Demo Admin
+3. **Demo Case Pre-loaded** - `demo-case-001` with sample data
+4. **All Decisions Auto-processed** - No manual input required
+5. **Generate Demo PDF** - Draft with "DEMO MODE — NOT FOR REGULATORY USE" watermark
+
+---
 
 **Actor:** Regulatory Officer  
 **Duration:** 3 minutes  

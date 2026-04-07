@@ -65,6 +65,19 @@ class DecisionType(PyEnum):
     DISALLOW = "DISALLOW"
 
 
+class DocumentGenerationMode(PyEnum):
+    """Document generation mode for PDF exports."""
+    DRAFT = "DRAFT"
+    FINAL = "FINAL"
+
+
+class DocumentStatus(PyEnum):
+    """Document lifecycle status for tracking generation workflow."""
+    IN_PROGRESS = "IN_PROGRESS"
+    DRAFT_GENERATED = "DRAFT_GENERATED"
+    FINAL_GENERATED = "FINAL_GENERATED"
+
+
 class SBUType(PyEnum):
     """Strategic Business Unit types for data isolation (SBU Partitioning constraint)."""
     SBU_GENERATION = "SBU-G"
@@ -571,4 +584,45 @@ class OverrideAuditLog(Base):
 
     def __repr__(self):
         return f"<OverrideAuditLog(action={self.action_type}, officer={self.officer_name})>"
+
+
+class GeneratedDocument(Base):
+    """
+    Stores metadata for generated PDF documents (Draft/Final Truing-Up Orders).
+    Provides versioning, integrity verification, and audit trail for all generated documents.
+    """
+    __tablename__ = "generated_documents"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    case_id = Column(Uuid, ForeignKey("petition_data.id"), nullable=False, index=True)
+    version = Column(String(20), nullable=False, default="v1")  # e.g., "v1", "v2"
+    mode = Column(Enum(DocumentGenerationMode), nullable=False, default=DocumentGenerationMode.DRAFT)
+    document_status = Column(Enum(DocumentStatus), nullable=False, default=DocumentStatus.IN_PROGRESS)
+    file_path = Column(String(500), nullable=False)
+    file_hash = Column(String(64), nullable=False)  # SHA-256 for integrity
+    file_size = Column(Integer, nullable=False, default=0)  # File size in bytes
+    generated_by = Column(String(100), nullable=False)
+    generated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Order metadata (for quick reference without file access)
+    order_id = Column(String(100), nullable=False)
+    financial_year = Column(String(10), nullable=False)
+    sbu_code = Column(Enum(SBUType), nullable=False)
+    
+    # Document status
+    is_finalized = Column(Boolean, default=False)
+    finalized_at = Column(DateTime, nullable=True)
+    
+    # Download tracking
+    download_count = Column(Integer, default=0)
+    last_downloaded_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("case_id", "version", name="uq_case_version"),
+        Index("ix_gen_docs_case", "case_id", "generated_at"),
+        Index("ix_gen_docs_mode", "mode", "is_finalized"),
+    )
+
+    def __repr__(self):
+        return f"<GeneratedDocument(case={self.case_id}, version={self.version}, mode={self.mode.value}, status={self.document_status.value})>"
 

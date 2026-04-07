@@ -2,6 +2,10 @@
 
 *A Plain-English Introduction for Regulatory Officers and Auditors*
 
+**Version:** 3.1.0 | **Updated:** April 6, 2026
+
+*Now with Demo Mode support for frictionless demonstrations!*
+
 ---
 
 ## What is this system?
@@ -13,6 +17,44 @@ This system acts as an **AI-powered regulatory assistant** that:
 2. **Compares** Petition vs Approved ARR vs Actual audited figures
 3. **Classifies** each deviation as AI Auto-Approved **[A]**, Pending Manual Review **[P]**, or requiring Manual Override **[M]**
 4. **Generates** KSERC-compliant Truing-Up Orders with embedded justifications
+
+### 🎭 Demo Mode vs Production Mode
+
+The system features **dual-mode operation**:
+
+#### 🎬 Demo Mode (for demonstrations)
+- **Zero setup** - Auto-logged in with pre-seeded demo data
+- **Frictionless** - All decisions auto-processed with demo justifications
+- **Safe** - Demo watermarks on all outputs: "NOT FOR REGULATORY USE"
+- **Instant** - No data upload or manual input required
+
+#### 🏭 Production Mode (for regulatory use)
+- **Secure** - Full authentication with role-based access control
+- **Compliant** - All regulatory rules strictly enforced
+- **Auditable** - Complete audit trail with officer identities
+- **Flexible** - Both DRAFT and FINAL PDF generation modes
+
+---
+
+## Getting Started
+
+### Quick Demo Mode Setup (2 minutes)
+
+Perfect for exploring the system:
+
+```bash
+# Enable Demo Mode
+echo "DEMO_MODE=true" >> .env
+echo "REACT_APP_DEMO_MODE=true" >> frontend/.env
+
+# Start services (see Quick Start above)
+# Access: http://localhost:3000
+# Auto-logged in as "Demo Admin" with sample data pre-loaded
+```
+
+### Production Mode Setup
+
+Follow the full Quick Start guide above with `DEMO_MODE=false` (default).
 
 ---
 
@@ -279,6 +321,17 @@ This Decision Support System transforms weeks of manual spreadsheet analysis int
 ✅ **Full compliance** — KSERC regulations embedded in logic  
 ✅ **Complete audit trail** — Every decision tracked and traceable  
 ✅ **Officer empowerment** — AI handles routine cases, officers focus on complex decisions  
+✅ **Dual-mode flexibility** — Demo mode for presentations, production mode for regulatory use
+
+### 🎭 Try Demo Mode
+
+Want to see it in action? Enable Demo Mode:
+```bash
+# In your project directory
+echo "DEMO_MODE=true" >> .env
+echo "REACT_APP_DEMO_MODE=true" >> frontend/.env
+# Restart services and visit http://localhost:3000
+```
 
 **Your role:** Review AI recommendations, apply regulatory judgment, and ensure fair outcomes for utilities and consumers.
 
@@ -287,5 +340,10 @@ This Decision Support System transforms weeks of manual spreadsheet analysis int
 <div align="center">
 
 **KSERC Truing-Up DSS — Empowering Regulatory Excellence**
+
+**Version 3.1.0 with Demo Mode Support**
+
+🎬 **Demo Mode:** Frictionless demonstrations  
+🏭 **Production Mode:** Full regulatory compliance
 
 </div>

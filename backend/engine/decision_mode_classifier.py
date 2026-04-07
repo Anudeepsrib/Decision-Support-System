@@ -9,6 +9,10 @@ Logic:
 - PENDING_MANUAL: Variance >= 25%, external factors detected, low confidence
 - MANUAL_OVERRIDE: Officer explicitly overrides AI decision
 
+DEMO MODE Behavior:
+- Convert all PENDING_MANUAL → MANUAL_OVERRIDE
+- Auto-fill justifications using AI draft
+
 Pipeline Integration:
 ingestion → extraction → comparison → rule_engine → decision_mode_classifier → reasoning → document_generator
 """
@@ -18,6 +22,16 @@ from typing import Optional, List, Dict, Any
 from enum import Enum
 from decimal import Decimal, ROUND_HALF_UP
 import re
+
+# Import demo mode settings
+try:
+    from backend.config.settings import is_demo_mode, get_demo_user
+except ImportError:
+    # Fallback if config not available
+    def is_demo_mode() -> bool:
+        return False
+    def get_demo_user() -> dict:
+        return {"id": "demo-admin", "username": "Demo Admin", "role": "admin"}
 
 
 class DecisionMode(str, Enum):
@@ -229,6 +243,8 @@ class DecisionModeClassifier:
         """
         Classify a deviation into appropriate decision mode.
         
+        DEMO MODE: Converts PENDING_MANUAL → MANUAL_OVERRIDE with auto-filled justification.
+        
         Args:
             input_data: DeviationInput with petition, approved, actual values
             
@@ -279,6 +295,15 @@ class DecisionModeClassifier:
         else:
             decision_mode = DecisionMode.AI_AUTO
         
+        # DEMO MODE OVERRIDE: Convert PENDING_MANUAL → MANUAL_OVERRIDE
+        demo_justification = None
+        if is_demo_mode() and decision_mode == DecisionMode.PENDING_MANUAL:
+            decision_mode = DecisionMode.MANUAL_OVERRIDE
+            # Generate demo justification
+            demo_justification = self._generate_demo_justification(
+                input_data, ai_recommendation, external_factor, variance_pct
+            )
+        
         # Confidence score calculation
         base_confidence = input_data.extraction_confidence
         if variance_exceeds:
@@ -287,7 +312,7 @@ class DecisionModeClassifier:
             base_confidence *= 0.85
         
         # Generate AI justification
-        ai_justification = self._generate_justification(
+        ai_justification = demo_justification or self._generate_justification(
             input_data, ai_recommendation, external_factor, variance_pct
         )
         
@@ -345,6 +370,39 @@ class DecisionModeClassifier:
             )
         
         return " ".join(parts)
+    
+    def _generate_demo_justification(self,
+                                      input_data: DeviationInput,
+                                      recommendation: DecisionType,
+                                      external_factor: ExternalFactorDetection,
+                                      variance_pct: float) -> str:
+        """
+        Generate demo mode justification with auto-filled content.
+        Marks justification as "Auto-generated in Demo Mode".
+        """
+        base_justification = self._generate_justification(
+            input_data, recommendation, external_factor, variance_pct
+        )
+        
+        demo_note = "[AUTO-GENERATED IN DEMO MODE] "
+        
+        # Add officer override reasoning for demo
+        if recommendation == DecisionType.PARTIAL:
+            override_reason = (
+                "Upon review, the variance warrants partial consideration. "
+                "Approved value adjusted based on documented evidence. "
+            )
+        elif recommendation == DecisionType.DISALLOW:
+            override_reason = (
+                "Per Regulation 9.3, controllable losses are disallowed. "
+                "Utility failed to demonstrate cost efficiency measures. "
+            )
+        else:
+            override_reason = (
+                "Full approval granted. Costs verified within approved parameters. "
+            )
+        
+        return f"{demo_note}{base_justification} {override_reason}"
     
     def _get_regulatory_clause(self, category: str, recommendation: DecisionType) -> str:
         """Get applicable regulatory clause reference."""

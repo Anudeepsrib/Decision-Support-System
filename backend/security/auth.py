@@ -1,6 +1,8 @@
 """
 Enterprise Security Module — RBAC, Authentication & Authorization
 Implements enterprise-grade security for the ARR Truing-Up DSS
+
+DEMO MODE: Auto-login as demo admin, no auth enforcement
 """
 
 from enum import Enum
@@ -13,6 +15,15 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 import os
 import warnings
+
+# Demo mode settings
+try:
+    from backend.config.settings import is_demo_mode, get_demo_user
+except ImportError:
+    def is_demo_mode() -> bool:
+        return False
+    def get_demo_user() -> dict:
+        return {"id": "demo-admin", "username": "Demo Admin", "role": "super_admin"}
 
 # ─── Security Configuration ───
 _DEFAULT_SECRET = "your-256-bit-secret-key-change-in-production"
@@ -225,7 +236,22 @@ class SecurityManager:
 security_bearer = HTTPBearer()
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security_bearer)) -> TokenData:
-    """Dependency to get current authenticated user"""
+    """
+    Dependency to get current authenticated user.
+    
+    DEMO MODE: Returns demo admin user without token validation.
+    """
+    # DEMO MODE: Auto-login as demo admin
+    if is_demo_mode():
+        demo_user = get_demo_user()
+        return TokenData(
+            username=demo_user["username"],
+            role=UserRole.SUPER_ADMIN,
+            permissions=ROLE_PERMISSIONS[UserRole.SUPER_ADMIN],
+            sbu_access=[SBUAccess.ALL],
+            exp=None
+        )
+    
     token = credentials.credentials
     token_data = SecurityManager.decode_token(token)
     
@@ -250,8 +276,14 @@ def require_permission(permission: str):
     Dependency factory to require specific permission.
     Usage: Depends(require_permission("mapping.confirm"))
     MUST be a sync function — Depends() needs a callable, not a coroutine.
+    
+    DEMO MODE: Bypasses all permission checks.
     """
     async def permission_checker(user: TokenData = Depends(get_current_user)):
+        # DEMO MODE: Bypass permission checks
+        if is_demo_mode():
+            return user
+        
         if not user.role:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -270,8 +302,14 @@ def require_sbu_access(sbu_code: str):
     """
     Dependency factory to require SBU access.
     Usage: Depends(require_sbu_access("SBU-D"))
+    
+    DEMO MODE: Bypasses SBU access checks.
     """
     async def sbu_checker(user: TokenData = Depends(get_current_user)):
+        # DEMO MODE: Bypass SBU access checks
+        if is_demo_mode():
+            return user
+        
         user_sbu_access = [SBUAccess(s) for s in user.sbu_access]
         if not SecurityManager.can_access_sbu(user_sbu_access, sbu_code):
             raise HTTPException(

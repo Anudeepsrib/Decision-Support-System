@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import DemoModeBanner from '../common/DemoModeBanner';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -45,6 +46,9 @@ export function Layout({ children }: LayoutProps) {
 
   return (
     <div style={s.wrapper}>
+      {/* Demo Mode Banner */}
+      <DemoModeBanner />
+      
       {/* ─── Header ─── */}
       <header style={s.header}>
         <div style={s.headerInner}>

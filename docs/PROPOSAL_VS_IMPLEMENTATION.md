@@ -2,11 +2,31 @@
 
 *Feature Mapping for KSERC Truing-Up AI Decision Support System*
 
+**Version:** 3.1.0 | **Updated:** April 6, 2026  
+*Now with Demo Mode implementation tracking*
+
 ---
 
 ## Overview
 
-This document tracks the evolution from initial concept to production implementation. The system has transformed from a generic document comparison tool to a comprehensive regulatory decision platform with Human-in-the-Loop AI capabilities.
+This document tracks the evolution from initial concept to production implementation. The system has transformed from a generic document comparison tool to a comprehensive regulatory decision platform with Human-in-the-Loop AI capabilities and dual-mode operation for both production use and demonstrations.
+
+---
+
+## 🎭 Demo Mode Implementation (Phase 3 - Completed)
+
+| # | Feature | Status | Evidence | Notes |
+|---|---------|--------|----------|-------|
+| 31 | Dual-Mode Architecture | ✅ Implemented | `backend/config/settings.py` | `DEMO_MODE` environment variable controls behavior |
+| 32 | Demo Auto-Login | ✅ Implemented | `backend/security/auth.py` | Auto-login as Demo Admin when `DEMO_MODE=true` |
+| 33 | Demo Data Seeding | ✅ Implemented | `backend/scripts/seed_demo_data.py` | Auto-seeds sample case with realistic data |
+| 34 | Decision Pipeline Override | ✅ Implemented | `backend/engine/decision_mode_classifier.py` | Auto-converts PENDING → OVERRIDE in demo |
+| 35 | Auto-Generated Justifications | ✅ Implemented | `backend/engine/decision_mode_classifier.py` | Marked `[AUTO-GENERATED IN DEMO MODE]` |
+| 36 | Demo PDF Watermark | ✅ Implemented | `backend/engine/document_generator.py` | "DEMO MODE — NOT FOR REGULATORY USE" |
+| 37 | Final PDF Block in Demo | ✅ Implemented | `backend/api/order_generator.py` | HTTP 403 if FINAL requested in demo |
+| 38 | Demo UI Indicators | ✅ Implemented | `frontend/src/components/common/DemoModeBanner.tsx` | Gradient banner and info panels |
+| 39 | Frontend Demo Config | ✅ Implemented | `frontend/src/services/config.ts` | `REACT_APP_DEMO_MODE` flag |
+| 40 | Mode Switching Safety | ✅ Implemented | Multiple files | Requires restart, no runtime switching |
 
 ---
 

@@ -15,16 +15,38 @@ Features:
 - Decision mode markers: [A] AI Auto, [M] Manual Override, [P] Pending
 - Mandatory justification insertion for overrides
 - Draft watermark if pending decisions exist
-- Blocks final generation if pending decisions exist
+- Demo mode watermark: "DEMO MODE — NOT FOR REGULATORY USE"
+- Blocks final generation if pending decisions exist (PROD mode)
+- DEMO MODE: Always generates DRAFT, bypasses validation, FINAL never allowed
+- PDF generation with WeasyPrint
+- SHA256 integrity verification
 """
 
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
 from enum import Enum
 import hashlib
 import json
 import re
+import os
+from pathlib import Path
+
+# Demo mode settings
+try:
+    from backend.config.settings import is_demo_mode, get_demo_user
+except ImportError:
+    def is_demo_mode() -> bool:
+        return False
+    def get_demo_user() -> dict:
+        return {"id": "demo-admin", "username": "Demo Admin", "role": "admin"}
+
+# WeasyPrint for PDF generation
+try:
+    from weasyprint import HTML, CSS
+    WEASYPRINT_AVAILABLE = True
+except ImportError:
+    WEASYPRINT_AVAILABLE = False
 
 
 class DecisionMode(str, Enum):
@@ -513,21 +535,22 @@ class KSERCOrderGenerator:
         
         rows = ""
         for d in manual_decisions:
-            final = d.officer_decision if d.officer_decision else "PENDING"
+            final_decision = d.officer_decision if d.officer_decision else "PENDING"
+            external_factor = d.external_factor_category if d.external_factor_category else "N/A"
+            officer_name = d.created_by if d.created_by else "N/A"
+            justification = d.officer_justification[:100] + "..." if d.officer_justification and len(d.officer_justification) > 100 else (d.officer_justification or "N/A")
+            
             rows += f"""
             <tr>
                 <td style="border: 1px solid #333; padding: 5px; font-size: 10px;">{d.sbu_code}</td>
                 <td style="border: 1px solid #333; padding: 5px; font-size: 10px;">{d.cost_head}</td>
                 <td style="border: 1px solid #333; padding: 5px; font-size: 10px;">{d.ai_recommendation}</td>
-                <td style="border: 1px solid #333; padding: 5px; font-size: 10px; font-weight: bold;">
-                    {final}
-                </td>
-                <td style="border: 1px solid #333; padding: 5px; font-size: 10px; text-align: right;">
-                    ₹{d.final_value:,.2f}
-                </td>
-                <td style="border: 1px solid #333; padding: 5px; font-size: 10px;">
-                    {d.officer_justification[:100] + "..." if d.officer_justification and len(d.officer_justification) > 100 else (d.officer_justification or "N/A")}
-                </td>
+                <td style="border: 1px solid #333; padding: 5px; font-size: 10px; font-weight: bold;">{final_decision}</td>
+                <td style="border: 1px solid #333; padding: 5px; font-size: 10px; text-align: right;">₹{d.ai_value:,.2f}</td>
+                <td style="border: 1px solid #333; padding: 5px; font-size: 10px; text-align: right;">₹{d.final_value:,.2f}</td>
+                <td style="border: 1px solid #333; padding: 5px; font-size: 10px;">{external_factor}</td>
+                <td style="border: 1px solid #333; padding: 5px; font-size: 10px;">{justification}</td>
+                <td style="border: 1px solid #333; padding: 5px; font-size: 10px;">{officer_name}</td>
             </tr>
             """
         
@@ -544,11 +567,14 @@ class KSERCOrderGenerator:
                 <thead>
                     <tr style="background-color: #f0f0f0;">
                         <th style="border: 1px solid #333; padding: 5px;">SBU</th>
-                        <th style="border: 1px solid #333; padding: 5px;">Cost Head</th>
+                        <th style="border: 1px solid #333; padding: 5px;">Line Item</th>
                         <th style="border: 1px solid #333; padding: 5px;">AI Decision</th>
                         <th style="border: 1px solid #333; padding: 5px;">Final Decision</th>
+                        <th style="border: 1px solid #333; padding: 5px;">AI Value</th>
                         <th style="border: 1px solid #333; padding: 5px;">Final Value</th>
+                        <th style="border: 1px solid #333; padding: 5px;">External Factor</th>
                         <th style="border: 1px solid #333; padding: 5px;">Justification Summary</th>
+                        <th style="border: 1px solid #333; padding: 5px;">Officer</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -589,13 +615,242 @@ class KSERCOrderGenerator:
         """Generate SHA-256 checksum for document integrity."""
         return hashlib.sha256(content.encode('utf-8')).hexdigest()
     
+    def generate_pdf(self, 
+                     metadata: OrderMetadata, 
+                     decisions: List[DecisionItem],
+                     output_path: str,
+                     is_draft: bool = True) -> Tuple[str, str, int]:
+        """
+        Generate PDF from HTML content using WeasyPrint.
+        
+        Args:
+            metadata: Order metadata
+            decisions: List of decision items
+            output_path: Full path where PDF should be saved
+            is_draft: Whether to apply draft watermark
+            
+        Returns:
+            Tuple of (file_path, file_hash, file_size)
+        """
+        if not WEASYPRINT_AVAILABLE:
+            raise RuntimeError("WeasyPrint is not available. Install with: pip install weasyprint")
+        
+        # Ensure output directory exists
+        output_dir = Path(output_path).parent
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate HTML content
+        result = self.generate(metadata, decisions)
+        
+        # Add pending item highlighting for drafts
+        html_content = result.html_content
+        if is_draft:
+            html_content = self._highlight_pending_items(html_content, decisions)
+        
+        # Create CSS for KSERC styling with watermark if draft
+        css_content = self._generate_css(is_draft)
+        
+        # Generate PDF
+        html = HTML(string=html_content, base_url=str(output_dir))
+        css = CSS(string=css_content)
+        html.write_pdf(output_path, stylesheets=[css])
+        
+        # Calculate SHA256 hash
+        file_hash = self._calculate_file_hash(output_path)
+        file_size = os.path.getsize(output_path)
+        
+        return output_path, file_hash, file_size
+    
+    def _generate_css(self, is_draft: bool = True) -> str:
+        """
+        Generate CSS styling for PDF with optional draft watermark.
+        
+        DEMO MODE: Uses special demo watermark regardless of is_draft flag.
+        """
+        # Check demo mode first - this overrides everything
+        if is_demo_mode():
+            watermark_css = """
+                @page {
+                    @top-center {
+                        content: "DEMO MODE — NOT FOR REGULATORY USE";
+                        font-size: 20pt;
+                        color: rgba(255, 0, 0, 0.15);
+                        font-weight: bold;
+                    }
+                }
+            """
+        elif is_draft:
+            watermark_css = """
+                @page {
+                    @top-center {
+                        content: "DRAFT — MANUAL DECISIONS PENDING — NOT FOR ISSUE";
+                        font-size: 20pt;
+                        color: rgba(255, 0, 0, 0.12);
+                        font-weight: bold;
+                    }
+                }
+            """
+        else:
+            watermark_css = ""
+        
+        return f"""
+            @page {{
+                size: A4;
+                margin: 2.5cm 2cm 2.5cm 2cm;
+                @bottom-center {{
+                    content: "Page " counter(page) " of " counter(pages);
+                    font-size: 9pt;
+                    color: #666;
+                }}
+            }}
+            {watermark_css}
+            
+            body {{
+                font-family: "Times New Roman", Georgia, serif;
+                font-size: 11pt;
+                line-height: 1.6;
+                color: #333;
+            }}
+            
+            h1 {{
+                font-size: 18pt;
+                font-weight: bold;
+                text-align: center;
+                margin-bottom: 10px;
+            }}
+            
+            h2 {{
+                font-size: 14pt;
+                font-weight: bold;
+                margin-bottom: 8px;
+            }}
+            
+            h3 {{
+                font-size: 12pt;
+                font-weight: bold;
+                border-bottom: 1px solid #333;
+                padding-bottom: 5px;
+                margin-top: 20px;
+            }}
+            
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                margin: 15px 0;
+                font-size: 10pt;
+            }}
+            
+            th, td {{
+                border: 1px solid #333;
+                padding: 8px;
+                text-align: left;
+            }}
+            
+            th {{
+                background-color: #f0f0f0;
+                font-weight: bold;
+            }}
+            
+            .draft-warning {{
+                background-color: #FFEBEE;
+                border: 2px solid #F44336;
+                padding: 15px;
+                margin: 20px 0;
+                text-align: center;
+                color: #C62828;
+                font-weight: bold;
+            }}
+            
+            .pending-highlight {{
+                border: 2px solid #F44336;
+                background-color: #FFEBEE;
+            }}
+            
+            .pending-marker {{
+                color: #C62828;
+                font-weight: bold;
+            }}
+            
+            .footer {{
+                margin-top: 40px;
+                border-top: 2px solid #333;
+                padding-top: 20px;
+                font-size: 9pt;
+                color: #666;
+            }}
+        """
+    
+    def _highlight_pending_items(self, html_content: str, decisions: List[DecisionItem]) -> str:
+        """
+        Highlight pending items in red for draft PDFs.
+        
+        DEMO MODE: Shows demo warning instead of pending items warning.
+        """
+        # DEMO MODE: Show demo warning
+        if is_demo_mode():
+            demo_warning = """
+            <div class="draft-warning">
+                <p>⚠ DEMO MODE — NOT FOR REGULATORY USE</p>
+                <p style="font-size: 11px; margin-top: 5px;">
+                    This document was generated in Demo Mode for demonstration purposes only.
+                    It does not represent an official regulatory document.
+                </p>
+            </div>
+            """
+            # Insert after the header div
+            html_content = html_content.replace(
+                '</div>\n        <div class="section"',
+                '</div>\n        {}\n        <div class="section"'.format(demo_warning)
+            )
+            return html_content
+        
+        # PRODUCTION MODE: Normal pending items highlighting
+        pending_items = [d for d in decisions if d.decision_mode == DecisionMode.PENDING_MANUAL.value]
+        
+        if not pending_items:
+            return html_content
+        
+        # Add a summary section at the top for pending items
+        pending_summary = """
+        <div class="draft-warning">
+            <p>⚠ DRAFT — MANUAL DECISIONS PENDING — NOT FOR ISSUE</p>
+            <p style="font-size: 11px; margin-top: 5px;">
+                {} item(s) pending officer review are highlighted in red below.
+                This document cannot be finalized until all decisions are completed.
+            </p>
+        </div>
+        """.format(len(pending_items))
+        
+        # Insert after the header div
+        html_content = html_content.replace(
+            '</div>\n        <div class="section"',
+            '</div>\n        {}\n        <div class="section"'.format(pending_summary)
+        )
+        
+        return html_content
+    
+    def _calculate_file_hash(self, file_path: str) -> str:
+        """Calculate SHA256 hash of a file."""
+        sha256_hash = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest()
+    
     def validate_order_can_finalize(self, decisions: List[DecisionItem]) -> tuple[bool, List[str]]:
         """
         Validate if order can be finalized.
         
+        DEMO MODE: Always returns False - FINAL PDF generation NEVER allowed in demo mode.
+        This is a CRITICAL SAFETY GUARD.
+        
         Returns:
             (can_finalize, list of blocking issues)
         """
+        # CRITICAL SAFETY GUARD: DEMO MODE - FINAL PDF NEVER ALLOWED
+        if is_demo_mode():
+            return False, ["DEMO MODE: FINAL PDF generation is not allowed. Generate DRAFT instead."]
+        
         issues = []
         
         # Check for pending decisions (HARD RULE)
@@ -614,17 +869,14 @@ class KSERCOrderGenerator:
         return len(issues) == 0, issues
 
 
-# ─── Singleton Instance ───
-_generator = None
+# ─── Helper Functions ───
 
-def get_generator() -> KSERCOrderGenerator:
-    """Get or create singleton generator instance."""
-    global _generator
-    if _generator is None:
-        _generator = KSERCOrderGenerator()
-    return _generator
-
-
-def generate_truing_up_order(metadata: OrderMetadata, decisions: List[DecisionItem]) -> GeneratedOrder:
-    """Convenience function to generate a Truing-Up Order."""
-    return get_generator().generate(metadata, decisions)
+def generate_truing_up_order_pdf(
+    metadata: OrderMetadata,
+    decisions: List[DecisionItem],
+    output_path: str,
+    is_draft: bool = True
+) -> Tuple[str, str, int]:
+    """Convenience function to generate a PDF Truing-Up Order."""
+    generator = KSERCOrderGenerator()
+    return generator.generate_pdf(metadata, decisions, output_path, is_draft)

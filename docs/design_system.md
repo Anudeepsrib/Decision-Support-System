@@ -2,6 +2,9 @@
 
 *Visual Language for KSERC Truing-Up Decision Support System*
 
+**Version:** 3.1.0 | **Updated:** April 6, 2026  
+*Now with Demo Mode UI components*
+
 ---
 
 ## Design Philosophy
@@ -12,6 +15,55 @@ The interface is designed for **high-stakes regulatory decision-making** under t
 2. **Efficiency**: Minimal clicks to complete tasks
 3. **Trust**: Visual cues reinforcing system reliability
 4. **Authority**: Professional appearance befitting regulatory commission
+5. **Mode Awareness**: Clear indication of Demo vs Production mode
+
+---
+
+## 🎭 Demo Mode Design System
+
+### Demo Mode Visual Indicators
+
+The system features distinct visual cues when operating in Demo mode:
+
+#### Demo Banner
+```css
+.demo-mode-banner {
+  background: linear-gradient(90deg, #ff6b6b 0%, #feca57 100%);
+  color: white;
+  padding: 12px 20px;
+  text-align: center;
+  font-weight: 500;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+```
+
+#### Demo Info Panel
+```css
+.demo-info-panel {
+  background: #f0f4ff;
+  border: 2px dashed #6366f1;
+  border-radius: 8px;
+  padding: 20px;
+  margin: 15px 0;
+}
+```
+
+### Demo Mode Color Palette
+
+| Color | Hex | Usage |
+|-------|-----|-------|
+| **Demo Orange** | `#ff6b6b` | Demo banner gradient start |
+| **Demo Yellow** | `#feca57` | Demo banner gradient end |
+| **Demo Purple** | `#6366f1` | Demo panel borders |
+| **Demo Light Blue** | `#f0f4ff` | Demo panel backgrounds |
+
+### Demo Mode Typography
+
+- **Banner Text**: 14px, medium weight, white
+- **Demo Badge**: 11px, uppercase, letter-spacing: 0.5px
+- **Info Panel**: Standard text with purple accents
 
 ---
 

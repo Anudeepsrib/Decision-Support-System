@@ -2,11 +2,48 @@
 
 *Enterprise-Grade Security for Regulatory Decision Systems*
 
+**Version:** 3.1.0 | **Updated:** April 6, 2026  
+*Now with Demo Mode security considerations*
+
 ---
 
 ## Overview
 
-The KSERC Truing-Up Decision Support System implements defense-in-depth security principles to protect sensitive regulatory data, ensure audit integrity, and maintain compliance with government IT standards.
+The KSERC Truing-Up Decision Support System implements defense-in-depth security principles to protect sensitive regulatory data, ensure audit integrity, and maintain compliance with government IT standards. The system features dual-mode operation with distinct security profiles for production and demo environments.
+
+---
+
+## 🎭 Demo Mode Security Architecture
+
+### Security Isolation
+
+The system maintains strict security separation between demo and production modes:
+
+| Security Aspect | Demo Mode | Production Mode |
+|-----------------|-----------|------------------|
+| **Authentication** | Auto-login as Demo Admin | Full JWT authentication required |
+| **Authorization** | All permissions bypassed | Strict RBAC enforced |
+| **Data Source** | Pre-seeded demo data only | Real regulatory data |
+| **Audit Trail** | Marked `[DEMO MODE]` | Production audit logs |
+| **Network Security** | Same controls as production | Full security controls |
+
+### Demo Mode Safety Features
+
+```python
+# Demo mode security checks
+if is_demo_mode():
+    # Auto-login with demo user
+    # Bypass permission checks
+    # Use demo data only
+    # Mark all audit entries
+```
+
+### Security Guarantees
+
+- ✅ **No Production Data Exposure** - Demo mode cannot access production database
+- ✅ **No Authentication Bypass in Production** - Demo auto-login only active when `DEMO_MODE=true`
+- ✅ **Clear Demo Indicators** - All demo outputs watermarked and marked
+- ✅ **Environment Isolation** - Requires explicit configuration change to switch modes
 
 ---
 

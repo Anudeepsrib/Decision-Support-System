@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { AuthService } from '../../services/api';
+import { IS_DEMO_MODE, DEMO_CASE_ID } from '../../services/config';
+import DemoModeBanner from '../common/DemoModeBanner';
 
 // Types matching backend API
 interface DecisionItem {
@@ -48,6 +50,24 @@ interface JustificationForm {
   kserc_regulation_ref?: string;
 }
 
+interface DocumentHistoryItem {
+  document_id: string;
+  version: string;
+  mode: string;
+  file_hash: string;
+  file_size: number;
+  generated_at: string;
+  generated_by: string;
+  download_count: number;
+  is_finalized: boolean;
+}
+
+interface ToastNotification {
+  id: string;
+  message: string;
+  type: 'success' | 'error' | 'info';
+}
+
 export const ManualDecisions: React.FC = () => {
   const { user } = useAuth();
   const token = AuthService.getToken();
@@ -58,6 +78,17 @@ export const ManualDecisions: React.FC = () => {
   const [selectedDecision, setSelectedDecision] = useState<DecisionItem | null>(null);
   const [formData, setFormData] = useState<JustificationForm | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  
+  // PDF Generation Center state
+  const [generatingPDF, setGeneratingPDF] = useState(false);
+  const [documentHistory, setDocumentHistory] = useState<DocumentHistoryItem[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [toasts, setToasts] = useState<ToastNotification[]>([]);
+  const [showModal, setShowModal] = useState(false);
+  const [modalMessage, setModalMessage] = useState('');
+  
+  // Case ID for PDF generation - using demo case ID in demo mode
+  const [caseId, setCaseId] = useState<string>(IS_DEMO_MODE ? DEMO_CASE_ID : '');
 
   const SBUs = ['SBU-G', 'SBU-T', 'SBU-D'];
 
@@ -169,8 +200,181 @@ export const ManualDecisions: React.FC = () => {
     }
   };
 
+  // PDF Generation Center functions
+  const addToast = (message: string, type: ToastNotification['type']) => {
+    const id = Math.random().toString(36).substr(2, 9);
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 5000);
+  };
+
+  const fetchDocumentHistory = async () => {
+    if (!caseId) return;
+    
+    setLoadingHistory(true);
+    try {
+      const response = await fetch(`/api/v1/cases/${caseId}/documents`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Failed to fetch document history');
+      }
+      
+      const data = await response.json();
+      setDocumentHistory(data.documents || []);
+    } catch (err) {
+      console.error('Failed to fetch document history:', err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const generatePDF = async (mode: 'DRAFT' | 'FINAL') => {
+    if (!caseId) {
+      addToast('Please enter a Case ID', 'error');
+      return;
+    }
+    
+    if (!workbench && !IS_DEMO_MODE) {
+      addToast('Workbench data not loaded', 'error');
+      return;
+    }
+
+    // DEMO MODE: Always force DRAFT mode, bypass pending check
+    const actualMode = IS_DEMO_MODE ? 'DRAFT' : mode;
+    
+    // Check for pending decisions for FINAL mode (PRODUCTION only)
+    if (!IS_DEMO_MODE && mode === 'FINAL' && (workbench?.pending_items || 0) > 0) {
+      setModalMessage(`Manual decisions pending. Final document cannot be generated.\n\n${workbench?.pending_items} items require officer review before generating FINAL PDF.`);
+      setShowModal(true);
+      return;
+    }
+
+    setGeneratingPDF(true);
+    try {
+      const requestBody = {
+        mode: actualMode
+      };
+
+      const response = await fetch(`/api/v1/cases/${caseId}/generate-pdf`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        if (response.status === 409) {
+          setModalMessage(`Cannot generate FINAL PDF: ${err.detail?.message || 'Pending decisions exist'}`);
+          setShowModal(true);
+        } else {
+          throw new Error(err.detail || `Failed to generate ${mode} PDF`);
+        }
+        return;
+      }
+
+      const result = await response.json();
+      addToast(`${actualMode} PDF generated successfully! Version: ${result.version}`, 'success');
+      
+      await fetchDocumentHistory();
+      
+      if (mode === 'DRAFT') {
+        // Auto-download using the download URL
+        window.open(result.download_url, '_blank');
+      }
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'PDF generation failed', 'error');
+    } finally {
+      setGeneratingPDF(false);
+    }
+  };
+
+  const downloadPDF = async (version: string) => {
+    if (!caseId) return;
+    
+    try {
+      const response = await fetch(`/api/v1/cases/${caseId}/download-pdf?version=${version}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Failed to download PDF (${response.status})`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `KSERC_Order_${version}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      addToast('PDF downloaded successfully', 'success');
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Download failed', 'error');
+    }
+  };
+
+  const downloadLatestPDF = async () => {
+    if (!caseId) {
+      addToast('Please enter a Case ID', 'error');
+      return;
+    }
+    
+    try {
+      const response = await fetch(`/api/v1/cases/${caseId}/latest-pdf`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 404) {
+          throw new Error('No PDF found for this case');
+        }
+        throw new Error(errorData.detail || `Failed to download PDF (${response.status})`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `KSERC_Order_Latest_${caseId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      addToast('Latest PDF downloaded successfully', 'success');
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Download failed', 'error');
+    }
+  };
+
+  const dismissToast = (id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
   return (
     <div className="manual-decisions-container">
+      {/* Demo Mode Banner */}
+      <DemoModeBanner />
+      
       <div className="header-section">
         <h1>Manual Decisions Workbench</h1>
         <div className="sbu-selector">
@@ -208,6 +412,157 @@ export const ManualDecisions: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* PDF Generation Center */}
+      <div className="pdf-generation-center">
+        <h2>PDF Generation Center</h2>
+        
+        {IS_DEMO_MODE && (
+          <div className="demo-info-banner">
+            <p> <strong>Demo Mode Active</strong></p>
+            <p>Pre-loaded case: <code>{DEMO_CASE_ID}</code></p>
+            <p>Click "Generate Demo PDF" to see the full workflow in action.</p>
+          </div>
+        )}
+        
+        <div className="case-input-section">
+          <label>Case ID (PetitionData.id):</label>
+          <input
+            type="text"
+            value={caseId}
+            onChange={(e) => setCaseId(e.target.value)}
+            placeholder="Enter case UUID"
+          />
+          <button 
+            className="btn-secondary"
+            onClick={fetchDocumentHistory}
+            disabled={!caseId || loadingHistory}
+          >
+            {loadingHistory ? 'Loading...' : 'Refresh History'}
+          </button>
+        </div>
+        
+        <div className="pdf-actions">
+          <button 
+            className="btn-draft"
+            onClick={() => generatePDF('DRAFT')}
+            disabled={generatingPDF || !caseId || (!workbench && !IS_DEMO_MODE)}
+          >
+            {generatingPDF ? 'Generating...' : (IS_DEMO_MODE ? '🎮 Generate Demo PDF' : '📄 Generate Draft PDF')}
+          </button>
+          
+          <button 
+            className="btn-final"
+            onClick={() => generatePDF('FINAL')}
+            disabled={generatingPDF || !caseId || IS_DEMO_MODE || (workbench?.pending_items || 0) > 0}
+            title={IS_DEMO_MODE ? 'Final PDF not available in Demo Mode' : ((workbench?.pending_items || 0) > 0 ? 'Complete all pending decisions first' : '')}
+          >
+            {generatingPDF ? 'Generating...' : '📋 Generate Final PDF'}
+          </button>
+          
+          <button 
+            className="btn-secondary"
+            onClick={downloadLatestPDF}
+            disabled={!caseId || documentHistory.length === 0}
+          >
+            ⬇️ Download Latest
+          </button>
+        </div>
+        
+        {/* Demo Mode Info */}
+        {IS_DEMO_MODE && (
+          <div className="demo-info-panel">
+            <h4>🎮 Demo Mode Features:</h4>
+            <ul>
+              <li>Pre-loaded sample case with realistic data</li>
+              <li>Auto-generated AI decisions with justifications</li>
+              <li>PDF generation always produces DRAFT with demo watermark</li>
+              <li>No authentication required</li>
+              <li>Full system workflow in one click</li>
+            </ul>
+          </div>
+        )}
+        
+        {(workbench?.pending_items || 0) > 0 && !IS_DEMO_MODE && (
+          <div className="pdf-warning">
+            ⚠️ <strong>{workbench?.pending_items}</strong> pending decisions must be resolved before generating FINAL PDF
+          </div>
+        )}
+        
+        {documentHistory.length > 0 && (
+          <div className="document-history">
+            <h3>Document Version History</h3>
+            <table className="history-table">
+              <thead>
+                <tr>
+                  <th>Version</th>
+                  <th>Mode</th>
+                  <th>Generated</th>
+                  <th>By</th>
+                  <th>Size</th>
+                  <th>Downloads</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {documentHistory.map((doc) => (
+                  <tr key={doc.document_id} className={doc.is_finalized ? 'finalized' : ''}>
+                    <td><strong>{doc.version}</strong></td>
+                    <td>
+                      <span className={`mode-badge ${doc.mode.toLowerCase()}`}>
+                        {doc.mode}
+                      </span>
+                    </td>
+                    <td>{new Date(doc.generated_at).toLocaleString()}</td>
+                    <td>{doc.generated_by}</td>
+                    <td>{(doc.file_size / 1024).toFixed(1)} KB</td>
+                    <td>{doc.download_count}</td>
+                    <td>
+                      <button 
+                        className="btn-small"
+                        onClick={() => downloadPDF(doc.version)}
+                      >
+                        Download
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Modal for pending items warning */}
+      {showModal && (
+        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>⚠️ Cannot Generate Final PDF</h3>
+            <p>{modalMessage}</p>
+            <div className="modal-actions">
+              <button 
+                className="btn-secondary"
+                onClick={() => setShowModal(false)}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notifications */}
+      <div className="toast-container">
+        {toasts.map((toast) => (
+          <div 
+            key={toast.id} 
+            className={`toast toast-${toast.type}`}
+            onClick={() => dismissToast(toast.id)}
+          >
+            {toast.message}
+          </div>
+        ))}
+      </div>
 
       {error && (
         <div className="error-banner">
@@ -742,6 +1097,295 @@ export const ManualDecisions: React.FC = () => {
 
         .empty-state p {
           margin: 10px 0;
+        }
+
+        /* PDF Generation Center Styles */
+        .pdf-generation-center {
+          background: #f8f9fa;
+          border: 1px solid #dee2e6;
+          border-radius: 8px;
+          padding: 20px;
+          margin-bottom: 20px;
+        }
+
+        .pdf-generation-center h2 {
+          margin: 0 0 15px 0;
+          font-size: 18px;
+          color: #333;
+        }
+
+        .case-input-section {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 15px;
+          flex-wrap: wrap;
+        }
+
+        .case-input-section label {
+          font-weight: 500;
+          color: #555;
+        }
+
+        .case-input-section input {
+          flex: 1;
+          min-width: 200px;
+          padding: 8px 12px;
+          border: 1px solid #ccc;
+          border-radius: 4px;
+          font-size: 14px;
+        }
+
+        .pdf-actions {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          margin-bottom: 15px;
+        }
+
+        .btn-draft {
+          padding: 12px 24px;
+          border: none;
+          background: #FF9800;
+          color: white;
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 500;
+        }
+
+        .btn-draft:hover:not(:disabled) {
+          background: #F57C00;
+        }
+
+        .btn-draft:disabled {
+          background: #FFE0B2;
+          cursor: not-allowed;
+        }
+
+        .btn-final {
+          padding: 12px 24px;
+          border: none;
+          background: #4CAF50;
+          color: white;
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 500;
+        }
+
+        .btn-final:hover:not(:disabled) {
+          background: #388E3C;
+        }
+
+        .btn-final:disabled {
+          background: #C8E6C9;
+          cursor: not-allowed;
+        }
+
+        .pdf-warning {
+          background: #FFF3E0;
+          border: 1px solid #FFB74D;
+          color: #E65100;
+          padding: 10px 15px;
+          border-radius: 4px;
+          margin-bottom: 15px;
+          font-size: 13px;
+        }
+
+        .document-history {
+          margin-top: 20px;
+        }
+
+        .document-history h3 {
+          margin: 0 0 10px 0;
+          font-size: 14px;
+          color: #555;
+        }
+
+        .history-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 12px;
+        }
+
+        .history-table th,
+        .history-table td {
+          border: 1px solid #ddd;
+          padding: 8px;
+          text-align: left;
+        }
+
+        .history-table th {
+          background: #f0f0f0;
+          font-weight: 600;
+        }
+
+        .history-table tr.finalized {
+          background: #E8F5E9;
+        }
+
+        .mode-badge {
+          padding: 2px 8px;
+          border-radius: 12px;
+          font-size: 11px;
+          font-weight: 500;
+        }
+
+        .mode-badge.draft {
+          background: #FFF3E0;
+          color: #EF6C00;
+        }
+
+        .mode-badge.final {
+          background: #E8F5E9;
+          color: #2E7D32;
+        }
+
+        .btn-small {
+          padding: 4px 8px;
+          border: 1px solid #2196F3;
+          background: white;
+          color: #2196F3;
+          border-radius: 3px;
+          cursor: pointer;
+          font-size: 11px;
+        }
+
+        .btn-small:hover {
+          background: #2196F3;
+          color: white;
+        }
+
+        /* Toast Notifications */
+        .toast-container {
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          z-index: 1000;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .toast {
+          padding: 12px 20px;
+          border-radius: 4px;
+          color: white;
+          font-size: 14px;
+          cursor: pointer;
+          box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+          min-width: 250px;
+          animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+
+        .toast-success {
+          background: #4CAF50;
+        }
+
+        .toast-error {
+          background: #F44336;
+        }
+
+        .toast-info {
+          background: #2196F3;
+        }
+
+        /* Modal Styles */
+        .modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1001;
+        }
+
+        .modal-content {
+          background: white;
+          border-radius: 8px;
+          padding: 30px;
+          max-width: 500px;
+          width: 90%;
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-content h3 {
+          margin: 0 0 15px 0;
+          color: #E65100;
+          font-size: 18px;
+        }
+
+        .modal-content p {
+          margin: 0 0 20px 0;
+          line-height: 1.5;
+          color: #333;
+          white-space: pre-line;
+        }
+
+        .modal-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 10px;
+        }
+
+        /* Demo Mode Styles */
+        .demo-info-banner {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          padding: 15px 20px;
+          border-radius: 8px;
+          margin-bottom: 20px;
+          font-size: 14px;
+        }
+
+        .demo-info-banner p {
+          margin: 5px 0;
+        }
+
+        .demo-info-banner code {
+          background: rgba(255, 255, 255, 0.2);
+          padding: 2px 6px;
+          border-radius: 3px;
+          font-family: monospace;
+        }
+
+        .demo-info-panel {
+          background: #f0f4ff;
+          border: 2px dashed #6366f1;
+          border-radius: 8px;
+          padding: 20px;
+          margin: 15px 0;
+        }
+
+        .demo-info-panel h4 {
+          margin: 0 0 10px 0;
+          color: #4f46e5;
+        }
+
+        .demo-info-panel ul {
+          margin: 0;
+          padding-left: 20px;
+          color: #4338ca;
+        }
+
+        .demo-info-panel li {
+          margin: 5px 0;
         }
       `}</style>
     </div>
