@@ -6,6 +6,11 @@ KSERC Truing-Up Order Generation with full auditability and compliance.
 """
 
 import os
+import sys
+
+# Add project root to path so `backend` package imports work when running from backend/ dir
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import traceback
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
