@@ -1,36 +1,31 @@
 # ─── Frontend Dockerfile ───
-# Multi-stage build: Node for build, Nginx for serve
-# F-19: Production-grade containerization
+# KSERC DSS MVP - Vite + React + TypeScript + Tailwind
 
-FROM node:20-alpine AS builder
+FROM node:18-alpine AS builder
+
 WORKDIR /app
 
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm install --legacy-peer-deps
+# Copy package files first for better caching
+COPY package*.json ./
+RUN npm ci --only=production
 
-COPY frontend/ .
+# Copy source code
+COPY . .
+
+# Build the application
 RUN npm run build
 
 # ─── Production Stage ───
-FROM nginx:alpine AS production
+FROM nginx:alpine
 
-# Security: Run as non-root
-RUN addgroup -S dss && adduser -S dss -G dss
+# Copy built assets from builder stage
+COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Copy build artifacts
-COPY --from=builder /app/build /usr/share/nginx/html
+# Copy nginx configuration for SPA routing
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Nginx config for SPA routing
-RUN echo 'server { \
-    listen 80; \
-    root /usr/share/nginx/html; \
-    index index.html; \
-    location / { try_files $uri $uri/ /index.html; } \
-    location /api/ { proxy_pass http://backend:8000/; } \
-}' > /etc/nginx/conf.d/default.conf
-
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD wget -qO- http://localhost:80/ || exit 1
-
+# Expose port 80
 EXPOSE 80
+
+# Start nginx
 CMD ["nginx", "-g", "daemon off;"]

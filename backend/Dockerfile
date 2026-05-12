@@ -1,55 +1,38 @@
 # ─── Backend Dockerfile ───
-# Multi-stage build for minimal production image
-# F-19: Production-grade containerization
+# KSERC DSS MVP - Simplified container setup
 
-FROM python:3.12-slim AS builder
+FROM python:3.12-slim
 
-# Security: Create non-root user
-RUN groupadd -r dss && useradd --no-log-init -r -g dss dss
+# Install system dependencies for WeasyPrint and pdfplumber
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libpango-1.0-0 \
+        libharfbuzz0b \
+        libpangoft2-1.0-0 \
+        libfontconfig1 \
+        libcairo2 \
+        libgdk-pixbuf2.0-0 \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install system dependencies (Ghostscript for camelot-py)
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        ghostscript \
-        build-essential \
-        libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies
-COPY requirements.txt .
+# Copy requirements first for better caching
+COPY ../requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# ─── Production Stage ───
-FROM python:3.12-slim AS production
-
-RUN groupadd -r dss && useradd --no-log-init -r -g dss dss
-
-# Install runtime dependencies only
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends ghostscript libpq5 && \
-    rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-# Copy installed packages from builder
-COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
-
 # Copy application code
-COPY backend/ ./backend/
-COPY config/ ./config/
+COPY . .
 
-# Security: Run as non-root user
-USER dss
+# Create necessary directories
+RUN mkdir -p /app/data /app/output /app/mvp_uploads
 
-# Health check probe (F-20)
+# Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
 
 EXPOSE 8000
 
-# Production entry point via main_secure
-CMD ["uvicorn", "backend.main_secure:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+# MVP entry point
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

@@ -1,1 +1,0 @@
-export { ManualDecisions } from './ManualDecisions';

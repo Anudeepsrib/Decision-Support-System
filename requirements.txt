@@ -1,76 +1,26 @@
-# Enterprise ARR Truing-Up Decision Support System
-# Python Dependencies for Production Deployment
-# Last Updated: February 2026
+# KSERC Decision Support System — MVP Dependencies
+# Minimal requirements for demo-ready MVP
 
-# ─── Core Web Framework ───
+# ─── Core Framework ───
 fastapi==0.115.8
 uvicorn[standard]==0.34.0
 python-multipart==0.0.20
-starlette==0.45.3
 
-# ─── Database & ORM ───
+# ─── Database ───
 sqlalchemy==2.0.38
-alembic==1.14.1
-psycopg2-binary==2.9.10
-asyncpg==0.30.0
 
-# ─── Authentication & Security ───
-python-jose[cryptography]==3.4.0
-passlib[bcrypt]==1.7.4
-bcrypt<4.1
-cryptography==44.0.0
-python-dotenv==1.0.1
-
-# ─── Rate Limiting & API Protection ───
-slowapi==0.1.9
-redis==5.2.1
-
-# ─── Data Validation & Serialization ───
+# ─── Validation ───
 pydantic==2.10.6
-email-validator==2.2.0
 
-# ─── ML/AI Dependencies ───
-scikit-learn==1.6.1
-pandas==2.2.3
-numpy==2.2.3
-openpyxl==3.1.5
-
-# ─── PDF Processing ───
-PyPDF2==3.0.1
-camelot-py==1.0.0
-tabula-py==2.10.0
+# ─── PDF Extraction ───
 pdfplumber==0.11.5
-pytesseract==0.3.13
-pdf2image==1.17.0
-weasyprint==64.1  # HTML-to-PDF conversion for KSERC Truing-Up Orders
+pdfminer.six==20231228
 
-# ─── Monitoring & Logging ───
-structlog==25.1.0
-sentry-sdk==2.20.0
-prometheus-client==0.21.1
+# ─── PDF Generation ───
+weasyprint==64.1
 
-# ─── Testing ───
-pytest==8.3.4
-pytest-asyncio==0.25.3
-httpx==0.28.1
+# ─── AI (Optional) ───
+openai>=1.0.0
 
-# ─── Development Tools ───
-black==25.1.0
-flake8==7.1.1
-mypy==1.14.1
-isort==6.0.0
-
-# ─── LLM & Orchestration ───
-langchain-core==1.2.15
-langchain-openai==1.1.10
-langgraph==1.0.9
-
-# ─── Additional Utilities ───
-requests==2.32.5
-python-dateutil==2.9.0.post0
-scipy==1.17.0
-pyyaml==6.0.2
-beautifulsoup4==4.12.3
-httptools==0.6.4
-watchfiles==1.0.4
-websockets==15.0
+# ─── Utilities ───
+python-dotenv==1.0.1
