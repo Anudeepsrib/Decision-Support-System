@@ -16,6 +16,8 @@ class DocumentUploadResponse(BaseModel):
     file_size: int
     page_count: Optional[int] = None
     status: str
+    rows_extracted: int = 0
+    case_id: Optional[str] = None
 
 class DocumentListItem(BaseModel):
     id: str
@@ -36,7 +38,10 @@ class ExtractedRowResponse(BaseModel):
     table_index: Optional[int] = None
     table_name: Optional[str] = None
     row_label: str
+    normalized_label: Optional[str] = None
     value: Optional[float] = None
+    value_type: str = "value"
+    document_type: str
     unit: str = "Rs. Cr."
     confidence: float
     extraction_method: str
@@ -61,6 +66,7 @@ class NormalizedItemResponse(BaseModel):
     category: str
     cost_head: Optional[str] = None
     source_doc_type: str
+    value_type: Optional[str] = None
     value: Optional[float] = None
     unit: str = "Rs. Cr."
     mapping_confidence: float
@@ -80,8 +86,21 @@ class ComparisonItemResponse(BaseModel):
     variance_percent: Optional[float] = None
     decision_class: str
     flag_reason: Optional[str] = None
+    latest_review_action: Optional[str] = None
+    latest_review_comment: Optional[str] = None
+    latest_reviewed_at: Optional[datetime] = None
+    approved_source_document_id: Optional[str] = None
+    actual_source_document_id: Optional[str] = None
+    claimed_source_document_id: Optional[str] = None
     approved_source_page: Optional[int] = None
     actual_source_page: Optional[int] = None
+    claimed_source_page: Optional[int] = None
+    approved_source_table: Optional[str] = None
+    actual_source_table: Optional[str] = None
+    claimed_source_table: Optional[str] = None
+    approved_confidence: Optional[float] = None
+    actual_confidence: Optional[float] = None
+    claimed_confidence: Optional[float] = None
 
 class ComparisonResponse(BaseModel):
     case_id: str

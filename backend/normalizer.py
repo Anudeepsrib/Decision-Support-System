@@ -11,6 +11,7 @@ Example:
 """
 
 import re
+from difflib import SequenceMatcher
 from typing import Optional, Tuple, List
 from dataclasses import dataclass
 
@@ -135,7 +136,7 @@ def normalize_row_label(raw_label: str) -> NormalizationResult:
     
     Uses rule-based regex matching with fallback to exact match.
     """
-    label_lower = raw_label.lower().strip()
+    label_lower = _clean_label(raw_label)
     
     # Try rule-based matching
     for pattern, canonical in _NORMALIZATION_RULES:
@@ -151,7 +152,7 @@ def normalize_row_label(raw_label: str) -> NormalizationResult:
     
     # Try exact match in canonical items
     for canonical in CANONICAL_ITEMS:
-        if canonical.lower() == label_lower:
+        if _clean_label(canonical) == label_lower:
             info = CANONICAL_ITEMS[canonical]
             return NormalizationResult(
                 canonical_name=canonical,
@@ -160,6 +161,25 @@ def normalize_row_label(raw_label: str) -> NormalizationResult:
                 confidence=1.0,
                 method="rule_based",
             )
+
+    # Fuzzy fallback for spelling and wording differences in PDF tables.
+    best_canonical = None
+    best_score = 0.0
+    for canonical in CANONICAL_ITEMS:
+        score = SequenceMatcher(None, label_lower, _clean_label(canonical)).ratio()
+        if score > best_score:
+            best_score = score
+            best_canonical = canonical
+
+    if best_canonical and best_score >= 0.78:
+        info = CANONICAL_ITEMS[best_canonical]
+        return NormalizationResult(
+            canonical_name=best_canonical,
+            category=info["category"],
+            cost_head=info["cost_head"],
+            confidence=round(best_score, 2),
+            method="fuzzy",
+        )
     
     # Fallback: use the raw label as-is
     return NormalizationResult(
@@ -169,6 +189,16 @@ def normalize_row_label(raw_label: str) -> NormalizationResult:
         confidence=0.3,
         method="fallback",
     )
+
+
+def _clean_label(label: str) -> str:
+    """Normalize punctuation, numbering, and whitespace before matching."""
+    cleaned = (label or "").lower().strip()
+    cleaned = re.sub(r"^\s*(sr\.?\s*no\.?|sl\.?\s*no\.?|[ivxlcdm]+\.|\d+[\).\s-]+)", "", cleaned)
+    cleaned = cleaned.replace("&", " and ")
+    cleaned = re.sub(r"[^a-z0-9]+", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
 
 
 def normalize_batch(raw_labels: List[str]) -> List[NormalizationResult]:

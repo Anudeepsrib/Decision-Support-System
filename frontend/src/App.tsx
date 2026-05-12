@@ -1,33 +1,63 @@
-import React, { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  Check,
+  Download,
+  Edit3,
+  Eye,
+  FileText,
+  Loader2,
+  RefreshCw,
+  Upload,
+  X,
+} from 'lucide-react'
+
+const API_BASE = 'http://127.0.0.1:8000/api'
+
+type Tab = 'arr-upload' | 'petition-upload' | 'extraction' | 'comparison' | 'generate'
+type DocType = 'arr_order' | 'truing_up_petition'
 
 interface Document {
   id: string
   filename: string
-  doc_type: string
+  doc_type: DocType
   financial_year: string
   upload_timestamp: string
   file_size: number
-  page_count: number
+  page_count: number | null
   status: string
+}
+
+interface UploadResponse {
+  id: string
+  filename: string
+  doc_type: DocType
+  file_size: number
+  page_count: number | null
+  status: string
+  rows_extracted: number
+  case_id?: string | null
 }
 
 interface ExtractedRow {
   id: string
   page_number: number
-  table_index: number
-  table_name: string
+  table_index: number | null
+  table_name: string | null
   row_label: string
-  value: number
+  normalized_label: string | null
+  value: number | null
+  value_type: string
+  document_type: DocType
   unit: string
   confidence: number
   extraction_method: string
-  raw_text: string
+  raw_text: string | null
 }
 
 interface ExtractionResult {
   document_id: string
   filename: string
-  doc_type: string
+  doc_type: DocType
   total_pages: number
   total_rows_extracted: number
   rows_needing_review: number
@@ -38,7 +68,7 @@ interface ExtractionResult {
 interface ComparisonItem {
   id: string
   canonical_name: string
-  cost_head: string
+  cost_head: string | null
   approved_value: number | null
   actual_value: number | null
   claimed_value: number | null
@@ -46,8 +76,21 @@ interface ComparisonItem {
   variance_percent: number | null
   decision_class: string
   flag_reason: string | null
+  latest_review_action: string | null
+  latest_review_comment: string | null
+  latest_reviewed_at: string | null
+  approved_source_document_id: string | null
+  actual_source_document_id: string | null
+  claimed_source_document_id: string | null
   approved_source_page: number | null
   actual_source_page: number | null
+  claimed_source_page: number | null
+  approved_source_table: string | null
+  actual_source_table: string | null
+  claimed_source_table: string | null
+  approved_confidence: number | null
+  actual_confidence: number | null
+  claimed_confidence: number | null
 }
 
 interface ComparisonResult {
@@ -74,605 +117,621 @@ interface GeneratedOrder {
   download_url: string
 }
 
+interface ReviewDraft {
+  edited_value: string
+  officer_comment: string
+}
+
+async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, init)
+  if (!response.ok) {
+    let detail = `Request failed with ${response.status}`
+    try {
+      const payload = await response.json()
+      detail = payload.detail || detail
+    } catch {
+      detail = await response.text()
+    }
+    throw new Error(detail)
+  }
+  return response.json()
+}
+
+function fmtMoney(value: number | null | undefined) {
+  return value == null ? '-' : value.toFixed(2)
+}
+
+function fmtPercent(value: number | null | undefined) {
+  return value == null ? '-' : `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`
+}
+
+function confidenceClass(value: number | null | undefined) {
+  if ((value ?? 0) >= 0.8) return 'bg-emerald-100 text-emerald-800'
+  if ((value ?? 0) >= 0.6) return 'bg-amber-100 text-amber-800'
+  return 'bg-red-100 text-red-800'
+}
+
 function App() {
-  const [activeTab, setActiveTab] = useState('arr-upload')
+  const [activeTab, setActiveTab] = useState<Tab>('arr-upload')
   const [documents, setDocuments] = useState<Document[]>([])
-  const [selectedArrFile, setSelectedArrFile] = useState<File | null>(null)
-  const [selectedPetitionFile, setSelectedPetitionFile] = useState<File | null>(null)
-  const [uploading, setUploading] = useState(false)
-  const [extracting, setExtracting] = useState<string | null>(null)
-  
-  const [extraction, setExtraction] = useState<ExtractionResult | null>(null)
+  const [arrFile, setArrFile] = useState<File | null>(null)
+  const [petitionFile, setPetitionFile] = useState<File | null>(null)
+  const [extractions, setExtractions] = useState<Record<string, ExtractionResult>>({})
   const [comparison, setComparison] = useState<ComparisonResult | null>(null)
   const [order, setOrder] = useState<GeneratedOrder | null>(null)
-  const [comparing, setComparing] = useState(false)
-  const [generating, setGenerating] = useState(false)
+  const [reviewDrafts, setReviewDrafts] = useState<Record<string, ReviewDraft>>({})
+  const [loading, setLoading] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  const latestArr = useMemo(
+    () => documents.find((doc) => doc.doc_type === 'arr_order'),
+    [documents],
+  )
+  const latestPetition = useMemo(
+    () => documents.find((doc) => doc.doc_type === 'truing_up_petition'),
+    [documents],
+  )
+  const arrExtraction = latestArr ? extractions[latestArr.id] : null
+  const petitionExtraction = latestPetition ? extractions[latestPetition.id] : null
+  const canCompare = latestArr?.status === 'extracted' && latestPetition?.status === 'extracted'
+  const reportUrl = order ? `http://127.0.0.1:8000${order.download_url}` : null
 
   useEffect(() => {
-    loadDocuments()
+    loadAll().catch((err) => setError((err as Error).message))
   }, [])
 
-  const handleArrFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      setSelectedArrFile(file)
-    }
-  }
+  async function loadAll() {
+    setError(null)
+    const docs = await apiJson<Document[]>('/documents')
+    setDocuments(docs)
 
-  const handlePetitionFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      setSelectedPetitionFile(file)
-    }
-  }
+    const latestByType = [
+      docs.find((doc) => doc.doc_type === 'arr_order' && doc.status === 'extracted'),
+      docs.find((doc) => doc.doc_type === 'truing_up_petition' && doc.status === 'extracted'),
+    ].filter(Boolean) as Document[]
 
-  const handleArrUpload = async () => {
-    if (!selectedArrFile) return
-
-    setUploading(true)
-    const formData = new FormData()
-    formData.append('file', selectedArrFile)
-    formData.append('financial_year', '2024-25')
+    const loadedExtractions: Record<string, ExtractionResult> = {}
+    await Promise.all(latestByType.map(async (doc) => {
+      loadedExtractions[doc.id] = await apiJson<ExtractionResult>(`/extraction/${doc.id}`)
+    }))
+    setExtractions((current) => ({ ...current, ...loadedExtractions }))
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/upload/arr', {
-        method: 'POST',
-        body: formData,
-      })
+      const latestComparison = await apiJson<ComparisonResult>('/comparison/latest?financial_year=2024-25')
+      setComparison(latestComparison)
+    } catch {
+      setComparison(null)
+    }
+  }
 
-      if (response.ok) {
-        const result = await response.json()
-        console.log('ARR upload successful:', result)
-        setSelectedArrFile(null)
-        loadDocuments()
-        alert(`ARR Order uploaded successfully! ${result.filename}`)
+  async function uploadDocument(docType: DocType) {
+    const file = docType === 'arr_order' ? arrFile : petitionFile
+    if (!file) return
+
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('financial_year', '2024-25')
+
+    setLoading(docType)
+    setError(null)
+    setNotice(null)
+    try {
+      const endpoint = docType === 'arr_order' ? '/upload/arr' : '/upload/petition'
+      const result = await apiJson<UploadResponse>(endpoint, { method: 'POST', body: formData })
+      if (docType === 'arr_order') {
+        setArrFile(null)
         setActiveTab('petition-upload')
       } else {
-        const error = await response.json()
-        console.error('ARR upload failed:', error)
-        alert(`ARR upload failed: ${error.detail || 'Unknown error'}`)
+        setPetitionFile(null)
+        setActiveTab(result.case_id ? 'comparison' : 'extraction')
       }
-    } catch (error) {
-      console.error('ARR upload error:', error)
-      alert(`ARR upload error: ${(error as Error).message}`)
+      setNotice(`${result.filename} uploaded and extracted (${result.rows_extracted} rows).`)
+      await loadAll()
+      await loadExtraction(result.id)
+      if (result.case_id) await loadComparison(result.case_id)
+    } catch (err) {
+      setError((err as Error).message)
     } finally {
-      setUploading(false)
+      setLoading(null)
     }
   }
 
-  const handlePetitionUpload = async () => {
-    if (!selectedPetitionFile) return
+  async function loadExtraction(documentId: string) {
+    const result = await apiJson<ExtractionResult>(`/extraction/${documentId}`)
+    setExtractions((current) => ({ ...current, [documentId]: result }))
+  }
 
-    setUploading(true)
-    const formData = new FormData()
-    formData.append('file', selectedPetitionFile)
-    formData.append('financial_year', '2024-25')
-
+  async function runExtraction(documentId: string) {
+    setLoading(`extract-${documentId}`)
+    setError(null)
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/upload/petition', {
+      const result = await apiJson<ExtractionResult>(`/extraction/${documentId}/run`, { method: 'POST' })
+      setExtractions((current) => ({ ...current, [documentId]: result }))
+      await loadAll()
+      setActiveTab('extraction')
+      setNotice(`${result.filename} extraction refreshed (${result.total_rows_extracted} rows).`)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setLoading(null)
+    }
+  }
+
+  async function runComparison() {
+    setLoading('comparison')
+    setError(null)
+    try {
+      const result = await apiJson<ComparisonResult>('/comparison/run?financial_year=2024-25', {
         method: 'POST',
-        body: formData,
       })
-
-      if (response.ok) {
-        const result = await response.json()
-        console.log('Petition upload successful:', result)
-        setSelectedPetitionFile(null)
-        loadDocuments()
-        alert(`Petition uploaded successfully! ${result.filename}`)
-        setActiveTab('extraction')
-      } else {
-        const error = await response.json()
-        console.error('Petition upload failed:', error)
-        alert(`Petition upload failed: ${error.detail || 'Unknown error'}`)
-      }
-    } catch (error) {
-      console.error('Petition upload error:', error)
-      alert(`Petition upload error: ${(error as Error).message}`)
+      setComparison(result)
+      setActiveTab('comparison')
+      setNotice(`Comparison generated for ${result.total_items} line items.`)
+    } catch (err) {
+      setError((err as Error).message)
     } finally {
-      setUploading(false)
+      setLoading(null)
     }
   }
 
-  const loadDocuments = async () => {
-    try {
-      const response = await fetch('http://127.0.0.1:8000/api/documents')
-      if (response.ok) {
-        const docs = await response.json()
-        setDocuments(docs)
-      }
-    } catch (error) {
-      console.error('Failed to load documents:', error)
-    }
+  async function loadComparison(caseId: string) {
+    const result = await apiJson<ComparisonResult>(`/comparison/${caseId}`)
+    setComparison(result)
   }
 
-  const runExtraction = async (docId: string) => {
-    setExtracting(docId)
-    try {
-      const response = await fetch(`http://127.0.0.1:8000/api/extraction/${docId}/run`, { method: 'POST' })
-      if (response.ok) {
-        const res = await response.json()
-        setExtraction(res)
-        loadDocuments()
-        setActiveTab('extraction')
-      }
-    } catch (error) {
-      console.error(error)
-    } finally {
-      setExtracting(null)
-    }
+  function updateReviewDraft(item: ComparisonItem, patch: Partial<ReviewDraft>) {
+    setReviewDrafts((current) => ({
+      ...current,
+      [item.id]: {
+        edited_value: current[item.id]?.edited_value ?? String(item.actual_value ?? ''),
+        officer_comment: current[item.id]?.officer_comment ?? item.latest_review_comment ?? '',
+        ...patch,
+      },
+    }))
   }
 
-  const runComparison = async () => {
-    setComparing(true)
-    try {
-      const response = await fetch('http://127.0.0.1:8000/api/comparison/run?financial_year=2024-25', { method: 'POST' })
-      if (response.ok) {
-        const res = await response.json()
-        setComparison(res)
-        setActiveTab('comparison')
-      } else {
-        const error = await response.json()
-        alert(`Comparison failed: ${error.detail || 'Unknown error'}`)
-      }
-    } catch (error) {
-      console.error(error)
-      alert(`Comparison error: ${(error as Error).message}`)
-    } finally {
-      setComparing(false)
-    }
-  }
-
-  const approveItem = async (compId: string) => {
-    try {
-      const response = await fetch(`http://127.0.0.1:8000/api/review/${compId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'approve', officer_name: 'Demo Officer', officer_comment: 'Approved manually.' })
-      })
-      if (response.ok) {
-        if (comparison) {
-          const updatedItems = comparison.items.map(i => i.id === compId ? { ...i, decision_class: 'AI_AUTO' } : i)
-          setComparison({ ...comparison, items: updatedItems, auto_approved: comparison.auto_approved + 1, review_required: Math.max(0, comparison.review_required - 1) })
-        }
-      }
-    } catch (error) {
-      console.error(error)
-    }
-  }
-
-  const generateOrder = async () => {
+  async function saveReview(item: ComparisonItem, action: 'approve' | 'reject' | 'edit') {
     if (!comparison) return
-    setGenerating(true)
+
+    const draft = reviewDrafts[item.id] ?? {
+      edited_value: String(item.actual_value ?? ''),
+      officer_comment: item.latest_review_comment ?? '',
+    }
+    const editedValue = Number(draft.edited_value)
+
+    setLoading(`review-${item.id}-${action}`)
+    setError(null)
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/generate', {
+      await apiJson(`/review/${item.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ case_id: comparison.case_id, financial_year: '2024-25', officer_name: 'Demo Officer' })
+        body: JSON.stringify({
+          action,
+          officer_name: 'Demo Officer',
+          officer_comment: draft.officer_comment || `${action} by officer`,
+          edited_value: action === 'edit' && Number.isFinite(editedValue) ? editedValue : undefined,
+        }),
       })
-      if (response.ok) {
-        const res = await response.json()
-        setOrder(res)
-        setActiveTab('generate')
-      } else {
-        const error = await response.json()
-        alert(`Generation failed: ${error.detail || 'Unknown error'}`)
-      }
-    } catch (error) {
-      console.error(error)
-      alert(`Generation error: ${(error as Error).message}`)
+      await loadComparison(comparison.case_id)
+      setNotice('Review saved.')
+    } catch (err) {
+      setError((err as Error).message)
     } finally {
-      setGenerating(false)
+      setLoading(null)
     }
   }
 
-  const renderArrUploadTab = () => (
-    <div className="max-w-4xl mx-auto p-6">
-      <div className="kserc-card bg-white p-6 shadow-md rounded-lg">
-        <h2 className="text-2xl font-bold mb-6 text-gray-900">Step 1: Upload ARR Approval Order</h2>
-        
-        <div className="border-2 border-dashed border-blue-300 rounded-lg p-8 text-center bg-blue-50">
-          <input
-            type="file"
-            accept=".pdf"
-            onChange={handleArrFileSelect}
-            className="hidden"
-            id="arr-file-upload"
-          />
-          <label htmlFor="arr-file-upload" className="cursor-pointer">
-            <span className="bg-blue-600 text-white font-medium py-2 px-4 rounded shadow hover:bg-blue-700 transition">
-              Choose ARR Order PDF
-            </span>
-          </label>
-          
-          {selectedArrFile && (
-            <div className="mt-4">
-              <p className="text-sm text-gray-600">Selected: <span className="font-semibold">{selectedArrFile.name}</span></p>
-              <button
-                onClick={handleArrUpload}
-                disabled={uploading}
-                className="mt-4 bg-green-600 text-white font-medium py-2 px-6 rounded shadow hover:bg-green-700 disabled:bg-gray-400 transition"
-              >
-                {uploading ? 'Uploading...' : 'Upload ARR Order'}
-              </button>
-            </div>
-          )}
-        </div>
+  async function generateOrder() {
+    if (!comparison) return
 
-        <div className="mt-8">
-          <h3 className="text-lg font-semibold mb-4 border-b pb-2">ARR Documents</h3>
-          {documents.filter(d => d.doc_type === 'arr_order').length === 0 ? (
-            <p className="text-gray-500 italic text-sm">No ARR documents uploaded yet.</p>
-          ) : (
-            <div className="space-y-3">
-              {documents.filter(d => d.doc_type === 'arr_order').map((doc) => (
-                <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
-                  <div>
-                    <p className="font-medium text-gray-900">{doc.filename}</p>
-                    <p className="text-sm text-gray-500">
-                      {doc.file_size ? `${(doc.file_size / 1024 / 1024).toFixed(1)} MB` : 'Unknown size'} • 
-                      {doc.page_count ? `${doc.page_count} pages` : 'Unknown pages'} • 
-                      Status: {doc.status}
-                    </p>
-                  </div>
-                  {doc.status === 'uploaded' && (
-                    <button
-                      onClick={() => runExtraction(doc.id)}
-                      disabled={extracting === doc.id}
-                      className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:bg-gray-400 transition"
-                    >
-                      {extracting === doc.id ? 'Extracting...' : 'Extract Tables'}
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
+    setLoading('generate')
+    setError(null)
+    try {
+      const result = await apiJson<GeneratedOrder>('/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          case_id: comparison.case_id,
+          financial_year: comparison.financial_year,
+          officer_name: 'Demo Officer',
+        }),
+      })
+      setOrder(result)
+      setActiveTab('generate')
+      setNotice('Draft PDF generated.')
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setLoading(null)
+    }
+  }
 
-  const renderPetitionUploadTab = () => (
-    <div className="max-w-4xl mx-auto p-6">
-      <div className="kserc-card bg-white p-6 shadow-md rounded-lg">
-        <h2 className="text-2xl font-bold mb-6 text-gray-900">Step 2: Upload Truing-Up Petition</h2>
-        
-        <div className="border-2 border-dashed border-green-300 rounded-lg p-8 text-center bg-green-50">
-          <input
-            type="file"
-            accept=".pdf"
-            onChange={handlePetitionFileSelect}
-            className="hidden"
-            id="petition-file-upload"
-          />
-          <label htmlFor="petition-file-upload" className="cursor-pointer">
-            <span className="bg-green-600 text-white font-medium py-2 px-4 rounded shadow hover:bg-green-700 transition">
-              Choose Petition PDF
-            </span>
-          </label>
-          
-          {selectedPetitionFile && (
-            <div className="mt-4">
-              <p className="text-sm text-gray-600">Selected: <span className="font-semibold">{selectedPetitionFile.name}</span></p>
-              <button
-                onClick={handlePetitionUpload}
-                disabled={uploading}
-                className="mt-4 bg-green-600 text-white font-medium py-2 px-6 rounded shadow hover:bg-green-700 disabled:bg-gray-400 transition"
-              >
-                {uploading ? 'Uploading...' : 'Upload Petition'}
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="mt-8">
-          <h3 className="text-lg font-semibold mb-4 border-b pb-2">Petition Documents</h3>
-          {documents.filter(d => d.doc_type === 'truing_up_petition').length === 0 ? (
-            <p className="text-gray-500 italic text-sm">No petition documents uploaded yet.</p>
-          ) : (
-            <div className="space-y-3">
-              {documents.filter(d => d.doc_type === 'truing_up_petition').map((doc) => (
-                <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
-                  <div>
-                    <p className="font-medium text-gray-900">{doc.filename}</p>
-                    <p className="text-sm text-gray-500">
-                      {doc.file_size ? `${(doc.file_size / 1024 / 1024).toFixed(1)} MB` : 'Unknown size'} • 
-                      {doc.page_count ? `${doc.page_count} pages` : 'Unknown pages'} • 
-                      Status: {doc.status}
-                    </p>
-                  </div>
-                  {doc.status === 'uploaded' && (
-                    <button
-                      onClick={() => runExtraction(doc.id)}
-                      disabled={extracting === doc.id}
-                      className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:bg-gray-400 transition"
-                    >
-                      {extracting === doc.id ? 'Extracting...' : 'Extract Tables'}
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-
-  const renderExtractionTab = () => {
-    const arrExtracted = documents.filter(d => d.doc_type === 'arr_order' && d.status === 'extracted').length > 0;
-    const petExtracted = documents.filter(d => d.doc_type === 'truing_up_petition' && d.status === 'extracted').length > 0;
-    const canCompare = arrExtracted && petExtracted;
+  function documentList(docType: DocType) {
+    const filtered = documents.filter((doc) => doc.doc_type === docType)
+    if (!filtered.length) {
+      return <p className="text-sm italic text-slate-500">No documents uploaded.</p>
+    }
 
     return (
-    <div className="max-w-6xl mx-auto p-6">
-      <div className="kserc-card bg-white p-6 shadow-md rounded-lg">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-gray-900">Data Extraction Results</h2>
-          {canCompare && (
-            <button
-              onClick={runComparison}
-              disabled={comparing}
-              className="bg-purple-600 text-white font-medium py-2 px-6 rounded shadow hover:bg-purple-700 disabled:bg-purple-400 transition"
-            >
-              {comparing ? 'Running AI Comparison...' : 'Run AI Comparison'}
-            </button>
-          )}
-        </div>
-        {!extraction ? (
-          <div className="text-center py-12">
-            <p className="text-gray-500 mb-4">Upload and extract both documents to view extracted financial tables.</p>
-            <div className="space-y-2">
-              <p className="text-sm text-gray-600">ARR Documents: {documents.filter(d => d.doc_type === 'arr_order' && d.status === 'extracted').length} extracted</p>
-              <p className="text-sm text-gray-600">Petition Documents: {documents.filter(d => d.doc_type === 'truing_up_petition' && d.status === 'extracted').length} extracted</p>
+      <div className="space-y-3">
+        {filtered.slice(0, 5).map((doc) => (
+          <div key={doc.id} className="flex flex-col gap-3 rounded-md border border-slate-200 bg-slate-50 p-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-semibold text-slate-900">{doc.filename}</p>
+              <p className="text-sm text-slate-600">
+                {(doc.file_size / 1024 / 1024).toFixed(2)} MB | {doc.page_count ?? '-'} pages | {doc.status}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                className="kserc-button-secondary inline-flex items-center gap-2"
+                onClick={async () => {
+                  await loadExtraction(doc.id)
+                  setActiveTab('extraction')
+                }}
+              >
+                <Eye size={16} /> View Extraction
+              </button>
+              <button
+                className="kserc-button inline-flex items-center gap-2 disabled:bg-slate-400"
+                disabled={loading === `extract-${doc.id}`}
+                onClick={() => runExtraction(doc.id)}
+              >
+                {loading === `extract-${doc.id}` ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
+                Extract
+              </button>
             </div>
           </div>
-        ) : (
-          <div>
-            <div className="flex gap-4 mb-6">
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-blue-800">{extraction.filename}</h3>
-                <p className="text-sm text-blue-600">Type: {extraction.doc_type}</p>
-                <p className="text-sm text-blue-600">Pages: {extraction.total_pages}</p>
-                <p className="text-sm text-blue-600">Rows: {extraction.total_rows_extracted}</p>
-              </div>
-            </div>
-            
-            <div className="overflow-x-auto">
-              <table className="min-w-full border-collapse border border-gray-300">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="border border-gray-300 px-4 py-2 text-left">Line Item</th>
-                    <th className="border border-gray-300 px-4 py-2 text-right">Value</th>
-                    <th className="border border-gray-300 px-4 py-2 text-center">Confidence</th>
-                    <th className="border border-gray-300 px-4 py-2 text-center">Page</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {extraction.rows.slice(0, 20).map((row) => (
-                    <tr key={row.id} className={row.confidence < 0.6 ? 'bg-yellow-50' : ''}>
-                      <td className="border border-gray-300 px-4 py-2">{row.row_label}</td>
-                      <td className="border border-gray-300 px-4 py-2 text-right">{row.value?.toFixed(2)}</td>
-                      <td className="border border-gray-300 px-4 py-2 text-center">
-                        <span className={`px-2 py-1 rounded text-xs ${
-                          row.confidence >= 0.8 ? 'bg-green-100 text-green-800' :
-                          row.confidence >= 0.6 ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-red-100 text-red-800'
-                        }`}>
-                          {(row.confidence * 100).toFixed(0)}%
-                        </span>
-                      </td>
-                      <td className="border border-gray-300 px-4 py-2 text-center">{row.page_number}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {extraction.rows.length > 20 && (
-                <p className="text-sm text-gray-500 mt-2">Showing first 20 rows of {extraction.rows.length} total</p>
-              )}
-            </div>
-          </div>
+        ))}
+        {filtered.length > 5 && (
+          <p className="text-xs text-slate-500">Showing latest 5 of {filtered.length} uploaded documents.</p>
         )}
       </div>
-    </div>
     )
   }
 
-  const renderComparisonTab = () => (
-    <div className="max-w-7xl mx-auto p-6">
-      <div className="kserc-card bg-white p-6 shadow-md rounded-lg">
-        <h2 className="text-2xl font-bold mb-6 text-gray-900">AI Comparison & Review</h2>
-        
-        {!comparison ? (
-          <div className="text-center py-12">
-            <p className="text-gray-500 mb-4">Extract both documents and click "Run AI Comparison" to generate variance analysis.</p>
-          </div>
-        ) : (
-          <div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div className="bg-green-50 p-4 rounded-lg text-center">
-                <h3 className="font-semibold text-green-800">Auto-Approved</h3>
-                <p className="text-2xl font-bold text-green-600">{comparison.auto_approved}</p>
-              </div>
-              <div className="bg-yellow-50 p-4 rounded-lg text-center">
-                <h3 className="font-semibold text-yellow-800">Review Required</h3>
-                <p className="text-2xl font-bold text-yellow-600">{comparison.review_required}</p>
-              </div>
-              <div className="bg-blue-50 p-4 rounded-lg text-center">
-                <h3 className="font-semibold text-blue-800">Total Variance</h3>
-                <p className="text-2xl font-bold text-blue-600">Rs. {comparison.total_variance} Cr.</p>
-              </div>
-            </div>
-            
-            <div className="overflow-x-auto">
-              <table className="min-w-full border-collapse border border-gray-300">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="border border-gray-300 px-4 py-2 text-left">Line Item</th>
-                    <th className="border border-gray-300 px-4 py-2 text-right">ARR Approved</th>
-                    <th className="border border-gray-300 px-4 py-2 text-right">Actual</th>
-                    <th className="border border-gray-300 px-4 py-2 text-right">Claimed</th>
-                    <th className="border border-gray-300 px-4 py-2 text-right">Variance</th>
-                    <th className="border border-gray-300 px-4 py-2 text-right">Variance %</th>
-                    <th className="border border-gray-300 px-4 py-2 text-center">Status</th>
-                    <th className="border border-gray-300 px-4 py-2 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {comparison.items.map((item) => (
-                    <tr key={item.id} className={
-                      item.decision_class === 'AI_AUTO' ? 'bg-green-50' : 'bg-yellow-50'
-                    }>
-                      <td className="border border-gray-300 px-4 py-2 font-medium">{item.canonical_name}</td>
-                      <td className="border border-gray-300 px-4 py-2 text-right">{item.approved_value?.toFixed(2) || '-'}</td>
-                      <td className="border border-gray-300 px-4 py-2 text-right">{item.actual_value?.toFixed(2) || '-'}</td>
-                      <td className="border border-gray-300 px-4 py-2 text-right">{item.claimed_value?.toFixed(2) || '-'}</td>
-                      <td className="border border-gray-300 px-4 py-2 text-right">
-                        {item.variance !== null ? (
-                          <span className={item.variance >= 0 ? 'text-red-600' : 'text-green-600'}>
-                            {item.variance >= 0 ? '+' : ''}{item.variance.toFixed(2)}
-                          </span>
-                        ) : '-'}
-                      </td>
-                      <td className="border border-gray-300 px-4 py-2 text-right">
-                        {item.variance_percent !== null ? (
-                          <span className={item.variance_percent >= 0 ? 'text-red-600' : 'text-green-600'}>
-                            {item.variance_percent >= 0 ? '+' : ''}{item.variance_percent.toFixed(1)}%
-                          </span>
-                        ) : '-'}
-                      </td>
-                      <td className="border border-gray-300 px-4 py-2 text-center">
-                        <span className={`px-2 py-1 rounded text-xs ${
-                          item.decision_class === 'AI_AUTO' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                        }`}>
-                          {item.decision_class === 'AI_AUTO' ? 'AUTO' : 'REVIEW'}
-                        </span>
-                      </td>
-                      <td className="border border-gray-300 px-4 py-2 text-center">
-                        {item.decision_class !== 'AI_AUTO' && (
-                          <button
-                            onClick={() => approveItem(item.id)}
-                            className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 transition"
-                          >
-                            Approve
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            
-            <div className="mt-6 text-center">
-              <button
-                onClick={generateOrder}
-                disabled={generating}
-                className="bg-green-600 text-white font-medium py-3 px-8 rounded shadow hover:bg-green-700 disabled:bg-green-400 transition"
-              >
-                {generating ? 'Generating Order PDF...' : 'Generate KSERC Draft Order'}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  )
+  function uploadTab(docType: DocType) {
+    const isArr = docType === 'arr_order'
+    const file = isArr ? arrFile : petitionFile
+    const setFile = isArr ? setArrFile : setPetitionFile
+    const title = isArr ? 'Step 1: Upload ARR Approval Order' : 'Step 2: Upload 2024-25 Petition'
+    const documentsTitle = isArr ? 'ARR Documents' : 'Petition Documents'
 
-  const renderGenerateTab = () => (
-    <div className="max-w-4xl mx-auto p-6">
-      <div className="kserc-card bg-white p-6 shadow-md rounded-lg">
-        <h2 className="text-2xl font-bold mb-6 text-gray-900">Generate KSERC Draft Order</h2>
-        
-        {!order ? (
-          <div className="text-center py-12">
-            <p className="text-gray-500 mb-4">
-              Complete the comparison and review process to generate the draft order.
-            </p>
-            {comparison && (
-               <button
-                 onClick={generateOrder}
-                 disabled={generating}
-                 className="mt-4 bg-green-600 text-white font-medium py-2 px-6 rounded shadow hover:bg-green-700 disabled:bg-green-400 transition"
-               >
-                 {generating ? 'Generating Order PDF...' : 'Generate KSERC Draft Order'}
-               </button>
+    return (
+      <section className="mx-auto max-w-5xl px-6">
+        <div className="kserc-card">
+          <div className="mb-6 flex items-center justify-between gap-4">
+            <h2 className="text-2xl font-bold">{title}</h2>
+            <span className="rounded-md bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">FY 2024-25</span>
+          </div>
+          <div className="rounded-md border-2 border-dashed border-slate-300 bg-slate-50 p-8 text-center">
+            <input
+              id={`${docType}-file`}
+              type="file"
+              accept=".pdf"
+              className="hidden"
+              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+            />
+            <label htmlFor={`${docType}-file`} className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700">
+              <Upload size={18} /> Choose PDF
+            </label>
+            {file && (
+              <div className="mt-5">
+                <p className="text-sm text-slate-700">{file.name}</p>
+                <button
+                  className="mt-3 inline-flex items-center gap-2 rounded-md bg-emerald-600 px-5 py-2 font-semibold text-white hover:bg-emerald-700 disabled:bg-slate-400"
+                  disabled={loading === docType}
+                  onClick={() => uploadDocument(docType)}
+                >
+                  {loading === docType ? <Loader2 className="animate-spin" size={18} /> : <FileText size={18} />}
+                  Upload and Extract
+                </button>
+              </div>
             )}
           </div>
+          <div className="mt-8">
+            <h3 className="mb-4 border-b border-slate-200 pb-2 text-lg font-semibold">{documentsTitle}</h3>
+            {documentList(docType)}
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  function extractionPanel(title: string, result: ExtractionResult | null) {
+    return (
+      <div className="rounded-md border border-slate-200 bg-white p-4">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold">{title}</h3>
+            {result && <p className="text-sm text-slate-600">{result.filename}</p>}
+          </div>
+          {result && (
+            <span className="rounded-md bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">
+              {result.total_rows_extracted} rows
+            </span>
+          )}
+        </div>
+        {!result ? (
+          <p className="text-sm text-slate-500">No extracted rows loaded.</p>
         ) : (
-          <div className="mt-8 p-6 bg-green-50 border-2 border-green-200 rounded-lg max-w-md mx-auto">
-            <div className="flex items-center justify-center text-green-600 mb-2">
-              <svg className="w-8 h-8 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-              </svg>
-              <h3 className="text-xl font-bold text-green-800">Order Generated Successfully!</h3>
-            </div>
-            <a 
-              href={`http://127.0.0.1:8000${order.download_url}`} 
-              target="_blank" 
-              rel="noreferrer" 
-              className="mt-4 inline-block bg-white text-green-700 font-bold border border-green-300 hover:bg-green-100 py-2 px-6 rounded shadow transition"
-            >
-              Download PDF Draft
-            </a>
+          <div className="max-h-[520px] overflow-auto">
+            <table className="min-w-full border-collapse text-sm">
+              <thead className="sticky top-0 bg-slate-100">
+                <tr>
+                  <th className="border border-slate-200 px-3 py-2 text-left">Raw Label</th>
+                  <th className="border border-slate-200 px-3 py-2 text-left">Normalized</th>
+                  <th className="border border-slate-200 px-3 py-2 text-right">Value</th>
+                  <th className="border border-slate-200 px-3 py-2 text-center">Type</th>
+                  <th className="border border-slate-200 px-3 py-2 text-center">Confidence</th>
+                  <th className="border border-slate-200 px-3 py-2 text-center">Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.rows.map((row) => (
+                  <tr key={row.id}>
+                    <td className="border border-slate-200 px-3 py-2">{row.row_label}</td>
+                    <td className="border border-slate-200 px-3 py-2">{row.normalized_label}</td>
+                    <td className="border border-slate-200 px-3 py-2 text-right">{fmtMoney(row.value)}</td>
+                    <td className="border border-slate-200 px-3 py-2 text-center uppercase">{row.value_type}</td>
+                    <td className="border border-slate-200 px-3 py-2 text-center">
+                      <span className={`rounded px-2 py-1 text-xs font-semibold ${confidenceClass(row.confidence)}`}>
+                        {(row.confidence * 100).toFixed(0)}%
+                      </span>
+                    </td>
+                    <td className="border border-slate-200 px-3 py-2 text-center">p.{row.page_number}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
-    </div>
-  )
+    )
+  }
+
+  function extractionTab() {
+    return (
+      <section className="mx-auto max-w-7xl px-6">
+        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <h2 className="text-2xl font-bold">Extraction Results</h2>
+          <button
+            className="kserc-button inline-flex items-center justify-center gap-2 disabled:bg-slate-400"
+            disabled={!canCompare || loading === 'comparison'}
+            onClick={runComparison}
+          >
+            {loading === 'comparison' ? <Loader2 className="animate-spin" size={18} /> : <RefreshCw size={18} />}
+            Run Comparison
+          </button>
+        </div>
+        <div className="grid gap-5 lg:grid-cols-2">
+          {extractionPanel('ARR Approval Order', arrExtraction)}
+          {extractionPanel('Petition', petitionExtraction)}
+        </div>
+      </section>
+    )
+  }
+
+  function comparisonTab() {
+    return (
+      <section className="mx-auto max-w-7xl px-6">
+        <div className="kserc-card">
+          <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <h2 className="text-2xl font-bold">Comparison and Review Workbench</h2>
+            <button
+              className="rounded-md bg-emerald-600 px-5 py-2 font-semibold text-white hover:bg-emerald-700 disabled:bg-slate-400"
+              disabled={!comparison || loading === 'generate'}
+              onClick={generateOrder}
+            >
+              <span className="inline-flex items-center gap-2">
+                {loading === 'generate' ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />}
+                Generate PDF
+              </span>
+            </button>
+          </div>
+          {!comparison ? (
+            <div className="rounded-md border border-slate-200 bg-slate-50 p-8 text-center">
+              <p className="mb-4 text-slate-600">Upload and extract both documents, then run comparison.</p>
+              <button className="kserc-button" disabled={!canCompare} onClick={runComparison}>Run Comparison</button>
+            </div>
+          ) : (
+            <>
+              <div className="mb-6 grid gap-4 md:grid-cols-4">
+                <Metric label="Total Items" value={comparison.total_items} />
+                <Metric label="AI Auto" value={comparison.auto_approved} tone="green" />
+                <Metric label="Review Required" value={comparison.review_required} tone="amber" />
+                <Metric label="Total Variance" value={`${comparison.total_variance.toFixed(2)} Cr.`} tone="blue" />
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-[1400px] border-collapse text-sm">
+                  <thead className="bg-slate-100">
+                    <tr>
+                      <th className="border border-slate-200 px-3 py-2 text-left">Line Item</th>
+                      <th className="border border-slate-200 px-3 py-2 text-right">ARR Approved</th>
+                      <th className="border border-slate-200 px-3 py-2 text-right">Actual</th>
+                      <th className="border border-slate-200 px-3 py-2 text-right">Claimed</th>
+                      <th className="border border-slate-200 px-3 py-2 text-right">Variance</th>
+                      <th className="border border-slate-200 px-3 py-2 text-right">Variance %</th>
+                      <th className="border border-slate-200 px-3 py-2 text-left">Traceability</th>
+                      <th className="border border-slate-200 px-3 py-2 text-left">Review</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {comparison.items.map((item) => {
+                      const draft = reviewDrafts[item.id] ?? {
+                        edited_value: String(item.actual_value ?? ''),
+                        officer_comment: item.latest_review_comment ?? '',
+                      }
+                      const isReview = item.decision_class !== 'AI_AUTO'
+                      return (
+                        <tr key={item.id} className={isReview ? 'bg-amber-50' : 'bg-emerald-50'}>
+                          <td className="border border-slate-200 px-3 py-2 align-top">
+                            <p className="font-semibold text-slate-900">{item.canonical_name}</p>
+                            <p className="text-xs text-slate-500">{item.cost_head ?? 'Other'}</p>
+                            {item.flag_reason && <p className="mt-1 text-xs text-slate-600">{item.flag_reason}</p>}
+                          </td>
+                          <td className="border border-slate-200 px-3 py-2 text-right align-top">{fmtMoney(item.approved_value)}</td>
+                          <td className="border border-slate-200 px-3 py-2 text-right align-top">
+                            <input
+                              className="w-28 rounded border border-slate-300 px-2 py-1 text-right"
+                              value={draft.edited_value}
+                              onChange={(event) => updateReviewDraft(item, { edited_value: event.target.value })}
+                            />
+                          </td>
+                          <td className="border border-slate-200 px-3 py-2 text-right align-top">{fmtMoney(item.claimed_value)}</td>
+                          <td className={`border border-slate-200 px-3 py-2 text-right align-top ${item.variance && item.variance > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                            {fmtMoney(item.variance)}
+                          </td>
+                          <td className={`border border-slate-200 px-3 py-2 text-right align-top ${item.variance_percent && item.variance_percent > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                            {fmtPercent(item.variance_percent)}
+                          </td>
+                          <td className="border border-slate-200 px-3 py-2 align-top text-xs text-slate-700">
+                            <p>ARR p.{item.approved_source_page ?? '-'}</p>
+                            <p>Petition actual p.{item.actual_source_page ?? '-'}</p>
+                            <p>Claimed p.{item.claimed_source_page ?? '-'}</p>
+                            <p className="mt-1">Conf: ARR {item.approved_confidence ? `${(item.approved_confidence * 100).toFixed(0)}%` : '-'}, Petition {item.actual_confidence ? `${(item.actual_confidence * 100).toFixed(0)}%` : '-'}</p>
+                          </td>
+                          <td className="border border-slate-200 px-3 py-2 align-top">
+                            <textarea
+                              className="mb-2 h-16 w-64 rounded border border-slate-300 px-2 py-1"
+                              placeholder="Officer note"
+                              value={draft.officer_comment}
+                              onChange={(event) => updateReviewDraft(item, { officer_comment: event.target.value })}
+                            />
+                            <div className="flex flex-wrap gap-2">
+                              <button className="rounded bg-emerald-600 px-2 py-1 text-xs font-semibold text-white" onClick={() => saveReview(item, 'approve')}>
+                                <Check size={14} className="inline" /> Approve
+                              </button>
+                              <button className="rounded bg-blue-600 px-2 py-1 text-xs font-semibold text-white" onClick={() => saveReview(item, 'edit')}>
+                                <Edit3 size={14} className="inline" /> Save Edit
+                              </button>
+                              <button className="rounded bg-red-600 px-2 py-1 text-xs font-semibold text-white" onClick={() => saveReview(item, 'reject')}>
+                                <X size={14} className="inline" /> Reject
+                              </button>
+                            </div>
+                            {item.latest_review_action && (
+                              <p className="mt-2 text-xs text-slate-600">Saved: {item.latest_review_action}</p>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      </section>
+    )
+  }
+
+  function generateTab() {
+    return (
+      <section className="mx-auto max-w-6xl px-6">
+        <div className="kserc-card">
+          <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <h2 className="text-2xl font-bold">Generated KSERC Draft Order</h2>
+            {reportUrl && (
+              <a className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 font-semibold text-white hover:bg-emerald-700" href={reportUrl} target="_blank" rel="noreferrer">
+                <Download size={18} /> Download PDF
+              </a>
+            )}
+          </div>
+          {!order ? (
+            <div className="rounded-md border border-slate-200 bg-slate-50 p-8 text-center">
+              <p className="mb-4 text-slate-600">Generate a draft after comparison review.</p>
+              <button className="kserc-button" disabled={!comparison || loading === 'generate'} onClick={generateOrder}>
+                {loading === 'generate' ? 'Generating...' : 'Generate Draft PDF'}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+                Draft generated for case {order.case_id}. File size: {(order.file_size / 1024).toFixed(1)} KB.
+              </div>
+              {reportUrl && <iframe title="KSERC Draft PDF Preview" src={reportUrl} className="h-[760px] w-full rounded-md border border-slate-300" />}
+            </div>
+          )}
+        </div>
+      </section>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <h1 className="text-2xl font-bold text-gray-900">KSERC Decision Support System</h1>
-            <div className="text-sm text-gray-500">
-              MVP Demo • Two-Document Workflow
-            </div>
+    <div className="min-h-screen bg-slate-100">
+      <header className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-6 py-5 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-950">KSERC Decision Support System</h1>
+            <p className="text-sm text-slate-600">Demo MVP | ARR vs Petition truing-up workflow</p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs font-semibold">
+            <StatusPill label="ARR" ok={latestArr?.status === 'extracted'} />
+            <StatusPill label="Petition" ok={latestPetition?.status === 'extracted'} />
+            <StatusPill label="Comparison" ok={!!comparison} />
+            <StatusPill label="PDF" ok={!!order} />
           </div>
         </div>
       </header>
 
-      {/* Navigation */}
-      <div className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <nav className="flex space-x-1">
-            {[
-              { id: 'arr-upload', label: '1. ARR Upload', icon: '📄' },
-              { id: 'petition-upload', label: '2. Petition Upload', icon: '📋' },
-              { id: 'extraction', label: '3. Data Extraction', icon: '📊' },
-              { id: 'comparison', label: '4. AI Comparison', icon: '📈' },
-              { id: 'generate', label: '5. Generate Order', icon: '📋' }
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === tab.id
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <span className="mr-2">{tab.icon}</span>
-                {tab.label}
-              </button>
-            ))}
-          </nav>
+      <nav className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-7xl overflow-x-auto px-6">
+          {[
+            ['arr-upload', 'ARR Upload'],
+            ['petition-upload', 'Petition Upload'],
+            ['extraction', 'Extraction'],
+            ['comparison', 'Comparison & Review'],
+            ['generate', 'PDF Preview'],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold ${activeTab === id ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-600 hover:text-slate-900'}`}
+              onClick={() => setActiveTab(id as Tab)}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-      </div>
+      </nav>
 
-      {/* Main Content */}
       <main className="py-8">
-        {activeTab === 'arr-upload' && renderArrUploadTab()}
-        {activeTab === 'petition-upload' && renderPetitionUploadTab()}
-        {activeTab === 'extraction' && renderExtractionTab()}
-        {activeTab === 'comparison' && renderComparisonTab()}
-        {activeTab === 'generate' && renderGenerateTab()}
+        {(error || notice) && (
+          <div className={`mx-auto mb-5 max-w-7xl rounded-md px-4 py-3 text-sm ${error ? 'border border-red-200 bg-red-50 text-red-800' : 'border border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+            {error || notice}
+          </div>
+        )}
+        {activeTab === 'arr-upload' && uploadTab('arr_order')}
+        {activeTab === 'petition-upload' && uploadTab('truing_up_petition')}
+        {activeTab === 'extraction' && extractionTab()}
+        {activeTab === 'comparison' && comparisonTab()}
+        {activeTab === 'generate' && generateTab()}
       </main>
     </div>
+  )
+}
+
+function Metric({ label, value, tone = 'slate' }: { label: string; value: string | number; tone?: 'slate' | 'green' | 'amber' | 'blue' }) {
+  const classes = {
+    slate: 'bg-slate-50 text-slate-900',
+    green: 'bg-emerald-50 text-emerald-800',
+    amber: 'bg-amber-50 text-amber-800',
+    blue: 'bg-blue-50 text-blue-800',
+  }[tone]
+  return (
+    <div className={`rounded-md border border-slate-200 p-4 ${classes}`}>
+      <p className="text-sm font-semibold">{label}</p>
+      <p className="mt-1 text-2xl font-bold">{value}</p>
+    </div>
+  )
+}
+
+function StatusPill({ label, ok }: { label: string; ok: boolean }) {
+  return (
+    <span className={`rounded-md px-3 py-1 ${ok ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
+      {label}: {ok ? 'Ready' : 'Pending'}
+    </span>
   )
 }
 

@@ -34,6 +34,8 @@ class ExtractedTableRow:
     table_name: str
     row_label: str
     value: Optional[float]
+    value_type: str = "value"
+    document_type: str = "unknown"
     unit: str = "Rs. Cr."
     confidence: float = 0.0
     raw_text: str = ""
@@ -161,9 +163,83 @@ def _calculate_confidence(row_label: str, value: Optional[float], table_name: st
     return min(score, 1.0)
 
 
+def _infer_document_type(filename: str) -> str:
+    """Infer document type from filename when the caller does not provide it."""
+    name = (filename or "").lower()
+    if "petition" in name or "truing" in name or "true" in name:
+        return "truing_up_petition"
+    if "arr" in name or "order" in name or "approval" in name:
+        return "arr_order"
+    return "unknown"
+
+
+def _column_value_type(header: str) -> Optional[str]:
+    """Map a table column heading to the value type it carries."""
+    h = (header or "").lower()
+    if any(token in h for token in ("approved", "approval", "allowed", "arr order")):
+        return "approved"
+    if any(token in h for token in ("actual", "audited", "audit")):
+        return "actual"
+    if any(token in h for token in ("claimed", "claim", "petition", "proposed")):
+        return "claimed"
+    return None
+
+
+def _default_value_type(document_type: str) -> str:
+    if document_type == "arr_order":
+        return "approved"
+    if document_type == "truing_up_petition":
+        return "actual"
+    return "value"
+
+
+def _select_value_columns(
+    row: List[Optional[str]],
+    header_types: Dict[int, Optional[str]],
+    document_type: str,
+) -> List[Tuple[int, float, str]]:
+    """Select the numeric columns relevant to the document type."""
+    parsed_values: List[Tuple[int, float, Optional[str]]] = []
+    for col_idx in range(1, len(row)):
+        parsed = _parse_financial_value(str(row[col_idx] or ""))
+        if parsed is not None:
+            parsed_values.append((col_idx, parsed, header_types.get(col_idx)))
+
+    if not parsed_values:
+        return []
+
+    has_typed_headers = any(value_type for _, _, value_type in parsed_values)
+
+    if document_type == "arr_order" and has_typed_headers:
+        selected = [
+            (idx, value, "approved")
+            for idx, value, value_type in parsed_values
+            if value_type == "approved"
+        ]
+        if selected:
+            return selected
+
+    if document_type == "truing_up_petition" and has_typed_headers:
+        selected = [
+            (idx, value, value_type or "actual")
+            for idx, value, value_type in parsed_values
+            if value_type in ("actual", "claimed")
+        ]
+        if selected:
+            return selected
+
+    # Fallback for unlabelled financial tables: use the first numeric value.
+    idx, value, value_type = parsed_values[0]
+    return [(idx, value, value_type or _default_value_type(document_type))]
+
+
 # ─── Main Extraction Function ───
 
-def extract_tables_from_pdf(pdf_bytes: bytes, filename: str) -> List[ExtractedTableRow]:
+def extract_tables_from_pdf(
+    pdf_bytes: bytes,
+    filename: str,
+    document_type: Optional[str] = None,
+) -> List[ExtractedTableRow]:
     """
     Extract financial tables from a PDF using pdfplumber.
     
@@ -173,6 +249,7 @@ def extract_tables_from_pdf(pdf_bytes: bytes, filename: str) -> List[ExtractedTa
         raise RuntimeError("pdfplumber is not installed. Run: pip install pdfplumber")
     
     extracted_rows: List[ExtractedTableRow] = []
+    document_type = document_type or _infer_document_type(filename)
     
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         for page_num, page in enumerate(pdf.pages, 1):
@@ -196,6 +273,10 @@ def extract_tables_from_pdf(pdf_bytes: bytes, filename: str) -> List[ExtractedTa
                 if table[0]:
                     header_text = " | ".join(str(c or "") for c in table[0] if c)
                     table_name = header_text[:200]
+                header_types = {
+                    idx: _column_value_type(str(cell or ""))
+                    for idx, cell in enumerate(table[0] or [])
+                }
                 
                 if matched_keyword:
                     table_name = f"{matched_keyword.title()} — {table_name}"
@@ -210,29 +291,22 @@ def extract_tables_from_pdf(pdf_bytes: bytes, filename: str) -> List[ExtractedTa
                     if not row_label or len(row_label) < 2:
                         continue
                     
-                    # Try to extract value from remaining columns
                     raw_text = " | ".join(str(c or "") for c in row)
-                    
-                    # Try each column after the label for a financial value
-                    value = None
-                    for col_idx in range(1, len(row)):
-                        cell = str(row[col_idx] or "").strip()
-                        parsed = _parse_financial_value(cell)
-                        if parsed is not None:
-                            value = parsed
-                            break  # Take the first valid value
-                    
-                    confidence = _calculate_confidence(row_label, value, table_name)
-                    
-                    extracted_rows.append(ExtractedTableRow(
-                        page_number=page_num,
-                        table_index=table_idx,
-                        table_name=table_name,
-                        row_label=row_label,
-                        value=value,
-                        confidence=confidence,
-                        raw_text=raw_text,
-                    ))
+
+                    for _, value, value_type in _select_value_columns(row, header_types, document_type):
+                        confidence = _calculate_confidence(row_label, value, table_name)
+
+                        extracted_rows.append(ExtractedTableRow(
+                            page_number=page_num,
+                            table_index=table_idx,
+                            table_name=table_name,
+                            row_label=row_label,
+                            value=value,
+                            value_type=value_type,
+                            document_type=document_type,
+                            confidence=confidence,
+                            raw_text=raw_text,
+                        ))
     
     return extracted_rows
 

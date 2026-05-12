@@ -4,17 +4,10 @@ Test PDF generation functionality
 """
 import os
 import sys
+import asyncio
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
 
-# WeasyPrint not available - test HTML generation only
-def generate_order_html(*args, **kwargs):
-    """Mock HTML generation for testing"""
-    from backend.pdf_generator import generate_order_html as real_generate_html
-    return real_generate_html(*args, **kwargs)
-
-def generate_order_pdf(*args, **kwargs):
-    """Mock PDF generation - not available"""
-    raise RuntimeError("WeasyPrint not available")
+from pdf_generator import generate_order_html, generate_order_pdf
 
 from datetime import datetime
 
@@ -97,45 +90,25 @@ def test_pdf_generation():
         status = "✓" if passed else "✗"
         print(f"  {status} {check_name}")
     
-    # Test PDF generation (if WeasyPrint available)
+    # Test PDF generation using the app's configured backend.
     print("\nTesting PDF generation...")
-    try:
-        from weasyprint import HTML, CSS
-        weasy_available = True
-    except ImportError:
-        weasy_available = False
-        print("WeasyPrint not available - skipping PDF generation test")
-        return
-    
-    if weasy_available:
-        try:
-            pdf_result = generate_order_pdf(
-                case_id="test-case-123",
-                financial_year="2024-25", 
-                comparisons=mock_comparisons,
-                reviews=mock_reviews,
-                officer_name="Test Officer"
-            )
-            
-            print(f"PDF generated successfully:")
-            print(f"  File path: {pdf_result['file_path']}")
-            print(f"  File size: {pdf_result['file_size']} bytes")
-            print(f"  File hash: {pdf_result['file_hash'][:16]}...")
-            
-            # Check if file exists
-            if os.path.exists(pdf_result['file_path']):
-                print("  ✓ PDF file created on disk")
-                
-                # Check file size is reasonable
-                if pdf_result['file_size'] > 1000:  # At least 1KB
-                    print("  ✓ PDF file size is reasonable")
-                else:
-                    print("  ✗ PDF file size too small")
-            else:
-                print("  ✗ PDF file not found on disk")
-                
-        except Exception as e:
-            print(f"  ✗ PDF generation failed: {e}")
+    pdf_result = asyncio.run(generate_order_pdf(
+        case_id="test-case-123",
+        financial_year="2024-25",
+        comparisons=mock_comparisons,
+        reviews=mock_reviews,
+        officer_name="Test Officer"
+    ))
+
+    print(f"PDF generated successfully:")
+    print(f"  File path: {pdf_result['file_path']}")
+    print(f"  File size: {pdf_result['file_size']} bytes")
+    print(f"  File hash: {pdf_result['file_hash'][:16]}...")
+
+    assert os.path.exists(pdf_result['file_path']), "PDF file not found on disk"
+    assert pdf_result['file_size'] > 1000, "PDF file size too small"
+    print("  ✓ PDF file created on disk")
+    print("  ✓ PDF file size is reasonable")
 
 def test_pdf_quality():
     """Test PDF output quality metrics"""
@@ -167,10 +140,10 @@ def test_pdf_quality():
         
         # Quality checks
         quality_checks = [
-            ("Table row count", html_content.count("<tr>") >= 25),  # Header + 20 items + footer
+            ("Table row count", html_content.count("<tr>") >= 22),  # Header + 20 items + footer
             ("Variance calculations", "₹" in html_content and "%" in html_content),
-            ("Decision badges", html_content.count("REVIEW_REQUIRED") >= 6),  # Every 3rd item
-            ("Auto approvals", html_content.count("AUTO-APPROVED") >= 14),  # Rest
+            ("Decision badges", html_content.count("REVIEW REQUIRED") >= 6),  # Every 3rd item
+            ("Auto approvals", html_content.count("AUTO-APPROVED") >= 13),  # Rest
             ("Proper formatting", "<table" in html_content and "</table>" in html_content),
             ("CSS styling", "style=" in html_content),
         ]

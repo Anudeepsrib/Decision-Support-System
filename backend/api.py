@@ -17,9 +17,7 @@ Endpoints:
 
 import os
 import uuid
-import shutil
-from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Query
 from fastapi.responses import FileResponse
@@ -39,7 +37,7 @@ from schemas import (
 )
 from extractor import extract_tables_from_pdf, get_page_count
 from normalizer import normalize_row_label
-from comparison import run_comparison, calculate_variance, classify_decision
+from comparison import calculate_variance, classify_decision
 from prompts import generate_variance_explanation
 
 router = APIRouter(prefix="/api", tags=["MVP API"])
@@ -52,6 +50,425 @@ UPLOAD_DIR = os.path.join(
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
+def _case_id_for_year(financial_year: str) -> str:
+    """Use one deterministic demo case per financial year."""
+    return f"kserc-{financial_year}"
+
+
+def _validate_pdf_upload(file: UploadFile, contents: bytes):
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
+    if len(contents) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File exceeds 50MB limit.")
+
+
+def _latest_extracted_document(
+    db: Session,
+    doc_type: str,
+    financial_year: str,
+) -> Optional[Document]:
+    return (
+        db.query(Document)
+        .filter(
+            Document.doc_type == doc_type,
+            Document.financial_year == financial_year,
+            Document.status == "extracted",
+        )
+        .order_by(Document.upload_timestamp.desc())
+        .first()
+    )
+
+
+def _delete_extraction_for_document(db: Session, document_id: str):
+    row_ids = [
+        row_id
+        for (row_id,) in db.query(ExtractedRow.id)
+        .filter(ExtractedRow.document_id == document_id)
+        .all()
+    ]
+    if row_ids:
+        db.query(NormalizedLineItem).filter(
+            NormalizedLineItem.extracted_row_id.in_(row_ids)
+        ).delete(synchronize_session=False)
+    db.query(ExtractedRow).filter(
+        ExtractedRow.document_id == document_id
+    ).delete(synchronize_session=False)
+
+
+def _store_extraction(
+    db: Session,
+    doc: Document,
+    pdf_bytes: bytes,
+) -> List[ExtractedRow]:
+    extracted = extract_tables_from_pdf(pdf_bytes, doc.filename, doc.doc_type)
+    _delete_extraction_for_document(db, doc.id)
+
+    rows: List[ExtractedRow] = []
+    for row_data in extracted:
+        row_id = str(uuid.uuid4())
+        row = ExtractedRow(
+            id=row_id,
+            document_id=doc.id,
+            page_number=row_data.page_number,
+            table_index=row_data.table_index,
+            table_name=row_data.table_name,
+            row_label=row_data.row_label,
+            value=row_data.value,
+            value_type=row_data.value_type,
+            confidence=row_data.confidence,
+            extraction_method="pdfplumber",
+            raw_text=row_data.raw_text,
+        )
+        db.add(row)
+        rows.append(row)
+
+        norm = normalize_row_label(row_data.row_label)
+        norm_item = NormalizedLineItem(
+            id=str(uuid.uuid4()),
+            extracted_row_id=row_id,
+            canonical_name=norm.canonical_name,
+            category=norm.category,
+            cost_head=norm.cost_head,
+            source_doc_type=doc.doc_type,
+            financial_year=doc.financial_year,
+            value_type=row_data.value_type,
+            value=row_data.value,
+            mapping_confidence=min(norm.confidence, row_data.confidence),
+            mapping_method=norm.method,
+        )
+        db.add(norm_item)
+
+    doc.status = "extracted"
+    db.commit()
+    return rows
+
+
+def _row_response(row: ExtractedRow, doc: Document) -> ExtractedRowResponse:
+    norm = normalize_row_label(row.row_label)
+    return ExtractedRowResponse(
+        id=row.id,
+        page_number=row.page_number,
+        table_index=row.table_index,
+        table_name=row.table_name,
+        row_label=row.row_label,
+        normalized_label=norm.canonical_name,
+        value=row.value,
+        value_type=row.value_type or "value",
+        document_type=doc.doc_type,
+        unit=row.unit or "Rs. Cr.",
+        confidence=row.confidence,
+        extraction_method=row.extraction_method or "pdfplumber",
+        raw_text=row.raw_text,
+    )
+
+
+def _extraction_response(doc: Document, rows: List[ExtractedRow]) -> ExtractionResultResponse:
+    review_count = sum(1 for r in rows if (r.confidence or 0) < 0.6)
+    return ExtractionResultResponse(
+        document_id=doc.id,
+        filename=doc.filename,
+        doc_type=doc.doc_type,
+        total_pages=doc.page_count or 0,
+        total_rows_extracted=len(rows),
+        rows_needing_review=review_count,
+        extraction_method="pdfplumber",
+        rows=[_row_response(r, doc) for r in rows],
+    )
+
+
+def _load_normalized_records(
+    db: Session,
+    doc: Document,
+    value_type: Optional[str] = None,
+) -> List[Dict]:
+    query = (
+        db.query(NormalizedLineItem, ExtractedRow)
+        .join(ExtractedRow, NormalizedLineItem.extracted_row_id == ExtractedRow.id)
+        .filter(ExtractedRow.document_id == doc.id)
+    )
+    if value_type:
+        query = query.filter(NormalizedLineItem.value_type == value_type)
+
+    records = []
+    for item, row in query.all():
+        confidence = min(
+            item.mapping_confidence if item.mapping_confidence is not None else 1.0,
+            row.confidence if row.confidence is not None else 1.0,
+        )
+        records.append({
+            "canonical_name": item.canonical_name,
+            "cost_head": item.cost_head,
+            "value": item.value,
+            "value_type": item.value_type,
+            "mapping_confidence": confidence,
+            "source_page": row.page_number,
+            "source_table": row.table_name,
+            "source_document_id": doc.id,
+        })
+    return records
+
+
+def _best_by_name(records: List[Dict]) -> Dict[str, Dict]:
+    best: Dict[str, Dict] = {}
+    for record in records:
+        name = record.get("canonical_name")
+        if not name:
+            continue
+        current = best.get(name)
+        if current is None:
+            best[name] = record
+            continue
+
+        current_score = (
+            current.get("mapping_confidence") or 0,
+            1 if current.get("value") is not None else 0,
+        )
+        new_score = (
+            record.get("mapping_confidence") or 0,
+            1 if record.get("value") is not None else 0,
+        )
+        if new_score > current_score:
+            best[name] = record
+    return best
+
+
+def _latest_reviews_by_comparison(db: Session, comparison_ids: List[str]) -> Dict[str, Review]:
+    if not comparison_ids:
+        return {}
+    reviews = (
+        db.query(Review)
+        .filter(Review.comparison_id.in_(comparison_ids))
+        .order_by(Review.reviewed_at.asc())
+        .all()
+    )
+    return {review.comparison_id: review for review in reviews}
+
+
+def _comparison_item_response(
+    comparison: Comparison,
+    latest_review: Optional[Review] = None,
+) -> ComparisonItemResponse:
+    return ComparisonItemResponse(
+        id=comparison.id,
+        canonical_name=comparison.canonical_name,
+        cost_head=comparison.cost_head,
+        approved_value=comparison.approved_value,
+        actual_value=comparison.actual_value,
+        claimed_value=comparison.claimed_value,
+        variance=comparison.variance,
+        variance_percent=comparison.variance_percent,
+        decision_class=comparison.decision_class,
+        flag_reason=comparison.flag_reason,
+        latest_review_action=latest_review.action if latest_review else None,
+        latest_review_comment=latest_review.officer_comment if latest_review else None,
+        latest_reviewed_at=latest_review.reviewed_at if latest_review else None,
+        approved_source_document_id=comparison.approved_source_document_id,
+        actual_source_document_id=comparison.actual_source_document_id,
+        claimed_source_document_id=comparison.claimed_source_document_id,
+        approved_source_page=comparison.approved_source_page,
+        actual_source_page=comparison.actual_source_page,
+        claimed_source_page=comparison.claimed_source_page,
+        approved_source_table=comparison.approved_source_table,
+        actual_source_table=comparison.actual_source_table,
+        claimed_source_table=comparison.claimed_source_table,
+        approved_confidence=comparison.approved_confidence,
+        actual_confidence=comparison.actual_confidence,
+        claimed_confidence=comparison.claimed_confidence,
+    )
+
+
+def _comparison_response(db: Session, case_id: str) -> ComparisonResponse:
+    comparisons = (
+        db.query(Comparison)
+        .filter(Comparison.case_id == case_id)
+        .order_by(Comparison.cost_head, Comparison.canonical_name)
+        .all()
+    )
+    if not comparisons:
+        raise HTTPException(status_code=404, detail="Case not found.")
+
+    latest_reviews = _latest_reviews_by_comparison(db, [c.id for c in comparisons])
+    auto_count = sum(1 for c in comparisons if c.decision_class == "AI_AUTO")
+    review_count = len(comparisons) - auto_count
+    total_var = sum(c.variance or 0 for c in comparisons)
+
+    return ComparisonResponse(
+        case_id=case_id,
+        financial_year=comparisons[0].financial_year,
+        total_items=len(comparisons),
+        auto_approved=auto_count,
+        review_required=review_count,
+        total_variance=round(total_var, 2),
+        items=[
+            _comparison_item_response(c, latest_reviews.get(c.id))
+            for c in comparisons
+        ],
+    )
+
+
+def _run_comparison_for_financial_year(
+    db: Session,
+    financial_year: str = "2024-25",
+) -> ComparisonResponse:
+    arr_doc = _latest_extracted_document(db, "arr_order", financial_year)
+    petition_doc = _latest_extracted_document(db, "truing_up_petition", financial_year)
+
+    if not arr_doc:
+        raise HTTPException(
+            status_code=404,
+            detail="No extracted ARR data found. Please upload ARR Order first.",
+        )
+    if not petition_doc:
+        raise HTTPException(
+            status_code=404,
+            detail="No extracted Petition data found. Please upload Petition first.",
+        )
+
+    arr_lookup = _best_by_name(_load_normalized_records(db, arr_doc, "approved"))
+    actual_lookup = _best_by_name(_load_normalized_records(db, petition_doc, "actual"))
+    claimed_lookup = _best_by_name(_load_normalized_records(db, petition_doc, "claimed"))
+
+    if not arr_lookup:
+        raise HTTPException(status_code=404, detail="No normalized ARR approved rows found.")
+    if not actual_lookup:
+        raise HTTPException(status_code=404, detail="No normalized Petition actual rows found.")
+    if not claimed_lookup:
+        claimed_lookup = actual_lookup
+
+    case_id = _case_id_for_year(financial_year)
+    old_comp_ids = [
+        comp_id
+        for (comp_id,) in db.query(Comparison.id)
+        .filter(Comparison.case_id == case_id)
+        .all()
+    ]
+    if old_comp_ids:
+        db.query(Review).filter(
+            Review.comparison_id.in_(old_comp_ids)
+        ).delete(synchronize_session=False)
+    db.query(Comparison).filter(
+        Comparison.case_id == case_id
+    ).delete(synchronize_session=False)
+
+    all_names = set(arr_lookup) | set(actual_lookup) | set(claimed_lookup)
+
+    for name in sorted(all_names):
+        arr_item = arr_lookup.get(name)
+        actual_item = actual_lookup.get(name)
+        claimed_item = claimed_lookup.get(name)
+
+        approved_val = arr_item.get("value") if arr_item else None
+        actual_val = actual_item.get("value") if actual_item else None
+        claimed_val = claimed_item.get("value") if claimed_item else None
+        variance, variance_pct = calculate_variance(approved_val, actual_val)
+
+        confidences = [
+            item.get("mapping_confidence")
+            for item in (arr_item, actual_item, claimed_item)
+            if item and item.get("mapping_confidence") is not None
+        ]
+        confidence = min(confidences) if confidences else 1.0
+        decision_class, flag_reason = classify_decision(variance_pct, confidence)
+
+        cost_head = (
+            (arr_item or {}).get("cost_head")
+            or (actual_item or {}).get("cost_head")
+            or (claimed_item or {}).get("cost_head")
+            or "Other"
+        )
+
+        db.add(Comparison(
+            id=str(uuid.uuid4()),
+            case_id=case_id,
+            financial_year=financial_year,
+            canonical_name=name,
+            cost_head=cost_head,
+            approved_value=approved_val,
+            actual_value=actual_val,
+            claimed_value=claimed_val,
+            variance=variance,
+            variance_percent=variance_pct,
+            decision_class=decision_class,
+            flag_reason=flag_reason,
+            approved_source_document_id=(arr_item or {}).get("source_document_id"),
+            actual_source_document_id=(actual_item or {}).get("source_document_id"),
+            claimed_source_document_id=(claimed_item or {}).get("source_document_id"),
+            approved_source_page=(arr_item or {}).get("source_page"),
+            actual_source_page=(actual_item or {}).get("source_page"),
+            claimed_source_page=(claimed_item or {}).get("source_page"),
+            approved_source_table=(arr_item or {}).get("source_table"),
+            actual_source_table=(actual_item or {}).get("source_table"),
+            claimed_source_table=(claimed_item or {}).get("source_table"),
+            approved_confidence=(arr_item or {}).get("mapping_confidence"),
+            actual_confidence=(actual_item or {}).get("mapping_confidence"),
+            claimed_confidence=(claimed_item or {}).get("mapping_confidence"),
+        ))
+
+    db.commit()
+    return _comparison_response(db, case_id)
+
+
+async def _upload_document_of_type(
+    file: UploadFile,
+    financial_year: str,
+    doc_type: str,
+    db: Session,
+) -> DocumentUploadResponse:
+    contents = await file.read()
+    _validate_pdf_upload(file, contents)
+    file_size = len(contents)
+
+    doc_id = str(uuid.uuid4())
+    file_path = os.path.join(UPLOAD_DIR, f"{doc_id}.pdf")
+    with open(file_path, "wb") as f:
+        f.write(contents)
+
+    try:
+        page_count = get_page_count(contents)
+    except Exception:
+        page_count = None
+
+    doc = Document(
+        id=doc_id,
+        filename=file.filename,
+        doc_type=doc_type,
+        financial_year=financial_year,
+        file_path=file_path,
+        file_size=file_size,
+        page_count=page_count,
+        status="uploaded",
+    )
+    db.add(doc)
+    db.commit()
+
+    status = "uploaded"
+    rows_extracted = 0
+    case_id = None
+    try:
+        rows = _store_extraction(db, doc, contents)
+        status = "extracted"
+        rows_extracted = len(rows)
+        try:
+            comparison = _run_comparison_for_financial_year(db, financial_year)
+            case_id = comparison.case_id
+        except HTTPException:
+            case_id = None
+    except Exception as e:
+        db.rollback()
+        print(f"[MVP] Auto-extraction failed for {doc_type}: {e}")
+
+    return DocumentUploadResponse(
+        id=doc_id,
+        filename=file.filename,
+        doc_type=doc_type,
+        file_size=file_size,
+        page_count=page_count,
+        status=status,
+        rows_extracted=rows_extracted,
+        case_id=case_id,
+    )
+
+
 # ─── 1. Document Upload ───
 
 @router.post("/upload/arr", response_model=DocumentUploadResponse)
@@ -61,88 +478,7 @@ async def upload_arr_document(
     db: Session = Depends(get_db),
 ):
     """Upload ARR Approval Order PDF and auto-extract tables."""
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
-    
-    contents = await file.read()
-    file_size = len(contents)
-    
-    if file_size > 50 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="File exceeds 50MB limit.")
-    
-    # Save file
-    doc_id = str(uuid.uuid4())
-    file_path = os.path.join(UPLOAD_DIR, f"{doc_id}.pdf")
-    with open(file_path, "wb") as f:
-        f.write(contents)
-    
-    # Get page count
-    try:
-        page_count = get_page_count(contents)
-    except Exception:
-        page_count = None
-    
-    # Save to DB
-    doc = Document(
-        id=doc_id,
-        filename=file.filename,
-        doc_type="arr_order",
-        financial_year=financial_year,
-        file_path=file_path,
-        file_size=file_size,
-        page_count=page_count,
-        status="uploaded",
-    )
-    db.add(doc)
-    db.commit()
-    
-    # Auto-extract tables after upload
-    status = "uploaded"
-    try:
-        extracted = extract_tables_from_pdf(contents, file.filename)
-        db.query(ExtractedRow).filter(ExtractedRow.document_id == doc_id).delete()
-        for row_data in extracted:
-            row = ExtractedRow(
-                id=str(uuid.uuid4()),
-                document_id=doc_id,
-                page_number=row_data.page_number,
-                table_index=row_data.table_index,
-                table_name=row_data.table_name,
-                row_label=row_data.row_label,
-                value=row_data.value,
-                confidence=row_data.confidence,
-                extraction_method="pdfplumber",
-                raw_text=row_data.raw_text,
-            )
-            db.add(row)
-        for row_data in extracted:
-            norm = normalize_row_label(row_data.row_label)
-            norm_item = NormalizedLineItem(
-                id=str(uuid.uuid4()),
-                canonical_name=norm.canonical_name,
-                category=norm.category,
-                cost_head=norm.cost_head,
-                source_doc_type="arr_order",
-                financial_year=financial_year,
-                value=row_data.value,
-                mapping_confidence=norm.confidence,
-                mapping_method=norm.method,
-            )
-            db.add(norm_item)
-        doc.status = "extracted"
-        status = "extracted"
-        db.commit()
-    except Exception as e:
-        print(f"[MVP] Auto-extraction failed for ARR: {e}")
-    
-    return DocumentUploadResponse(
-        id=doc_id,
-        filename=file.filename,
-        doc_type="arr_order",
-        file_size=file_size,
-        page_count=page_count,
-        status=status,
-    )
+    return await _upload_document_of_type(file, financial_year, "arr_order", db)
 
 
 @router.post("/upload/petition", response_model=DocumentUploadResponse)
@@ -152,88 +488,7 @@ async def upload_petition_document(
     db: Session = Depends(get_db),
 ):
     """Upload Truing-Up Petition PDF and auto-extract tables."""
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
-    
-    contents = await file.read()
-    file_size = len(contents)
-    
-    if file_size > 50 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="File exceeds 50MB limit.")
-    
-    # Save file
-    doc_id = str(uuid.uuid4())
-    file_path = os.path.join(UPLOAD_DIR, f"{doc_id}.pdf")
-    with open(file_path, "wb") as f:
-        f.write(contents)
-    
-    # Get page count
-    try:
-        page_count = get_page_count(contents)
-    except Exception:
-        page_count = None
-    
-    # Save to DB
-    doc = Document(
-        id=doc_id,
-        filename=file.filename,
-        doc_type="truing_up_petition",
-        financial_year=financial_year,
-        file_path=file_path,
-        file_size=file_size,
-        page_count=page_count,
-        status="uploaded",
-    )
-    db.add(doc)
-    db.commit()
-    
-    # Auto-extract tables after upload
-    status = "uploaded"
-    try:
-        extracted = extract_tables_from_pdf(contents, file.filename)
-        db.query(ExtractedRow).filter(ExtractedRow.document_id == doc_id).delete()
-        for row_data in extracted:
-            row = ExtractedRow(
-                id=str(uuid.uuid4()),
-                document_id=doc_id,
-                page_number=row_data.page_number,
-                table_index=row_data.table_index,
-                table_name=row_data.table_name,
-                row_label=row_data.row_label,
-                value=row_data.value,
-                confidence=row_data.confidence,
-                extraction_method="pdfplumber",
-                raw_text=row_data.raw_text,
-            )
-            db.add(row)
-        for row_data in extracted:
-            norm = normalize_row_label(row_data.row_label)
-            norm_item = NormalizedLineItem(
-                id=str(uuid.uuid4()),
-                canonical_name=norm.canonical_name,
-                category=norm.category,
-                cost_head=norm.cost_head,
-                source_doc_type="truing_up_petition",
-                financial_year=financial_year,
-                value=row_data.value,
-                mapping_confidence=norm.confidence,
-                mapping_method=norm.method,
-            )
-            db.add(norm_item)
-        doc.status = "extracted"
-        status = "extracted"
-        db.commit()
-    except Exception as e:
-        print(f"[MVP] Auto-extraction failed for Petition: {e}")
-    
-    return DocumentUploadResponse(
-        id=doc_id,
-        filename=file.filename,
-        doc_type="truing_up_petition",
-        file_size=file_size,
-        page_count=page_count,
-        status=status,
-    )
+    return await _upload_document_of_type(file, financial_year, "truing_up_petition", db)
 
 
 @router.post("/documents/upload", response_model=DocumentUploadResponse)
@@ -282,80 +537,16 @@ async def run_extraction(doc_id: str, db: Session = Depends(get_db)):
     with open(doc.file_path, "rb") as f:
         pdf_bytes = f.read()
     
-    # Run extraction
     try:
-        extracted = extract_tables_from_pdf(pdf_bytes, doc.filename)
+        rows = _store_extraction(db, doc, pdf_bytes)
+        try:
+            _run_comparison_for_financial_year(db, doc.financial_year)
+        except HTTPException:
+            pass
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Extraction failed: {str(e)}")
-    
-    # Clear existing rows for this document
-    db.query(ExtractedRow).filter(ExtractedRow.document_id == doc_id).delete()
-    
-    # Save extracted rows
-    rows = []
-    for row_data in extracted:
-        row = ExtractedRow(
-            id=str(uuid.uuid4()),
-            document_id=doc_id,
-            page_number=row_data.page_number,
-            table_index=row_data.table_index,
-            table_name=row_data.table_name,
-            row_label=row_data.row_label,
-            value=row_data.value,
-            confidence=row_data.confidence,
-            extraction_method="pdfplumber",
-            raw_text=row_data.raw_text,
-        )
-        db.add(row)
-        rows.append(row)
-    
-    # Also normalize and save normalized items
-    for row_data in extracted:
-        norm = normalize_row_label(row_data.row_label)
-        norm_item = NormalizedLineItem(
-            id=str(uuid.uuid4()),
-            canonical_name=norm.canonical_name,
-            category=norm.category,
-            cost_head=norm.cost_head,
-            source_doc_type=doc.doc_type,
-            financial_year=doc.financial_year,
-            value=row_data.value,
-            mapping_confidence=norm.confidence,
-            mapping_method=norm.method,
-        )
-        db.add(norm_item)
-    
-    # Update document status
-    doc.status = "extracted"
-    db.commit()
-    
-    # Build response
-    review_count = sum(1 for r in rows if r.confidence < 0.6)
-    
-    return ExtractionResultResponse(
-        document_id=doc_id,
-        filename=doc.filename,
-        doc_type=doc.doc_type,
-        total_pages=doc.page_count or 0,
-        total_rows_extracted=len(rows),
-        rows_needing_review=review_count,
-        extraction_method="pdfplumber",
-        rows=[
-            ExtractedRowResponse(
-                id=r.id,
-                page_number=r.page_number,
-                table_index=r.table_index,
-                table_name=r.table_name,
-                row_label=r.row_label,
-                value=r.value,
-                unit=r.unit,
-                confidence=r.confidence,
-                extraction_method=r.extraction_method,
-                raw_text=r.raw_text,
-            )
-            for r in rows
-        ],
-    )
+
+    return _extraction_response(doc, rows)
 
 
 @router.get("/extraction/{doc_id}", response_model=ExtractionResultResponse)
@@ -365,33 +556,13 @@ async def get_extraction_results(doc_id: str, db: Session = Depends(get_db)):
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found.")
     
-    rows = db.query(ExtractedRow).filter(ExtractedRow.document_id == doc_id).all()
-    review_count = sum(1 for r in rows if r.confidence < 0.6)
-    
-    return ExtractionResultResponse(
-        document_id=doc_id,
-        filename=doc.filename,
-        doc_type=doc.doc_type,
-        total_pages=doc.page_count or 0,
-        total_rows_extracted=len(rows),
-        rows_needing_review=review_count,
-        extraction_method="pdfplumber",
-        rows=[
-            ExtractedRowResponse(
-                id=r.id,
-                page_number=r.page_number,
-                table_index=r.table_index,
-                table_name=r.table_name,
-                row_label=r.row_label,
-                value=r.value,
-                unit=r.unit or "Rs. Cr.",
-                confidence=r.confidence,
-                extraction_method=r.extraction_method or "pdfplumber",
-                raw_text=r.raw_text,
-            )
-            for r in rows
-        ],
+    rows = (
+        db.query(ExtractedRow)
+        .filter(ExtractedRow.document_id == doc_id)
+        .order_by(ExtractedRow.page_number, ExtractedRow.table_index, ExtractedRow.row_label)
+        .all()
     )
+    return _extraction_response(doc, rows)
 
 
 # ─── 3. Comparison ───
@@ -405,226 +576,29 @@ async def run_comparison_endpoint(
     Run three-way comparison: ARR Approved vs Petition Actual vs Petition Claimed.
     Uses normalized line items from both uploaded documents.
     """
-    case_id = str(uuid.uuid4())
-    
-    # Get ARR approved items
-    arr_items = db.query(NormalizedLineItem).filter(
-        NormalizedLineItem.source_doc_type == "arr_order",
-        NormalizedLineItem.financial_year == financial_year,
-    ).all()
-    
-    # Get petition actual items
-    petition_actual_items = db.query(NormalizedLineItem).filter(
-        NormalizedLineItem.source_doc_type == "truing_up_petition",
-        NormalizedLineItem.value_type == "actual",
-        NormalizedLineItem.financial_year == financial_year,
-    ).all()
-    
-    # Get petition claimed items
-    petition_claimed_items = db.query(NormalizedLineItem).filter(
-        NormalizedLineItem.source_doc_type == "truing_up_petition",
-        NormalizedLineItem.value_type == "claimed",
-        NormalizedLineItem.financial_year == financial_year,
-    ).all()
-    
-    # If no value_type specified, treat all petition items as both actual and claimed
-    if not petition_actual_items and not petition_claimed_items:
-        petition_items = db.query(NormalizedLineItem).filter(
-            NormalizedLineItem.source_doc_type == "truing_up_petition",
-            NormalizedLineItem.financial_year == financial_year,
-        ).all()
-        petition_actual_items = petition_items
-        petition_claimed_items = petition_items
-    
-    if not arr_items:
-        raise HTTPException(
-            status_code=404,
-            detail="No ARR data found. Please upload and extract ARR Order first."
-        )
-    
-    if not petition_actual_items:
-        raise HTTPException(
-            status_code=404,
-            detail="No Petition data found. Please upload and extract Petition first."
-        )
-    
-    # Clear existing comparisons for this case
-    db.query(Comparison).filter(Comparison.case_id == case_id).delete()
-    
-    # Build lookup dictionaries
-    arr_lookup = {item.canonical_name: item for item in arr_items}
-    actual_lookup = {item.canonical_name: item for item in petition_actual_items}
-    claimed_lookup = {item.canonical_name: item for item in petition_claimed_items}
-    
-    # Union of all canonical names
-    all_names = set(arr_lookup.keys()) | set(actual_lookup.keys()) | set(claimed_lookup.keys())
-    
-    results = []
-    
-    for name in sorted(all_names):
-        arr_item = arr_lookup.get(name)
-        actual_item = actual_lookup.get(name)
-        claimed_item = claimed_lookup.get(name)
-        
-        approved_val = arr_item.value if arr_item else None
-        actual_val = actual_item.value if actual_item else None
-        claimed_val = claimed_item.value if claimed_item else None
-        
-        # Calculate variance (actual vs approved)
-        variance, variance_pct = calculate_variance(approved_val, actual_val)
-        
-        # Get confidence (min of all available sources)
-        confidences = []
-        if arr_item and arr_item.mapping_confidence:
-            confidences.append(arr_item.mapping_confidence)
-        if actual_item and actual_item.mapping_confidence:
-            confidences.append(actual_item.mapping_confidence)
-        if claimed_item and claimed_item.mapping_confidence:
-            confidences.append(claimed_item.mapping_confidence)
-        
-        confidence = min(confidences) if confidences else 1.0
-        
-        # Classify decision
-        decision_class, flag_reason = classify_decision(variance_pct, confidence)
-        
-        cost_head = (
-            (arr_item.cost_head if arr_item else None) or 
-            (actual_item.cost_head if actual_item else None) or 
-            (claimed_item.cost_head if claimed_item else None) or 
-            "Other"
-        )
-        
-        # Create comparison record
-        comp = Comparison(
-            id=str(uuid.uuid4()),
-            case_id=case_id,
-            financial_year=financial_year,
-            canonical_name=name,
-            cost_head=cost_head,
-            approved_value=approved_val,
-            actual_value=actual_val,
-            claimed_value=claimed_val,
-            variance=variance,
-            variance_percent=variance_pct,
-            decision_class=decision_class,
-            flag_reason=flag_reason,
-            approved_source_page=None,
-            actual_source_page=None,
-        )
-        db.add(comp)
-        results.append(comp)
-    
-    db.commit()
-    
-    # Build response
-    auto_count = sum(1 for r in results if r.decision_class == "AI_AUTO")
-    review_count = len(results) - auto_count
-    total_var = sum(r.variance or 0 for r in results)
-    
-    return ComparisonResponse(
-        case_id=case_id,
-        financial_year=financial_year,
-        total_items=len(results),
-        auto_approved=auto_count,
-        review_required=review_count,
-        total_variance=round(total_var, 2),
-        items=[
-            ComparisonItemResponse(
-                id=r.id,
-                canonical_name=r.canonical_name,
-                cost_head=r.cost_head,
-                approved_value=r.approved_value,
-                actual_value=r.actual_value,
-                claimed_value=r.claimed_value,
-                variance=r.variance,
-                variance_percent=r.variance_percent,
-                decision_class=r.decision_class,
-                flag_reason=r.flag_reason,
-                approved_source_page=r.approved_source_page,
-                actual_source_page=r.actual_source_page,
-            )
-            for r in results
-        ],
-    )
+    return _run_comparison_for_financial_year(db, financial_year)
+
+
+@router.get("/comparison/latest", response_model=ComparisonResponse)
+async def get_latest_comparison(
+    financial_year: str = "2024-25",
+    db: Session = Depends(get_db),
+):
+    """Get the current deterministic comparison case for a financial year."""
+    return _comparison_response(db, _case_id_for_year(financial_year))
 
 
 @router.get("/comparison/{case_id}", response_model=ComparisonResponse)
 async def get_comparison(case_id: str, db: Session = Depends(get_db)):
     """Get comparison results for a case."""
-    comparisons = db.query(Comparison).filter(Comparison.case_id == case_id).all()
-    
-    if not comparisons:
-        raise HTTPException(status_code=404, detail="Case not found.")
-    
-    auto_count = sum(1 for c in comparisons if c.decision_class == "AI_AUTO")
-    review_count = len(comparisons) - auto_count
-    total_var = sum(c.variance or 0 for c in comparisons)
-    
-    return ComparisonResponse(
-        case_id=case_id,
-        financial_year=comparisons[0].financial_year,
-        total_items=len(comparisons),
-        auto_approved=auto_count,
-        review_required=review_count,
-        total_variance=round(total_var, 2),
-        items=[
-            ComparisonItemResponse(
-                id=c.id,
-                canonical_name=c.canonical_name,
-                cost_head=c.cost_head,
-                approved_value=c.approved_value,
-                actual_value=c.actual_value,
-                claimed_value=c.claimed_value,
-                variance=c.variance,
-                variance_percent=c.variance_percent,
-                decision_class=c.decision_class,
-                flag_reason=c.flag_reason,
-                approved_source_page=c.approved_source_page,
-                actual_source_page=c.actual_source_page,
-            )
-            for c in comparisons
-        ],
-    )
+    return _comparison_response(db, case_id)
 
 
 @router.get("/comparison", response_model=List[ComparisonResponse])
 async def list_cases(db: Session = Depends(get_db)):
     """List all comparison cases."""
-    # Get unique case IDs
     cases = db.query(Comparison.case_id).distinct().all()
-    
-    results = []
-    for (case_id,) in cases:
-        comparisons = db.query(Comparison).filter(Comparison.case_id == case_id).all()
-        auto_count = sum(1 for c in comparisons if c.decision_class == "AI_AUTO")
-        review_count = len(comparisons) - auto_count
-        total_var = sum(c.variance or 0 for c in comparisons)
-        
-        results.append(ComparisonResponse(
-            case_id=case_id,
-            financial_year=comparisons[0].financial_year if comparisons else "2024-25",
-            total_items=len(comparisons),
-            auto_approved=auto_count,
-            review_required=review_count,
-            total_variance=round(total_var, 2),
-            items=[
-                ComparisonItemResponse(
-                    id=c.id,
-                    canonical_name=c.canonical_name,
-                    cost_head=c.cost_head,
-                    approved_value=c.approved_value,
-                    actual_value=c.actual_value,
-                    claimed_value=c.claimed_value,
-                    variance=c.variance,
-                    variance_percent=c.variance_percent,
-                    decision_class=c.decision_class,
-                    flag_reason=c.flag_reason,
-                )
-                for c in comparisons
-            ],
-        ))
-    
-    return results
+    return [_comparison_response(db, case_id) for (case_id,) in cases]
 
 
 # ─── 4. Review ───
@@ -669,14 +643,28 @@ async def submit_review(
     # Update comparison status
     if review_req.action == "approve":
         comp.decision_class = "AI_AUTO"
+        comp.flag_reason = "Approved by officer"
+    elif review_req.action == "reject":
+        comp.decision_class = "REVIEW_REQUIRED"
+        comp.flag_reason = review_req.officer_comment or "Rejected by officer"
     elif review_req.action == "edit" and review_req.edited_value is not None:
         comp.actual_value = review_req.edited_value
-        # Recalculate variance
-        if comp.approved_value:
-            comp.variance = round(review_req.edited_value - comp.approved_value, 2)
-            comp.variance_percent = round(
-                (review_req.edited_value - comp.approved_value) / abs(comp.approved_value) * 100, 2
-            )
+        comp.variance, comp.variance_percent = calculate_variance(
+            comp.approved_value,
+            review_req.edited_value,
+        )
+        confidence_values = [
+            value
+            for value in (comp.approved_confidence, comp.actual_confidence, comp.claimed_confidence)
+            if value is not None
+        ]
+        confidence = min(confidence_values) if confidence_values else 1.0
+        comp.decision_class, comp.flag_reason = classify_decision(
+            comp.variance_percent,
+            confidence,
+        )
+        if comp.flag_reason is None:
+            comp.flag_reason = "Edited by officer and variance is within threshold"
     
     db.commit()
     
@@ -723,13 +711,7 @@ async def generate_order(
     db: Session = Depends(get_db),
 ):
     """Generate a KSERC-style truing-up draft order PDF."""
-    from pdf_generator import generate_order_pdf, PLAYWRIGHT_AVAILABLE
-    
-    if not PLAYWRIGHT_AVAILABLE:
-        raise HTTPException(
-            status_code=503,
-            detail="Playwright is not installed. PDF generation unavailable."
-        )
+    from pdf_generator import generate_order_pdf
     
     # Get comparison data
     comparisons = db.query(Comparison).filter(
@@ -751,10 +733,20 @@ async def generate_order(
             "cost_head": c.cost_head,
             "approved_value": c.approved_value,
             "actual_value": c.actual_value,
+            "claimed_value": c.claimed_value,
             "variance": c.variance,
             "variance_percent": c.variance_percent,
             "decision_class": c.decision_class,
             "flag_reason": c.flag_reason,
+            "approved_source_page": c.approved_source_page,
+            "actual_source_page": c.actual_source_page,
+            "claimed_source_page": c.claimed_source_page,
+            "approved_source_table": c.approved_source_table,
+            "actual_source_table": c.actual_source_table,
+            "claimed_source_table": c.claimed_source_table,
+            "approved_confidence": c.approved_confidence,
+            "actual_confidence": c.actual_confidence,
+            "claimed_confidence": c.claimed_confidence,
         }
         for c in comparisons
     ]
@@ -932,6 +924,7 @@ async def list_normalized_items(
             category=i.category,
             cost_head=i.cost_head,
             source_doc_type=i.source_doc_type,
+            value_type=i.value_type,
             value=i.value,
             unit=i.unit or "Rs. Cr.",
             mapping_confidence=i.mapping_confidence,

@@ -64,6 +64,7 @@ class ExtractedRow(Base):
     # Data
     row_label = Column(String(300), nullable=False)  # Raw row label from PDF
     value = Column(Float, nullable=True)
+    value_type = Column(String(20), nullable=False, default="value")  # approved | actual | claimed | value
     unit = Column(String(20), default="Rs. Cr.")  # Rs. Cr., MU, %, etc.
     
     # Quality
@@ -146,8 +147,18 @@ class Comparison(Base):
     flag_reason = Column(String(200), nullable=True)
     
     # Provenance
+    approved_source_document_id = Column(String(36), nullable=True)
+    actual_source_document_id = Column(String(36), nullable=True)
+    claimed_source_document_id = Column(String(36), nullable=True)
     approved_source_page = Column(Integer, nullable=True)
     actual_source_page = Column(Integer, nullable=True)
+    claimed_source_page = Column(Integer, nullable=True)
+    approved_source_table = Column(String(200), nullable=True)
+    actual_source_table = Column(String(200), nullable=True)
+    claimed_source_table = Column(String(200), nullable=True)
+    approved_confidence = Column(Float, nullable=True)
+    actual_confidence = Column(Float, nullable=True)
+    claimed_confidence = Column(Float, nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)
 
