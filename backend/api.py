@@ -60,7 +60,7 @@ async def upload_arr_document(
     financial_year: str = Form("2024-25"),
     db: Session = Depends(get_db),
 ):
-    """Upload ARR Approval Order PDF."""
+    """Upload ARR Approval Order PDF and auto-extract tables."""
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
     
@@ -96,13 +96,52 @@ async def upload_arr_document(
     db.add(doc)
     db.commit()
     
+    # Auto-extract tables after upload
+    status = "uploaded"
+    try:
+        extracted = extract_tables_from_pdf(contents, file.filename)
+        db.query(ExtractedRow).filter(ExtractedRow.document_id == doc_id).delete()
+        for row_data in extracted:
+            row = ExtractedRow(
+                id=str(uuid.uuid4()),
+                document_id=doc_id,
+                page_number=row_data.page_number,
+                table_index=row_data.table_index,
+                table_name=row_data.table_name,
+                row_label=row_data.row_label,
+                value=row_data.value,
+                confidence=row_data.confidence,
+                extraction_method="pdfplumber",
+                raw_text=row_data.raw_text,
+            )
+            db.add(row)
+        for row_data in extracted:
+            norm = normalize_row_label(row_data.row_label)
+            norm_item = NormalizedLineItem(
+                id=str(uuid.uuid4()),
+                canonical_name=norm.canonical_name,
+                category=norm.category,
+                cost_head=norm.cost_head,
+                source_doc_type="arr_order",
+                financial_year=financial_year,
+                value=row_data.value,
+                mapping_confidence=norm.confidence,
+                mapping_method=norm.method,
+            )
+            db.add(norm_item)
+        doc.status = "extracted"
+        status = "extracted"
+        db.commit()
+    except Exception as e:
+        print(f"[MVP] Auto-extraction failed for ARR: {e}")
+    
     return DocumentUploadResponse(
         id=doc_id,
         filename=file.filename,
         doc_type="arr_order",
         file_size=file_size,
         page_count=page_count,
-        status="uploaded",
+        status=status,
     )
 
 
@@ -112,7 +151,7 @@ async def upload_petition_document(
     financial_year: str = Form("2024-25"),
     db: Session = Depends(get_db),
 ):
-    """Upload Truing-Up Petition PDF."""
+    """Upload Truing-Up Petition PDF and auto-extract tables."""
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
     
@@ -148,13 +187,52 @@ async def upload_petition_document(
     db.add(doc)
     db.commit()
     
+    # Auto-extract tables after upload
+    status = "uploaded"
+    try:
+        extracted = extract_tables_from_pdf(contents, file.filename)
+        db.query(ExtractedRow).filter(ExtractedRow.document_id == doc_id).delete()
+        for row_data in extracted:
+            row = ExtractedRow(
+                id=str(uuid.uuid4()),
+                document_id=doc_id,
+                page_number=row_data.page_number,
+                table_index=row_data.table_index,
+                table_name=row_data.table_name,
+                row_label=row_data.row_label,
+                value=row_data.value,
+                confidence=row_data.confidence,
+                extraction_method="pdfplumber",
+                raw_text=row_data.raw_text,
+            )
+            db.add(row)
+        for row_data in extracted:
+            norm = normalize_row_label(row_data.row_label)
+            norm_item = NormalizedLineItem(
+                id=str(uuid.uuid4()),
+                canonical_name=norm.canonical_name,
+                category=norm.category,
+                cost_head=norm.cost_head,
+                source_doc_type="truing_up_petition",
+                financial_year=financial_year,
+                value=row_data.value,
+                mapping_confidence=norm.confidence,
+                mapping_method=norm.method,
+            )
+            db.add(norm_item)
+        doc.status = "extracted"
+        status = "extracted"
+        db.commit()
+    except Exception as e:
+        print(f"[MVP] Auto-extraction failed for Petition: {e}")
+    
     return DocumentUploadResponse(
         id=doc_id,
         filename=file.filename,
         doc_type="truing_up_petition",
         file_size=file_size,
         page_count=page_count,
-        status="uploaded",
+        status=status,
     )
 
 
@@ -430,8 +508,8 @@ async def run_comparison_endpoint(
             variance_percent=variance_pct,
             decision_class=decision_class,
             flag_reason=flag_reason,
-            approved_source_page=arr_item.page_number if arr_item else None,
-            actual_source_page=actual_item.page_number if actual_item else None,
+            approved_source_page=None,
+            actual_source_page=None,
         )
         db.add(comp)
         results.append(comp)

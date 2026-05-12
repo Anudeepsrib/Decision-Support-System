@@ -85,6 +85,8 @@ function App() {
   const [extraction, setExtraction] = useState<ExtractionResult | null>(null)
   const [comparison, setComparison] = useState<ComparisonResult | null>(null)
   const [order, setOrder] = useState<GeneratedOrder | null>(null)
+  const [comparing, setComparing] = useState(false)
+  const [generating, setGenerating] = useState(false)
 
   useEffect(() => {
     loadDocuments()
@@ -202,15 +204,22 @@ function App() {
   }
 
   const runComparison = async () => {
+    setComparing(true)
     try {
       const response = await fetch('http://127.0.0.1:8000/api/comparison/run?financial_year=2024-25', { method: 'POST' })
       if (response.ok) {
         const res = await response.json()
         setComparison(res)
         setActiveTab('comparison')
+      } else {
+        const error = await response.json()
+        alert(`Comparison failed: ${error.detail || 'Unknown error'}`)
       }
     } catch (error) {
       console.error(error)
+      alert(`Comparison error: ${(error as Error).message}`)
+    } finally {
+      setComparing(false)
     }
   }
 
@@ -234,6 +243,7 @@ function App() {
 
   const generateOrder = async () => {
     if (!comparison) return
+    setGenerating(true)
     try {
       const response = await fetch('http://127.0.0.1:8000/api/generate', {
         method: 'POST',
@@ -243,9 +253,16 @@ function App() {
       if (response.ok) {
         const res = await response.json()
         setOrder(res)
+        setActiveTab('generate')
+      } else {
+        const error = await response.json()
+        alert(`Generation failed: ${error.detail || 'Unknown error'}`)
       }
     } catch (error) {
       console.error(error)
+      alert(`Generation error: ${(error as Error).message}`)
+    } finally {
+      setGenerating(false)
     }
   }
 
@@ -383,25 +400,32 @@ function App() {
     </div>
   )
 
-  const renderExtractionTab = () => (
+  const renderExtractionTab = () => {
+    const arrExtracted = documents.filter(d => d.doc_type === 'arr_order' && d.status === 'extracted').length > 0;
+    const petExtracted = documents.filter(d => d.doc_type === 'truing_up_petition' && d.status === 'extracted').length > 0;
+    const canCompare = arrExtracted && petExtracted;
+
+    return (
     <div className="max-w-6xl mx-auto p-6">
       <div className="kserc-card bg-white p-6 shadow-md rounded-lg">
-        <h2 className="text-2xl font-bold mb-6 text-gray-900">Data Extraction Results</h2>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-gray-900">Data Extraction Results</h2>
+          {canCompare && (
+            <button
+              onClick={runComparison}
+              disabled={comparing}
+              className="bg-purple-600 text-white font-medium py-2 px-6 rounded shadow hover:bg-purple-700 disabled:bg-purple-400 transition"
+            >
+              {comparing ? 'Running AI Comparison...' : 'Run AI Comparison'}
+            </button>
+          )}
+        </div>
         {!extraction ? (
           <div className="text-center py-12">
             <p className="text-gray-500 mb-4">Upload and extract both documents to view extracted financial tables.</p>
             <div className="space-y-2">
               <p className="text-sm text-gray-600">ARR Documents: {documents.filter(d => d.doc_type === 'arr_order' && d.status === 'extracted').length} extracted</p>
               <p className="text-sm text-gray-600">Petition Documents: {documents.filter(d => d.doc_type === 'truing_up_petition' && d.status === 'extracted').length} extracted</p>
-              {documents.filter(d => d.doc_type === 'arr_order' && d.status === 'extracted').length > 0 &&
-               documents.filter(d => d.doc_type === 'truing_up_petition' && d.status === 'extracted').length > 0 && (
-                <button
-                  onClick={runComparison}
-                  className="mt-4 bg-purple-600 text-white font-medium py-2 px-6 rounded shadow hover:bg-purple-700 transition"
-                >
-                  Run AI Comparison
-                </button>
-              )}
             </div>
           </div>
         ) : (
@@ -452,7 +476,8 @@ function App() {
         )}
       </div>
     </div>
-  )
+    )
+  }
 
   const renderComparisonTab = () => (
     <div className="max-w-7xl mx-auto p-6">
@@ -540,16 +565,15 @@ function App() {
               </table>
             </div>
             
-            {comparison.review_required === 0 && (
-              <div className="mt-6 text-center">
-                <button
-                  onClick={generateOrder}
-                  className="bg-green-600 text-white font-medium py-3 px-8 rounded shadow hover:bg-green-700 transition"
-                >
-                  Generate KSERC Draft Order
-                </button>
-              </div>
-            )}
+            <div className="mt-6 text-center">
+              <button
+                onClick={generateOrder}
+                disabled={generating}
+                className="bg-green-600 text-white font-medium py-3 px-8 rounded shadow hover:bg-green-700 disabled:bg-green-400 transition"
+              >
+                {generating ? 'Generating Order PDF...' : 'Generate KSERC Draft Order'}
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -564,11 +588,17 @@ function App() {
         {!order ? (
           <div className="text-center py-12">
             <p className="text-gray-500 mb-4">
-              {comparison && comparison.review_required > 0 
-                ? `Please review ${comparison.review_required} items before generating the order.`
-                : 'Complete the comparison and review process to generate the draft order.'
-              }
+              Complete the comparison and review process to generate the draft order.
             </p>
+            {comparison && (
+               <button
+                 onClick={generateOrder}
+                 disabled={generating}
+                 className="mt-4 bg-green-600 text-white font-medium py-2 px-6 rounded shadow hover:bg-green-700 disabled:bg-green-400 transition"
+               >
+                 {generating ? 'Generating Order PDF...' : 'Generate KSERC Draft Order'}
+               </button>
+            )}
           </div>
         ) : (
           <div className="mt-8 p-6 bg-green-50 border-2 border-green-200 rounded-lg max-w-md mx-auto">
