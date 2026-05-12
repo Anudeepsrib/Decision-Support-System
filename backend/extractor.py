@@ -10,8 +10,9 @@ No LangGraph, no complex AI agents — just deterministic extraction.
 
 import re
 import io
-from typing import List, Dict, Optional, Tuple
-from dataclasses import dataclass, field
+import time
+from typing import Callable, List, Dict, Optional, Sequence, Set, Tuple
+from dataclasses import dataclass
 
 try:
     import pdfplumber
@@ -75,6 +76,28 @@ _TABLE_IDENTIFIERS = [
     "approved", "actual", "claimed", "petition",
     "truing up", "truing-up", "true up", "true-up",
 ]
+
+_TARGET_PAGE_KEYWORDS = [
+    *_TABLE_IDENTIFIERS,
+    "table 1", "table-1", "table 2", "table-2",
+    "summary of arr", "arr approved", "approved arr",
+    "aggregate revenue requirement", "annual revenue requirement",
+    "revenue surplus", "revenue deficit", "revenue requirement",
+    "true up summary", "truing up summary", "sbu summary",
+    "sbu-g", "sbu-t", "sbu-d", "state business unit",
+]
+
+_TOC_KEYWORDS = [
+    "annual revenue requirement", "aggregate revenue requirement", "arr",
+    "revenue gap", "expected revenue", "truing", "true up",
+    "power purchase", "sbu", "summary",
+]
+
+_DEFAULT_MAX_TARGET_PAGES = {
+    "arr_order": 70,
+    "truing_up_petition": 55,
+    "unknown": 60,
+}
 
 # Known KSERC ARR line item patterns
 _LINE_ITEM_PATTERNS = [
@@ -233,12 +256,209 @@ def _select_value_columns(
     return [(idx, value, value_type or _default_value_type(document_type))]
 
 
+def _score_page_text(text: str) -> int:
+    """Score a page for likely KSERC financial summary tables."""
+    lower = (text or "").lower()
+    score = 0
+    for keyword in _TARGET_PAGE_KEYWORDS:
+        if keyword in lower:
+            score += 3 if keyword in _TABLE_IDENTIFIERS else 2
+    for pattern, _ in _LINE_ITEM_PATTERNS:
+        if re.search(pattern, lower):
+            score += 4
+    if re.search(r"\btable\s*[-.]?\s*\d", lower):
+        score += 1
+    if any(token in lower for token in ("approved", "actual", "claimed")):
+        score += 2
+    return score
+
+
+def _toc_page_refs(text: str, total_pages: int) -> Set[int]:
+    """Extract likely page references from contents/table lists."""
+    refs: Set[int] = set()
+    lower = (text or "").lower()
+    if "contents" not in lower and "table of contents" not in lower and "list of tables" not in lower:
+        return refs
+
+    for line in text.splitlines():
+        line_lower = line.lower()
+        if not any(keyword in line_lower for keyword in _TOC_KEYWORDS):
+            continue
+        for match in re.finditer(r"\b(\d{1,3})\b", line):
+            page_num = int(match.group(1))
+            if 1 <= page_num <= total_pages:
+                refs.add(page_num)
+    return refs
+
+
+def _neighbor_pages(page_numbers: Sequence[int], total_pages: int, radius: int = 1) -> Set[int]:
+    pages: Set[int] = set()
+    for page_num in page_numbers:
+        for candidate in range(page_num - radius, page_num + radius + 1):
+            if 1 <= candidate <= total_pages:
+                pages.add(candidate)
+    return pages
+
+
+def _select_target_pages(
+    pdf,
+    document_type: str,
+    max_target_pages: Optional[int],
+    timeout_at: Optional[float],
+    progress_callback: Optional[Callable[[str, float, int, int], None]],
+) -> Tuple[List[int], int]:
+    """Scan page text selectively and return only pages likely to contain key tables."""
+    total_pages = len(pdf.pages)
+    max_pages = max_target_pages or _DEFAULT_MAX_TARGET_PAGES.get(document_type, 60)
+    scored: List[Tuple[int, int]] = []
+    toc_refs: Set[int] = set()
+    seed_pages = set(range(1, min(total_pages, 8) + 1))
+    scanned_page_numbers: List[int] = []
+    top_scan_limit = min(total_pages, 20)
+
+    # Always scan front-matter pages and potential TOC pages
+    scan_candidates = set(range(1, top_scan_limit + 1))
+    if total_pages > 40:
+        scan_candidates.update(range(21, min(total_pages, 61), 10))
+    scan_page_numbers = sorted(scan_candidates)
+
+    last_report = 0.0
+    for index in scan_page_numbers:
+        if timeout_at and time.monotonic() > timeout_at:
+            break
+        scanned_page_numbers.append(index)
+        try:
+            page = pdf.pages[index - 1]
+            text = page.extract_text() or ""
+        except Exception:
+            text = ""
+
+        score = _score_page_text(text)
+        if score > 0:
+            scored.append((index, score))
+        toc_refs.update(_toc_page_refs(text, total_pages))
+
+        now = time.monotonic()
+        if progress_callback and (now - last_report > 0.75 or index == scan_page_numbers[-1]):
+            scan_progress = 5 + (len(scanned_page_numbers) / max(len(scan_page_numbers), 1)) * 30
+            progress_callback("Scanning front matter and TOC for target tables", scan_progress, index, total_pages)
+            last_report = now
+
+    scored.sort(key=lambda item: item[1], reverse=True)
+    selected = set(seed_pages)
+    selected.update(_neighbor_pages([page for page, _ in scored[:max_pages]], total_pages))
+    selected.update(_neighbor_pages(sorted(toc_refs), total_pages))
+
+    if len(selected) > max_pages:
+        ranked = sorted(selected, key=lambda p: next((score for page, score in scored if page == p), 0), reverse=True)
+        required = sorted(seed_pages | (toc_refs & selected))
+        selected = set(required[:max_pages])
+        for page in ranked:
+            if len(selected) >= max_pages:
+                break
+            selected.add(page)
+
+    if not selected:
+        # Fallback: first few pages only
+        selected = set(seed_pages)
+
+    return sorted(selected), total_pages
+
+
+def _extract_rows_from_table(
+    table,
+    page_num: int,
+    table_idx: int,
+    table_name: str,
+    document_type: str,
+) -> List[ExtractedTableRow]:
+    rows: List[ExtractedTableRow] = []
+    if not table or len(table) < 2:
+        return rows
+
+    table_text = " ".join(
+        " ".join(str(cell or "") for cell in row)
+        for row in table[:3]
+    )
+    _, matched_keyword = _is_financial_table(table_text)
+
+    if table[0]:
+        header_text = " | ".join(str(c or "") for c in table[0] if c)
+        table_name = header_text[:200]
+    header_types = {
+        idx: _column_value_type(str(cell or ""))
+        for idx, cell in enumerate(table[0] or [])
+    }
+
+    if matched_keyword:
+        table_name = f"{matched_keyword.title()} — {table_name}"
+
+    for row_idx, row in enumerate(table):
+        if not row or row_idx == 0:
+            continue
+
+        row_label = str(row[0] or "").strip()
+        if not row_label or len(row_label) < 2:
+            continue
+
+        raw_text = " | ".join(str(c or "") for c in row)
+        for _, value, value_type in _select_value_columns(row, header_types, document_type):
+            confidence = _calculate_confidence(row_label, value, table_name)
+            rows.append(ExtractedTableRow(
+                page_number=page_num,
+                table_index=table_idx,
+                table_name=table_name,
+                row_label=row_label,
+                value=value,
+                value_type=value_type,
+                document_type=document_type,
+                confidence=confidence,
+                raw_text=raw_text,
+            ))
+    return rows
+
+
+def _extract_with_camelot(
+    pdf_path: str,
+    page_numbers: Sequence[int],
+    document_type: str,
+) -> List[ExtractedTableRow]:
+    """Optional fallback: run Camelot only on already-targeted pages."""
+    if not CAMELOT_AVAILABLE or not page_numbers:
+        return []
+
+    rows: List[ExtractedTableRow] = []
+    pages = ",".join(str(page_num) for page_num in page_numbers[:20])
+    try:
+        tables = camelot.read_pdf(pdf_path, pages=pages, flavor="stream")
+    except Exception:
+        return []
+
+    for table_idx, table in enumerate(tables):
+        try:
+            table_rows = table.df.fillna("").values.tolist()
+            page_num = int(getattr(table, "page", 0) or 0)
+        except Exception:
+            continue
+        rows.extend(_extract_rows_from_table(
+            table_rows,
+            page_num,
+            table_idx,
+            "Camelot targeted table",
+            document_type,
+        ))
+    return rows
+
+
 # ─── Main Extraction Function ───
 
 def extract_tables_from_pdf(
     pdf_bytes: bytes,
     filename: str,
     document_type: Optional[str] = None,
+    progress_callback: Optional[Callable[[str, float, int, int], None]] = None,
+    max_target_pages: Optional[int] = None,
+    timeout_seconds: Optional[int] = 90,
 ) -> List[ExtractedTableRow]:
     """
     Extract financial tables from a PDF using pdfplumber.
@@ -248,67 +468,107 @@ def extract_tables_from_pdf(
     if not PDFPLUMBER_AVAILABLE:
         raise RuntimeError("pdfplumber is not installed. Run: pip install pdfplumber")
     
-    extracted_rows: List[ExtractedTableRow] = []
     document_type = document_type or _infer_document_type(filename)
-    
+    timeout_at = time.monotonic() + timeout_seconds if timeout_seconds else None
+
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-        for page_num, page in enumerate(pdf.pages, 1):
-            tables = page.extract_tables()
-            page_text = page.extract_text() or ""
-            
-            for table_idx, table in enumerate(tables):
-                if not table or len(table) < 2:
-                    continue
-                
-                # Get table text for identification
-                table_text = " ".join(
-                    " ".join(str(cell or "") for cell in row)
-                    for row in table[:3]  # Check first 3 rows
-                )
-                
-                is_financial, matched_keyword = _is_financial_table(table_text)
-                
-                # Determine table name from header row
-                table_name = ""
-                if table[0]:
-                    header_text = " | ".join(str(c or "") for c in table[0] if c)
-                    table_name = header_text[:200]
-                header_types = {
-                    idx: _column_value_type(str(cell or ""))
-                    for idx, cell in enumerate(table[0] or [])
-                }
-                
-                if matched_keyword:
-                    table_name = f"{matched_keyword.title()} — {table_name}"
-                
-                # Process each row
-                for row_idx, row in enumerate(table):
-                    if not row or row_idx == 0:  # Skip header
-                        continue
-                    
-                    # First column is usually the label
-                    row_label = str(row[0] or "").strip()
-                    if not row_label or len(row_label) < 2:
-                        continue
-                    
-                    raw_text = " | ".join(str(c or "") for c in row)
-
-                    for _, value, value_type in _select_value_columns(row, header_types, document_type):
-                        confidence = _calculate_confidence(row_label, value, table_name)
-
-                        extracted_rows.append(ExtractedTableRow(
-                            page_number=page_num,
-                            table_index=table_idx,
-                            table_name=table_name,
-                            row_label=row_label,
-                            value=value,
-                            value_type=value_type,
-                            document_type=document_type,
-                            confidence=confidence,
-                            raw_text=raw_text,
-                        ))
-    
+        extracted_rows, _ = _extract_from_open_pdf(
+            pdf=pdf,
+            document_type=document_type,
+            progress_callback=progress_callback,
+            max_target_pages=max_target_pages,
+            timeout_at=timeout_at,
+        )
     return extracted_rows
+
+
+def extract_tables_from_pdf_path(
+    pdf_path: str,
+    filename: str,
+    document_type: Optional[str] = None,
+    progress_callback: Optional[Callable[[str, float, int, int], None]] = None,
+    max_target_pages: Optional[int] = None,
+    timeout_seconds: Optional[int] = 90,
+) -> Tuple[List[ExtractedTableRow], int, List[int]]:
+    """Extract targeted financial tables from a PDF path without loading it into memory."""
+    if not PDFPLUMBER_AVAILABLE:
+        raise RuntimeError("pdfplumber is not installed. Run: pip install pdfplumber")
+
+    document_type = document_type or _infer_document_type(filename)
+    timeout_at = time.monotonic() + timeout_seconds if timeout_seconds else None
+
+    with pdfplumber.open(pdf_path) as pdf:
+        rows, target_pages = _extract_from_open_pdf(
+            pdf=pdf,
+            document_type=document_type,
+            progress_callback=progress_callback,
+            max_target_pages=max_target_pages,
+            timeout_at=timeout_at,
+        )
+        total_pages = len(pdf.pages)
+
+    if not rows:
+        rows = _extract_with_camelot(pdf_path, target_pages, document_type)
+
+    return rows, total_pages, target_pages
+
+
+def _extract_from_open_pdf(
+    pdf,
+    document_type: str,
+    progress_callback: Optional[Callable[[str, float, int, int], None]],
+    max_target_pages: Optional[int],
+    timeout_at: Optional[float],
+) -> Tuple[List[ExtractedTableRow], List[int]]:
+    target_pages, total_pages = _select_target_pages(
+        pdf=pdf,
+        document_type=document_type,
+        max_target_pages=max_target_pages,
+        timeout_at=timeout_at,
+        progress_callback=progress_callback,
+    )
+
+    if progress_callback:
+        progress_callback(
+            f"Extracting tables from {len(target_pages)} targeted pages",
+            38,
+            0,
+            total_pages,
+        )
+
+    extracted_rows: List[ExtractedTableRow] = []
+    last_report = 0.0
+    for idx, page_num in enumerate(target_pages, 1):
+        if timeout_at and time.monotonic() > timeout_at and extracted_rows:
+            break
+
+        page = pdf.pages[page_num - 1]
+        try:
+            tables = page.extract_tables()
+        except Exception:
+            tables = []
+
+        for table_idx, table in enumerate(tables):
+            extracted_rows.extend(_extract_rows_from_table(
+                table=table,
+                page_num=page_num,
+                table_idx=table_idx,
+                table_name="",
+                document_type=document_type,
+            ))
+
+        now = time.monotonic()
+        if progress_callback and (now - last_report > 0.75 or idx == len(target_pages)):
+            progress = 38 + (idx / max(len(target_pages), 1)) * 42
+            progress_callback(
+                f"Extracting key financial tables ({idx}/{len(target_pages)} target pages)",
+                progress,
+                page_num,
+                total_pages,
+            )
+            last_report = now
+
+    return extracted_rows, target_pages
 
 
 def get_page_count(pdf_bytes: bytes) -> int:
@@ -316,4 +576,12 @@ def get_page_count(pdf_bytes: bytes) -> int:
     if not PDFPLUMBER_AVAILABLE:
         return 0
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        return len(pdf.pages)
+
+
+def get_page_count_from_path(pdf_path: str) -> int:
+    """Get the number of pages in a PDF without loading it into memory first."""
+    if not PDFPLUMBER_AVAILABLE:
+        return 0
+    with pdfplumber.open(pdf_path) as pdf:
         return len(pdf.pages)

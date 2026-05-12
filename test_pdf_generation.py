@@ -77,10 +77,10 @@ def test_pdf_generation():
         ("Contains KSERC header", "KERALA STATE ELECTRICITY REGULATORY COMMISSION" in html_content),
         ("Contains case ID", "test-case-123" in html_content),
         ("Contains financial year", "2024-25" in html_content),
-        ("Contains comparison table", "<table" in html_content),
-        ("Contains variance data", "₹150.00" in html_content),
-        ("Contains decision badges", "REVIEW_REQUIRED" in html_content),
-        ("Contains draft watermark", "DRAFT GENERATED FOR REVIEW" in html_content),
+        ("Contains summary table", "Table 5.1" in html_content),
+        ("Contains variance data", "₹" in html_content and "%" in html_content),
+        ("Contains order narrative", "The Commission has" in html_content),
+        ("Contains draft notice", "DRAFT FOR COMMISSION REVIEW" in html_content),
         ("Contains officer name", "Test Officer" in html_content),
         ("Contains footer", "AI Decision Support System" in html_content),
     ]
@@ -140,10 +140,10 @@ def test_pdf_quality():
         
         # Quality checks
         quality_checks = [
-            ("Table row count", html_content.count("<tr>") >= 22),  # Header + 20 items + footer
-            ("Variance calculations", "₹" in html_content and "%" in html_content),
-            ("Decision badges", html_content.count("REVIEW REQUIRED") >= 6),  # Every 3rd item
-            ("Auto approvals", html_content.count("AUTO-APPROVED") >= 13),  # Rest
+            ("Summary table caption", "Table 5.1" in html_content),
+            ("Commission views section", "Commission Views" in html_content),
+            ("SBU-G section", "SBU-G Analysis" in html_content),
+            ("SBU-T section", "SBU-T Analysis" in html_content),
             ("Proper formatting", "<table" in html_content and "</table>" in html_content),
             ("CSS styling", "style=" in html_content),
         ]

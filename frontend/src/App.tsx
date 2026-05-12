@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Check,
   Download,
@@ -25,6 +25,10 @@ interface Document {
   file_size: number
   page_count: number | null
   status: string
+  extraction_job_id?: string
+  job_status?: string
+  job_stage?: string
+  job_progress?: number
 }
 
 interface UploadResponse {
@@ -36,6 +40,27 @@ interface UploadResponse {
   status: string
   rows_extracted: number
   case_id?: string | null
+  extraction_job_id?: string
+  job_status?: string
+  status_url?: string
+}
+
+interface JobStatus {
+  id: string
+  document_id: string
+  filename?: string
+  doc_type?: DocType
+  status: string
+  stage: string
+  progress: number
+  processed_pages: number
+  total_pages?: number
+  rows_extracted: number
+  case_id?: string
+  error_message?: string
+  created_at: string
+  started_at?: string
+  completed_at?: string
 }
 
 interface ExtractedRow {
@@ -160,6 +185,8 @@ function App() {
   const [comparison, setComparison] = useState<ComparisonResult | null>(null)
   const [order, setOrder] = useState<GeneratedOrder | null>(null)
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, ReviewDraft>>({})
+  const [jobs, setJobs] = useState<Record<string, JobStatus>>({})
+  const activeJobPollers = useRef<Record<string, boolean>>({})
   const [loading, setLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -197,11 +224,61 @@ function App() {
     }))
     setExtractions((current) => ({ ...current, ...loadedExtractions }))
 
+    docs.forEach((doc) => {
+      if (doc.extraction_job_id && ['PENDING', 'PROCESSING'].includes(doc.job_status || '')) {
+        pollJobStatus(doc.extraction_job_id, doc.id)
+      }
+    })
+
     try {
       const latestComparison = await apiJson<ComparisonResult>('/comparison/latest?financial_year=2024-25')
       setComparison(latestComparison)
     } catch {
       setComparison(null)
+    }
+  }
+
+  async function pollJobStatus(jobId: string, documentId?: string) {
+    if (activeJobPollers.current[jobId]) {
+      return
+    }
+    activeJobPollers.current[jobId] = true
+
+    try {
+      const status = await apiJson<JobStatus>(`/job/${jobId}`)
+      setJobs((current) => ({ ...current, [jobId]: status }))
+      setDocuments((current) => current.map((doc) => {
+        if (doc.extraction_job_id !== jobId) return doc
+        return {
+          ...doc,
+          job_status: status.status,
+          job_stage: status.stage,
+          job_progress: status.progress,
+          status: status.status === 'COMPLETED' ? 'extracted' : doc.status,
+        }
+      }))
+
+      if (status.status === 'PENDING' || status.status === 'PROCESSING') {
+        setNotice(`Extraction: ${status.stage} (${Math.round(status.progress)}%)`)
+        window.setTimeout(() => pollJobStatus(jobId, documentId), 1800)
+        return
+      }
+
+      if (status.status === 'COMPLETED') {
+        if (documentId) {
+          await loadExtraction(documentId)
+        }
+        await loadAll()
+        setNotice(`Extraction finished for document ${documentId || ''}.`)
+      }
+
+      if (status.status === 'FAILED') {
+        setError(`Extraction job failed: ${status.error_message || 'Unknown error'}`)
+      }
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      activeJobPollers.current[jobId] = false
     }
   }
 
@@ -224,12 +301,14 @@ function App() {
         setActiveTab('petition-upload')
       } else {
         setPetitionFile(null)
-        setActiveTab(result.case_id ? 'comparison' : 'extraction')
+        setActiveTab('extraction')
       }
-      setNotice(`${result.filename} uploaded and extracted (${result.rows_extracted} rows).`)
+
+      setNotice(`${result.filename} uploaded. Extraction started.`)
       await loadAll()
-      await loadExtraction(result.id)
-      if (result.case_id) await loadComparison(result.case_id)
+      if (result.extraction_job_id) {
+        pollJobStatus(result.extraction_job_id, result.id)
+      }
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -246,11 +325,13 @@ function App() {
     setLoading(`extract-${documentId}`)
     setError(null)
     try {
-      const result = await apiJson<ExtractionResult>(`/extraction/${documentId}/run`, { method: 'POST' })
-      setExtractions((current) => ({ ...current, [documentId]: result }))
+      const result = await apiJson<JobStatus>(`/extraction/${documentId}/run`, { method: 'POST' })
       await loadAll()
+      if (result.id) {
+        pollJobStatus(result.id, documentId)
+      }
       setActiveTab('extraction')
-      setNotice(`${result.filename} extraction refreshed (${result.total_rows_extracted} rows).`)
+      setNotice(`Extraction refresh queued.`)
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -355,35 +436,53 @@ function App() {
 
     return (
       <div className="space-y-3">
-        {filtered.slice(0, 5).map((doc) => (
-          <div key={doc.id} className="flex flex-col gap-3 rounded-md border border-slate-200 bg-slate-50 p-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="font-semibold text-slate-900">{doc.filename}</p>
-              <p className="text-sm text-slate-600">
-                {(doc.file_size / 1024 / 1024).toFixed(2)} MB | {doc.page_count ?? '-'} pages | {doc.status}
-              </p>
+        {filtered.slice(0, 5).map((doc) => {
+          const jobStatus = doc.extraction_job_id ? jobs[doc.extraction_job_id] : undefined
+          const statusText = jobStatus?.status ?? doc.job_status ?? doc.status
+          const stageText = jobStatus?.stage ?? doc.job_stage
+          const progressPercent = jobStatus?.progress ?? doc.job_progress
+          const isInProgress = statusText === 'PENDING' || statusText === 'PROCESSING' || doc.status === 'extracting'
+
+          return (
+            <div key={doc.id} className="flex flex-col gap-3 rounded-md border border-slate-200 bg-slate-50 p-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="font-semibold text-slate-900">{doc.filename}</p>
+                <p className="text-sm text-slate-600">
+                  {(doc.file_size / 1024 / 1024).toFixed(2)} MB | {doc.page_count ?? '-'} pages | {statusText}
+                </p>
+                {stageText && isInProgress && (
+                  <div className="mt-2">
+                    <p className="text-xs text-slate-600">{stageText} {progressPercent != null ? `(${Math.round(progressPercent)}%)` : ''}</p>
+                    {progressPercent != null && (
+                      <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-200">
+                        <div className="h-2 rounded-full bg-blue-600" style={{ width: `${Math.min(Math.max(progressPercent, 0), 100)}%` }} />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className="kserc-button-secondary inline-flex items-center gap-2"
+                  onClick={async () => {
+                    await loadExtraction(doc.id)
+                    setActiveTab('extraction')
+                  }}
+                >
+                  <Eye size={16} /> View Extraction
+                </button>
+                <button
+                  className="kserc-button inline-flex items-center gap-2 disabled:bg-slate-400"
+                  disabled={loading === `extract-${doc.id}`}
+                  onClick={() => runExtraction(doc.id)}
+                >
+                  {loading === `extract-${doc.id}` ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
+                  Extract
+                </button>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                className="kserc-button-secondary inline-flex items-center gap-2"
-                onClick={async () => {
-                  await loadExtraction(doc.id)
-                  setActiveTab('extraction')
-                }}
-              >
-                <Eye size={16} /> View Extraction
-              </button>
-              <button
-                className="kserc-button inline-flex items-center gap-2 disabled:bg-slate-400"
-                disabled={loading === `extract-${doc.id}`}
-                onClick={() => runExtraction(doc.id)}
-              >
-                {loading === `extract-${doc.id}` ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
-                Extract
-              </button>
-            </div>
-          </div>
-        ))}
+          )
+        })}
         {filtered.length > 5 && (
           <p className="text-xs text-slate-500">Showing latest 5 of {filtered.length} uploaded documents.</p>
         )}

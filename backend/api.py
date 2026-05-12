@@ -17,15 +17,16 @@ Endpoints:
 
 import os
 import uuid
+from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Query
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Query, BackgroundTasks
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from database import get_db
+from database import SessionLocal, get_db
 from models import (
-    Document, ExtractedRow, NormalizedLineItem, Comparison, Review, GeneratedOrder
+    Document, ExtractionJob, ExtractedRow, NormalizedLineItem, Comparison, Review, GeneratedOrder
 )
 from schemas import (
     DocumentUploadResponse, DocumentListItem,
@@ -33,9 +34,9 @@ from schemas import (
     ComparisonResponse, ComparisonItemResponse,
     ReviewRequest, ReviewResponse,
     GenerateOrderRequest, GeneratedOrderResponse,
-    NormalizedItemResponse, AuditEntry,
+    NormalizedItemResponse, AuditEntry, JobStatusResponse,
 )
-from extractor import extract_tables_from_pdf, get_page_count
+from extractor import extract_tables_from_pdf_path, get_page_count_from_path
 from normalizer import normalize_row_label
 from comparison import calculate_variance, classify_decision
 from prompts import generate_variance_explanation
@@ -55,11 +56,30 @@ def _case_id_for_year(financial_year: str) -> str:
     return f"kserc-{financial_year}"
 
 
-def _validate_pdf_upload(file: UploadFile, contents: bytes):
+def _validate_pdf_upload(file: UploadFile):
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
-    if len(contents) > 50 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="File exceeds 50MB limit.")
+
+
+async def _save_upload_file(file: UploadFile, file_path: str) -> int:
+    """Stream an uploaded PDF to disk without keeping the whole file in memory."""
+    max_size = 75 * 1024 * 1024
+    total_size = 0
+    with open(file_path, "wb") as out:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            total_size += len(chunk)
+            if total_size > max_size:
+                out.close()
+                try:
+                    os.remove(file_path)
+                except OSError:
+                    pass
+                raise HTTPException(status_code=413, detail="File exceeds 75MB limit.")
+            out.write(chunk)
+    return total_size
 
 
 def _latest_extracted_document(
@@ -95,15 +115,199 @@ def _delete_extraction_for_document(db: Session, document_id: str):
     ).delete(synchronize_session=False)
 
 
+def _latest_job_for_document(db: Session, document_id: str) -> Optional[ExtractionJob]:
+    return (
+        db.query(ExtractionJob)
+        .filter(ExtractionJob.document_id == document_id)
+        .order_by(ExtractionJob.created_at.desc())
+        .first()
+    )
+
+
+def _job_response(job: ExtractionJob, doc: Optional[Document] = None) -> JobStatusResponse:
+    doc = doc or job.document
+    return JobStatusResponse(
+        id=job.id,
+        document_id=job.document_id,
+        filename=doc.filename if doc else None,
+        doc_type=doc.doc_type if doc else None,
+        status=job.status,
+        stage=job.stage or "",
+        progress=round(job.progress or 0, 1),
+        processed_pages=job.processed_pages or 0,
+        total_pages=job.total_pages,
+        rows_extracted=job.rows_extracted or 0,
+        case_id=job.case_id,
+        error_message=job.error_message,
+        created_at=job.created_at,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+    )
+
+
+def _update_job(
+    db: Session,
+    job: ExtractionJob,
+    *,
+    status: Optional[str] = None,
+    stage: Optional[str] = None,
+    progress: Optional[float] = None,
+    processed_pages: Optional[int] = None,
+    total_pages: Optional[int] = None,
+    rows_extracted: Optional[int] = None,
+    case_id: Optional[str] = None,
+    error_message: Optional[str] = None,
+    commit: bool = True,
+):
+    if status is not None:
+        job.status = status
+        if status == "PROCESSING" and job.started_at is None:
+            job.started_at = datetime.utcnow()
+        if status in ("COMPLETED", "FAILED") and job.completed_at is None:
+            job.completed_at = datetime.utcnow()
+    if stage is not None:
+        job.stage = stage
+    if progress is not None:
+        job.progress = max(0.0, min(100.0, float(progress)))
+    if processed_pages is not None:
+        job.processed_pages = processed_pages
+    if total_pages is not None:
+        job.total_pages = total_pages
+    if rows_extracted is not None:
+        job.rows_extracted = rows_extracted
+    if case_id is not None:
+        job.case_id = case_id
+    if error_message is not None:
+        job.error_message = error_message
+    if commit:
+        db.commit()
+
+
+def _create_extraction_job(db: Session, doc: Document) -> ExtractionJob:
+    job = ExtractionJob(
+        id=str(uuid.uuid4()),
+        document_id=doc.id,
+        status="PENDING",
+        stage="Queued for extraction",
+        progress=0.0,
+        rows_extracted=0,
+    )
+    doc.status = "extracting"
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+def _run_extraction_job(job_id: str):
+    db = SessionLocal()
+    try:
+        job = db.query(ExtractionJob).filter(ExtractionJob.id == job_id).first()
+        if not job:
+            return
+
+        doc = db.query(Document).filter(Document.id == job.document_id).first()
+        if not doc:
+            _update_job(
+                db,
+                job,
+                status="FAILED",
+                stage="Document record missing",
+                error_message="Uploaded document record could not be found.",
+                progress=0.0,
+                completed_at=datetime.utcnow(),
+            )
+            return
+
+        if job.status not in ("PENDING", "FAILED"):
+            return
+
+        _update_job(
+            db,
+            job,
+            status="PROCESSING",
+            stage="Starting extraction",
+            progress=3.0,
+            total_pages=doc.page_count,
+            processed_pages=0,
+            commit=True,
+        )
+
+        try:
+            rows = _store_extraction(db, doc, job=job)
+            try:
+                comparison = _run_comparison_for_financial_year(db, doc.financial_year)
+                job.case_id = comparison.case_id
+            except HTTPException:
+                job.case_id = None
+
+            _update_job(
+                db,
+                job,
+                status="COMPLETED",
+                stage=f"Extraction completed ({len(rows)} rows)",
+                progress=100.0,
+                processed_pages=doc.page_count or 0,
+                total_pages=doc.page_count,
+                rows_extracted=len(rows),
+                completed_at=datetime.utcnow(),
+            )
+            db.commit()
+        except Exception as extraction_error:
+            db.rollback()
+            db.add(job)
+            _update_job(
+                db,
+                job,
+                status="FAILED",
+                stage="Extraction failed",
+                progress=0.0,
+                error_message=str(extraction_error),
+                completed_at=datetime.utcnow(),
+            )
+            if doc:
+                doc.status = "failed"
+            db.commit()
+    finally:
+        db.close()
+
+
 def _store_extraction(
     db: Session,
     doc: Document,
-    pdf_bytes: bytes,
+    job: Optional[ExtractionJob] = None,
 ) -> List[ExtractedRow]:
-    extracted = extract_tables_from_pdf(pdf_bytes, doc.filename, doc.doc_type)
+    last_progress_commit = 0.0
+
+    def progress_callback(stage: str, progress: float, processed_pages: int, total_pages: int):
+        nonlocal last_progress_commit
+        if not job:
+            return
+        now = datetime.utcnow().timestamp()
+        if now - last_progress_commit < 0.75 and progress < 99:
+            return
+        _update_job(
+            db,
+            job,
+            status="PROCESSING",
+            stage=stage,
+            progress=progress,
+            processed_pages=processed_pages,
+            total_pages=total_pages,
+        )
+        last_progress_commit = now
+
+    extracted, page_count, target_pages = extract_tables_from_pdf_path(
+        doc.file_path,
+        doc.filename,
+        doc.doc_type,
+        progress_callback=progress_callback,
+    )
+    doc.page_count = page_count
     _delete_extraction_for_document(db, doc.id)
 
     rows: List[ExtractedRow] = []
+    normalized_items: List[NormalizedLineItem] = []
     for row_data in extracted:
         row_id = str(uuid.uuid4())
         row = ExtractedRow(
@@ -119,11 +323,10 @@ def _store_extraction(
             extraction_method="pdfplumber",
             raw_text=row_data.raw_text,
         )
-        db.add(row)
         rows.append(row)
 
         norm = normalize_row_label(row_data.row_label)
-        norm_item = NormalizedLineItem(
+        normalized_items.append(NormalizedLineItem(
             id=str(uuid.uuid4()),
             extracted_row_id=row_id,
             canonical_name=norm.canonical_name,
@@ -135,10 +338,26 @@ def _store_extraction(
             value=row_data.value,
             mapping_confidence=min(norm.confidence, row_data.confidence),
             mapping_method=norm.method,
-        )
-        db.add(norm_item)
+        ))
+
+    if rows:
+        db.bulk_save_objects(rows)
+    if normalized_items:
+        db.bulk_save_objects(normalized_items)
 
     doc.status = "extracted"
+    if job:
+        _update_job(
+            db,
+            job,
+            status="PROCESSING",
+            stage=f"Saved {len(rows)} extracted rows from {len(target_pages)} targeted pages",
+            progress=86,
+            processed_pages=page_count,
+            total_pages=page_count,
+            rows_extracted=len(rows),
+            commit=False,
+        )
     db.commit()
     return rows
 
@@ -413,20 +632,13 @@ async def _upload_document_of_type(
     financial_year: str,
     doc_type: str,
     db: Session,
+    background_tasks: BackgroundTasks,
 ) -> DocumentUploadResponse:
-    contents = await file.read()
-    _validate_pdf_upload(file, contents)
-    file_size = len(contents)
+    _validate_pdf_upload(file)
 
     doc_id = str(uuid.uuid4())
     file_path = os.path.join(UPLOAD_DIR, f"{doc_id}.pdf")
-    with open(file_path, "wb") as f:
-        f.write(contents)
-
-    try:
-        page_count = get_page_count(contents)
-    except Exception:
-        page_count = None
+    file_size = await _save_upload_file(file, file_path)
 
     doc = Document(
         id=doc_id,
@@ -435,37 +647,27 @@ async def _upload_document_of_type(
         financial_year=financial_year,
         file_path=file_path,
         file_size=file_size,
-        page_count=page_count,
+        page_count=None,
         status="uploaded",
     )
     db.add(doc)
     db.commit()
+    db.refresh(doc)
 
-    status = "uploaded"
-    rows_extracted = 0
-    case_id = None
-    try:
-        rows = _store_extraction(db, doc, contents)
-        status = "extracted"
-        rows_extracted = len(rows)
-        try:
-            comparison = _run_comparison_for_financial_year(db, financial_year)
-            case_id = comparison.case_id
-        except HTTPException:
-            case_id = None
-    except Exception as e:
-        db.rollback()
-        print(f"[MVP] Auto-extraction failed for {doc_type}: {e}")
+    job = _create_extraction_job(db, doc)
+    background_tasks.add_task(_run_extraction_job, job.id)
 
     return DocumentUploadResponse(
         id=doc_id,
         filename=file.filename,
         doc_type=doc_type,
         file_size=file_size,
-        page_count=page_count,
-        status=status,
-        rows_extracted=rows_extracted,
-        case_id=case_id,
+        page_count=None,
+        status=doc.status,
+        rows_extracted=0,
+        extraction_job_id=job.id,
+        job_status=job.status,
+        status_url=f"/api/job/{job.id}",
     )
 
 
@@ -475,20 +677,22 @@ async def _upload_document_of_type(
 async def upload_arr_document(
     file: UploadFile = File(...),
     financial_year: str = Form("2024-25"),
+    background_tasks: BackgroundTasks = Depends(),
     db: Session = Depends(get_db),
 ):
-    """Upload ARR Approval Order PDF and auto-extract tables."""
-    return await _upload_document_of_type(file, financial_year, "arr_order", db)
+    """Upload ARR Approval Order PDF and enqueue background extraction."""
+    return await _upload_document_of_type(file, financial_year, "arr_order", db, background_tasks)
 
 
 @router.post("/upload/petition", response_model=DocumentUploadResponse)
 async def upload_petition_document(
     file: UploadFile = File(...),
     financial_year: str = Form("2024-25"),
+    background_tasks: BackgroundTasks = Depends(),
     db: Session = Depends(get_db),
 ):
-    """Upload Truing-Up Petition PDF and auto-extract tables."""
-    return await _upload_document_of_type(file, financial_year, "truing_up_petition", db)
+    """Upload Truing-Up Petition PDF and enqueue background extraction."""
+    return await _upload_document_of_type(file, financial_year, "truing_up_petition", db, background_tasks)
 
 
 @router.post("/documents/upload", response_model=DocumentUploadResponse)
@@ -496,18 +700,21 @@ async def upload_document(
     file: UploadFile = File(...),
     doc_type: str = Form("arr_order"),  # arr_order | truing_up_petition
     financial_year: str = Form("2024-25"),
+    background_tasks: BackgroundTasks = Depends(),
     db: Session = Depends(get_db),
 ):
     """Legacy upload endpoint - use /upload/arr or /upload/petition instead."""
-    return await upload_arr_document(file, financial_year, db) if doc_type == "arr_order" else await upload_petition_document(file, financial_year, db)
+    return await _upload_document_of_type(file, financial_year, doc_type, db, background_tasks)
 
 
 @router.get("/documents", response_model=List[DocumentListItem])
 async def list_documents(db: Session = Depends(get_db)):
     """List all uploaded documents."""
     docs = db.query(Document).order_by(Document.upload_timestamp.desc()).all()
-    return [
-        DocumentListItem(
+    items = []
+    for d in docs:
+        job = _latest_job_for_document(db, d.id)
+        items.append(DocumentListItem(
             id=d.id,
             filename=d.filename,
             doc_type=d.doc_type,
@@ -516,37 +723,37 @@ async def list_documents(db: Session = Depends(get_db)):
             page_count=d.page_count,
             status=d.status,
             upload_timestamp=d.upload_timestamp,
-        )
-        for d in docs
-    ]
+            extraction_job_id=job.id if job else None,
+            job_status=job.status if job else None,
+            job_stage=job.stage if job else None,
+            job_progress=job.progress if job else None,
+        ))
+    return items
+
+
+@router.get("/job/{job_id}", response_model=JobStatusResponse)
+async def get_job_status(job_id: str, db: Session = Depends(get_db)):
+    """Get the status and progress of a background extraction job."""
+    job = db.query(ExtractionJob).filter(ExtractionJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Extraction job not found.")
+    return _job_response(job)
 
 
 # ─── 2. Extraction ───
 
-@router.post("/extraction/{doc_id}/run", response_model=ExtractionResultResponse)
-async def run_extraction(doc_id: str, db: Session = Depends(get_db)):
-    """Run table extraction on an uploaded document."""
+@router.post("/extraction/{doc_id}/run", response_model=JobStatusResponse)
+async def run_extraction(doc_id: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Run table extraction on an uploaded document in the background."""
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found.")
-    
-    # Read PDF bytes
     if not os.path.exists(doc.file_path):
         raise HTTPException(status_code=404, detail="PDF file not found on disk.")
-    
-    with open(doc.file_path, "rb") as f:
-        pdf_bytes = f.read()
-    
-    try:
-        rows = _store_extraction(db, doc, pdf_bytes)
-        try:
-            _run_comparison_for_financial_year(db, doc.financial_year)
-        except HTTPException:
-            pass
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Extraction failed: {str(e)}")
 
-    return _extraction_response(doc, rows)
+    job = _create_extraction_job(db, doc)
+    background_tasks.add_task(_run_extraction_job, job.id)
+    return _job_response(job, doc)
 
 
 @router.get("/extraction/{doc_id}", response_model=ExtractionResultResponse)
