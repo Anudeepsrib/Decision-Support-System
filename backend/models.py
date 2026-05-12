@@ -3,6 +3,7 @@ MVP SQLAlchemy Models — Minimal schemas for the demo.
 
 Tables:
   - documents:            Uploaded PDFs with metadata
+  - extraction_jobs:      Background extraction job state
   - extracted_rows:       Raw extracted financial rows with provenance
   - normalized_line_items: Canonical mapped line items
   - comparisons:          Approved vs Actual vs Claimed comparisons
@@ -42,9 +43,37 @@ class Document(Base):
 
     # Relationships
     extracted_rows = relationship("ExtractedRow", back_populates="document", cascade="all, delete-orphan")
+    extraction_jobs = relationship("ExtractionJob", back_populates="document", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Document({self.filename}, {self.doc_type})>"
+
+
+# ─── 1b. Extraction Jobs ───
+
+class ExtractionJob(Base):
+    """Background extraction progress for uploaded PDFs."""
+    __tablename__ = "extraction_jobs"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    document_id = Column(String(36), ForeignKey("documents.id"), nullable=False, index=True)
+    status = Column(String(20), default="PENDING", index=True)  # PENDING | PROCESSING | COMPLETED | FAILED
+    stage = Column(String(200), default="Queued for extraction")
+    progress = Column(Float, default=0.0)
+    processed_pages = Column(Integer, default=0)
+    total_pages = Column(Integer, nullable=True)
+    rows_extracted = Column(Integer, default=0)
+    case_id = Column(String(36), nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    document = relationship("Document", back_populates="extraction_jobs")
+
+    __table_args__ = (
+        Index("ix_extraction_job_doc_created", "document_id", "created_at"),
+    )
 
 
 # ─── 2. Extracted Rows ───

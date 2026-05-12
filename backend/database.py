@@ -68,3 +68,16 @@ def _ensure_sqlite_schema():
             for column_name, ddl in columns:
                 if column_name not in existing:
                     conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {ddl}"))
+
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_norm_canonical_doc_type "
+            "ON normalized_line_items (canonical_name, source_doc_type, financial_year)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_norm_extracted_row "
+            "ON normalized_line_items (extracted_row_id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_extracted_doc_value_type "
+            "ON extracted_rows (document_id, value_type)"
+        ))

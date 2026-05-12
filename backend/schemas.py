@@ -18,6 +18,9 @@ class DocumentUploadResponse(BaseModel):
     status: str
     rows_extracted: int = 0
     case_id: Optional[str] = None
+    extraction_job_id: Optional[str] = None
+    job_status: Optional[str] = None
+    status_url: Optional[str] = None
 
 class DocumentListItem(BaseModel):
     id: str
@@ -28,6 +31,10 @@ class DocumentListItem(BaseModel):
     page_count: Optional[int] = None
     status: str
     upload_timestamp: datetime
+    extraction_job_id: Optional[str] = None
+    job_status: Optional[str] = None
+    job_stage: Optional[str] = None
+    job_progress: Optional[float] = None
 
 
 # ─── Extraction Schemas ───
@@ -56,6 +63,24 @@ class ExtractionResultResponse(BaseModel):
     rows_needing_review: int
     extraction_method: str
     rows: List[ExtractedRowResponse]
+
+
+class JobStatusResponse(BaseModel):
+    id: str
+    document_id: str
+    filename: Optional[str] = None
+    doc_type: Optional[str] = None
+    status: str
+    stage: str
+    progress: float
+    processed_pages: int = 0
+    total_pages: Optional[int] = None
+    rows_extracted: int = 0
+    case_id: Optional[str] = None
+    error_message: Optional[str] = None
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
 
 
 # ─── Normalization Schemas ───
