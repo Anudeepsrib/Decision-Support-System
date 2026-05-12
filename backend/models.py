@@ -92,12 +92,15 @@ class NormalizedLineItem(Base):
     
     # Canonical mapping
     canonical_name = Column(String(200), nullable=False)  # e.g., "Power Purchase Cost"
-    category = Column(String(50), nullable=False)  # "ARR" | "ERC" | "Revenue_Gap"
+    category = Column(String(50), nullable=False)  # "ARR" | "ERC" | "Revenue_Gap" | "Operating_Expense"
     cost_head = Column(String(50), nullable=True)   # O&M, Power_Purchase, Interest, etc.
     
     # Source info
     source_doc_type = Column(String(50), nullable=False)  # "arr_order" | "truing_up_petition"
     financial_year = Column(String(10), nullable=False, default="2024-25")
+    
+    # Value type for petition documents
+    value_type = Column(String(20), nullable=True)  # "actual" | "claimed" | "approved"
     
     # Normalized value
     value = Column(Float, nullable=True)
@@ -110,7 +113,8 @@ class NormalizedLineItem(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
-        Index("ix_norm_canonical", "canonical_name", "source_doc_type"),
+        Index("ix_norm_canonical_year", "canonical_name", "financial_year", "source_doc_type"),
+        Index("ix_norm_doc_type", "source_doc_type", "financial_year"),
     )
 
 

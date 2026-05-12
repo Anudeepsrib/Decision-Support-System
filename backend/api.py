@@ -54,14 +54,13 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # ─── 1. Document Upload ───
 
-@router.post("/documents/upload", response_model=DocumentUploadResponse)
-async def upload_document(
+@router.post("/upload/arr", response_model=DocumentUploadResponse)
+async def upload_arr_document(
     file: UploadFile = File(...),
-    doc_type: str = Form("arr_order"),  # arr_order | truing_up_petition
     financial_year: str = Form("2024-25"),
     db: Session = Depends(get_db),
 ):
-    """Upload a PDF document for extraction."""
+    """Upload ARR Approval Order PDF."""
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
     
@@ -87,7 +86,7 @@ async def upload_document(
     doc = Document(
         id=doc_id,
         filename=file.filename,
-        doc_type=doc_type,
+        doc_type="arr_order",
         financial_year=financial_year,
         file_path=file_path,
         file_size=file_size,
@@ -100,11 +99,74 @@ async def upload_document(
     return DocumentUploadResponse(
         id=doc_id,
         filename=file.filename,
-        doc_type=doc_type,
+        doc_type="arr_order",
         file_size=file_size,
         page_count=page_count,
         status="uploaded",
     )
+
+
+@router.post("/upload/petition", response_model=DocumentUploadResponse)
+async def upload_petition_document(
+    file: UploadFile = File(...),
+    financial_year: str = Form("2024-25"),
+    db: Session = Depends(get_db),
+):
+    """Upload Truing-Up Petition PDF."""
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
+    
+    contents = await file.read()
+    file_size = len(contents)
+    
+    if file_size > 50 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File exceeds 50MB limit.")
+    
+    # Save file
+    doc_id = str(uuid.uuid4())
+    file_path = os.path.join(UPLOAD_DIR, f"{doc_id}.pdf")
+    with open(file_path, "wb") as f:
+        f.write(contents)
+    
+    # Get page count
+    try:
+        page_count = get_page_count(contents)
+    except Exception:
+        page_count = None
+    
+    # Save to DB
+    doc = Document(
+        id=doc_id,
+        filename=file.filename,
+        doc_type="truing_up_petition",
+        financial_year=financial_year,
+        file_path=file_path,
+        file_size=file_size,
+        page_count=page_count,
+        status="uploaded",
+    )
+    db.add(doc)
+    db.commit()
+    
+    return DocumentUploadResponse(
+        id=doc_id,
+        filename=file.filename,
+        doc_type="truing_up_petition",
+        file_size=file_size,
+        page_count=page_count,
+        status="uploaded",
+    )
+
+
+@router.post("/documents/upload", response_model=DocumentUploadResponse)
+async def upload_document(
+    file: UploadFile = File(...),
+    doc_type: str = Form("arr_order"),  # arr_order | truing_up_petition
+    financial_year: str = Form("2024-25"),
+    db: Session = Depends(get_db),
+):
+    """Legacy upload endpoint - use /upload/arr or /upload/petition instead."""
+    return await upload_arr_document(file, financial_year, db) if doc_type == "arr_order" else await upload_petition_document(file, financial_year, db)
 
 
 @router.get("/documents", response_model=List[DocumentListItem])
@@ -262,62 +324,117 @@ async def run_comparison_endpoint(
     db: Session = Depends(get_db),
 ):
     """
-    Run comparison between ARR Order and Truing-Up Petition data.
-    Uses normalized line items already in the database.
+    Run three-way comparison: ARR Approved vs Petition Actual vs Petition Claimed.
+    Uses normalized line items from both uploaded documents.
     """
     case_id = str(uuid.uuid4())
     
-    # Get normalized items for both document types
-    approved_items = db.query(NormalizedLineItem).filter(
+    # Get ARR approved items
+    arr_items = db.query(NormalizedLineItem).filter(
         NormalizedLineItem.source_doc_type == "arr_order",
         NormalizedLineItem.financial_year == financial_year,
     ).all()
     
-    actual_items = db.query(NormalizedLineItem).filter(
+    # Get petition actual items
+    petition_actual_items = db.query(NormalizedLineItem).filter(
         NormalizedLineItem.source_doc_type == "truing_up_petition",
+        NormalizedLineItem.value_type == "actual",
         NormalizedLineItem.financial_year == financial_year,
     ).all()
     
-    if not approved_items and not actual_items:
+    # Get petition claimed items
+    petition_claimed_items = db.query(NormalizedLineItem).filter(
+        NormalizedLineItem.source_doc_type == "truing_up_petition",
+        NormalizedLineItem.value_type == "claimed",
+        NormalizedLineItem.financial_year == financial_year,
+    ).all()
+    
+    # If no value_type specified, treat all petition items as both actual and claimed
+    if not petition_actual_items and not petition_claimed_items:
+        petition_items = db.query(NormalizedLineItem).filter(
+            NormalizedLineItem.source_doc_type == "truing_up_petition",
+            NormalizedLineItem.financial_year == financial_year,
+        ).all()
+        petition_actual_items = petition_items
+        petition_claimed_items = petition_items
+    
+    if not arr_items:
         raise HTTPException(
             status_code=404,
-            detail="No normalized data found. Please upload and extract documents first."
+            detail="No ARR data found. Please upload and extract ARR Order first."
         )
     
-    # Convert to dicts for comparison engine
-    approved_dicts = [
-        {"canonical_name": i.canonical_name, "value": i.value,
-         "cost_head": i.cost_head, "mapping_confidence": i.mapping_confidence}
-        for i in approved_items
-    ]
-    actual_dicts = [
-        {"canonical_name": i.canonical_name, "value": i.value,
-         "cost_head": i.cost_head, "mapping_confidence": i.mapping_confidence}
-        for i in actual_items
-    ]
+    if not petition_actual_items:
+        raise HTTPException(
+            status_code=404,
+            detail="No Petition data found. Please upload and extract Petition first."
+        )
     
-    # Run comparison
-    results = run_comparison(approved_dicts, actual_dicts, case_id)
+    # Clear existing comparisons for this case
+    db.query(Comparison).filter(Comparison.case_id == case_id).delete()
     
-    # Save to DB
-    for r in results:
+    # Build lookup dictionaries
+    arr_lookup = {item.canonical_name: item for item in arr_items}
+    actual_lookup = {item.canonical_name: item for item in petition_actual_items}
+    claimed_lookup = {item.canonical_name: item for item in petition_claimed_items}
+    
+    # Union of all canonical names
+    all_names = set(arr_lookup.keys()) | set(actual_lookup.keys()) | set(claimed_lookup.keys())
+    
+    results = []
+    
+    for name in sorted(all_names):
+        arr_item = arr_lookup.get(name)
+        actual_item = actual_lookup.get(name)
+        claimed_item = claimed_lookup.get(name)
+        
+        approved_val = arr_item.value if arr_item else None
+        actual_val = actual_item.value if actual_item else None
+        claimed_val = claimed_item.value if claimed_item else None
+        
+        # Calculate variance (actual vs approved)
+        variance, variance_pct = calculate_variance(approved_val, actual_val)
+        
+        # Get confidence (min of all available sources)
+        confidences = []
+        if arr_item and arr_item.mapping_confidence:
+            confidences.append(arr_item.mapping_confidence)
+        if actual_item and actual_item.mapping_confidence:
+            confidences.append(actual_item.mapping_confidence)
+        if claimed_item and claimed_item.mapping_confidence:
+            confidences.append(claimed_item.mapping_confidence)
+        
+        confidence = min(confidences) if confidences else 1.0
+        
+        # Classify decision
+        decision_class, flag_reason = classify_decision(variance_pct, confidence)
+        
+        cost_head = (
+            (arr_item.cost_head if arr_item else None) or 
+            (actual_item.cost_head if actual_item else None) or 
+            (claimed_item.cost_head if claimed_item else None) or 
+            "Other"
+        )
+        
+        # Create comparison record
         comp = Comparison(
             id=str(uuid.uuid4()),
             case_id=case_id,
             financial_year=financial_year,
-            canonical_name=r.canonical_name,
-            cost_head=r.cost_head,
-            approved_value=r.approved_value,
-            actual_value=r.actual_value,
-            claimed_value=r.claimed_value,
-            variance=r.variance,
-            variance_percent=r.variance_percent,
-            decision_class=r.decision_class,
-            flag_reason=r.flag_reason,
-            approved_source_page=r.approved_source_page,
-            actual_source_page=r.actual_source_page,
+            canonical_name=name,
+            cost_head=cost_head,
+            approved_value=approved_val,
+            actual_value=actual_val,
+            claimed_value=claimed_val,
+            variance=variance,
+            variance_percent=variance_pct,
+            decision_class=decision_class,
+            flag_reason=flag_reason,
+            approved_source_page=arr_item.page_number if arr_item else None,
+            actual_source_page=actual_item.page_number if actual_item else None,
         )
         db.add(comp)
+        results.append(comp)
     
     db.commit()
     
@@ -335,7 +452,7 @@ async def run_comparison_endpoint(
         total_variance=round(total_var, 2),
         items=[
             ComparisonItemResponse(
-                id=str(uuid.uuid4()),
+                id=r.id,
                 canonical_name=r.canonical_name,
                 cost_head=r.cost_head,
                 approved_value=r.approved_value,

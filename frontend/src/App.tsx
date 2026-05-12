@@ -85,17 +85,25 @@ function App() {
     formData.append('financial_year', '2024-25')
 
     try {
-      const response = await fetch('http://localhost:8000/api/documents/upload', {
+      const response = await fetch('http://127.0.0.1:8000/api/documents/upload', {
         method: 'POST',
         body: formData,
       })
 
       if (response.ok) {
+        const result = await response.json()
+        console.log('Upload successful:', result)
         setSelectedFile(null)
         loadDocuments()
+        alert(`Document uploaded successfully! ${result.filename}`)
+      } else {
+        const error = await response.json()
+        console.error('Upload failed:', error)
+        alert(`Upload failed: ${error.detail || 'Unknown error'}`)
       }
     } catch (error) {
       console.error('Upload error:', error)
+      alert(`Upload error: ${error.message}`)
     } finally {
       setUploading(false)
     }
@@ -103,7 +111,7 @@ function App() {
 
   const loadDocuments = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/documents')
+      const response = await fetch('http://127.0.0.1:8000/api/documents')
       if (response.ok) {
         const docs = await response.json()
         setDocuments(docs)
@@ -116,7 +124,7 @@ function App() {
   const runExtraction = async (docId: string) => {
     setExtracting(docId)
     try {
-      const response = await fetch(`http://localhost:8000/api/extraction/${docId}/run`, { method: 'POST' })
+      const response = await fetch(`http://127.0.0.1:8000/api/extraction/${docId}/run`, { method: 'POST' })
       if (response.ok) {
         const res = await response.json()
         setExtraction(res)
@@ -132,7 +140,7 @@ function App() {
 
   const runComparison = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/comparison/run?financial_year=2024-25', { method: 'POST' })
+      const response = await fetch('http://127.0.0.1:8000/api/comparison/run?financial_year=2024-25', { method: 'POST' })
       if (response.ok) {
         const res = await response.json()
         setComparison(res)
@@ -145,7 +153,7 @@ function App() {
 
   const approveItem = async (compId: string) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/review/${compId}`, {
+      const response = await fetch(`http://127.0.0.1:8000/api/review/${compId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'approve', officer_name: 'Demo Officer', officer_comment: 'Approved manually.' })
@@ -164,7 +172,7 @@ function App() {
   const generateOrder = async () => {
     if (!comparison) return
     try {
-      const response = await fetch('http://localhost:8000/api/generate', {
+      const response = await fetch('http://127.0.0.1:8000/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ case_id: comparison.case_id, financial_year: '2024-25', officer_name: 'Demo Officer' })
@@ -400,7 +408,7 @@ function App() {
               <h3 className="text-xl font-bold text-green-800">Order Generated Successfully!</h3>
             </div>
             <a 
-              href={`http://localhost:8000${order.download_url}`} 
+              href={`http://127.0.0.1:8000${order.download_url}`} 
               target="_blank" 
               rel="noreferrer" 
               className="mt-4 inline-block bg-white text-green-700 font-bold border border-green-300 hover:bg-green-100 py-2 px-6 rounded shadow transition"
