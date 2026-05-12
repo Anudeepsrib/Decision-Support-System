@@ -1,37 +1,53 @@
-import { useState, useEffect } from 'react'
-import './index.css'
+import React, { useState, useEffect } from 'react'
 
 interface Document {
   id: string
   filename: string
+  doc_type: string
+  financial_year: string
   upload_timestamp: string
   file_size: number
   page_count: number
   status: string
-  doc_type: string
-  financial_year: string
+}
+
+interface ExtractedRow {
+  id: string
+  page_number: number
+  table_index: number
+  table_name: string
+  row_label: string
+  value: number
+  unit: string
+  confidence: number
+  extraction_method: string
+  raw_text: string
 }
 
 interface ExtractionResult {
   document_id: string
+  filename: string
+  doc_type: string
+  total_pages: number
   total_rows_extracted: number
   rows_needing_review: number
-  rows: Array<{
-    id: string
-    row_label: string
-    value: number
-    confidence: number
-  }>
+  extraction_method: string
+  rows: ExtractedRow[]
 }
 
 interface ComparisonItem {
   id: string
   canonical_name: string
-  approved_value: number
-  actual_value: number
-  variance: number
-  variance_percent: number
+  cost_head: string
+  approved_value: number | null
+  actual_value: number | null
+  claimed_value: number | null
+  variance: number | null
+  variance_percent: number | null
   decision_class: string
+  flag_reason: string | null
+  approved_source_page: number | null
+  actual_source_page: number | null
 }
 
 interface ComparisonResult {
@@ -44,66 +60,113 @@ interface ComparisonResult {
   items: ComparisonItem[]
 }
 
-interface OrderResult {
+interface GeneratedOrder {
   id: string
+  case_id: string
+  financial_year: string
+  file_path: string
+  file_size: number
+  is_draft: boolean
+  total_items: number
+  auto_approved: number
+  review_required: number
+  generated_at: string
   download_url: string
 }
 
 function App() {
-  const [activeTab, setActiveTab] = useState('upload')
+  const [activeTab, setActiveTab] = useState('arr-upload')
   const [documents, setDocuments] = useState<Document[]>([])
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [selectedArrFile, setSelectedArrFile] = useState<File | null>(null)
+  const [selectedPetitionFile, setSelectedPetitionFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [extracting, setExtracting] = useState<string | null>(null)
   
   const [extraction, setExtraction] = useState<ExtractionResult | null>(null)
   const [comparison, setComparison] = useState<ComparisonResult | null>(null)
-  const [order, setOrder] = useState<OrderResult | null>(null)
+  const [order, setOrder] = useState<GeneratedOrder | null>(null)
 
-  // Load documents on component mount
   useEffect(() => {
     loadDocuments()
   }, [])
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleArrFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (file) {
-      setSelectedFile(file)
+      setSelectedArrFile(file)
     }
   }
 
-  const handleUpload = async () => {
-    if (!selectedFile) return
+  const handlePetitionFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      setSelectedPetitionFile(file)
+    }
+  }
+
+  const handleArrUpload = async () => {
+    if (!selectedArrFile) return
 
     setUploading(true)
     const formData = new FormData()
-    formData.append('file', selectedFile)
-    
-    // Auto-detect document type from filename
-    const isPetition = selectedFile.name.toLowerCase().includes('petition')
-    formData.append('doc_type', isPetition ? 'truing_up_petition' : 'arr_order')
+    formData.append('file', selectedArrFile)
     formData.append('financial_year', '2024-25')
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/documents/upload', {
+      const response = await fetch('http://127.0.0.1:8000/api/upload/arr', {
         method: 'POST',
         body: formData,
       })
 
       if (response.ok) {
         const result = await response.json()
-        console.log('Upload successful:', result)
-        setSelectedFile(null)
+        console.log('ARR upload successful:', result)
+        setSelectedArrFile(null)
         loadDocuments()
-        alert(`Document uploaded successfully! ${result.filename}`)
+        alert(`ARR Order uploaded successfully! ${result.filename}`)
+        setActiveTab('petition-upload')
       } else {
         const error = await response.json()
-        console.error('Upload failed:', error)
-        alert(`Upload failed: ${error.detail || 'Unknown error'}`)
+        console.error('ARR upload failed:', error)
+        alert(`ARR upload failed: ${error.detail || 'Unknown error'}`)
       }
     } catch (error) {
-      console.error('Upload error:', error)
-      alert(`Upload error: ${error.message}`)
+      console.error('ARR upload error:', error)
+      alert(`ARR upload error: ${(error as Error).message}`)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handlePetitionUpload = async () => {
+    if (!selectedPetitionFile) return
+
+    setUploading(true)
+    const formData = new FormData()
+    formData.append('file', selectedPetitionFile)
+    formData.append('financial_year', '2024-25')
+
+    try {
+      const response = await fetch('http://127.0.0.1:8000/api/upload/petition', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log('Petition upload successful:', result)
+        setSelectedPetitionFile(null)
+        loadDocuments()
+        alert(`Petition uploaded successfully! ${result.filename}`)
+        setActiveTab('extraction')
+      } else {
+        const error = await response.json()
+        console.error('Petition upload failed:', error)
+        alert(`Petition upload failed: ${error.detail || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Petition upload error:', error)
+      alert(`Petition upload error: ${(error as Error).message}`)
     } finally {
       setUploading(false)
     }
@@ -186,61 +249,131 @@ function App() {
     }
   }
 
-  const renderUploadTab = () => (
+  const renderArrUploadTab = () => (
     <div className="max-w-4xl mx-auto p-6">
       <div className="kserc-card bg-white p-6 shadow-md rounded-lg">
-        <h2 className="text-2xl font-bold mb-6 text-gray-900">Upload Documents</h2>
+        <h2 className="text-2xl font-bold mb-6 text-gray-900">Step 1: Upload ARR Approval Order</h2>
         
         <div className="border-2 border-dashed border-blue-300 rounded-lg p-8 text-center bg-blue-50">
           <input
             type="file"
             accept=".pdf"
-            onChange={handleFileSelect}
+            onChange={handleArrFileSelect}
             className="hidden"
-            id="file-upload"
+            id="arr-file-upload"
           />
-          <label htmlFor="file-upload" className="cursor-pointer">
+          <label htmlFor="arr-file-upload" className="cursor-pointer">
             <span className="bg-blue-600 text-white font-medium py-2 px-4 rounded shadow hover:bg-blue-700 transition">
-              Choose PDF File
+              Choose ARR Order PDF
             </span>
           </label>
           
-          {selectedFile && (
+          {selectedArrFile && (
             <div className="mt-4">
-              <p className="text-sm text-gray-600">Selected: <span className="font-semibold">{selectedFile.name}</span></p>
+              <p className="text-sm text-gray-600">Selected: <span className="font-semibold">{selectedArrFile.name}</span></p>
               <button
-                onClick={handleUpload}
+                onClick={handleArrUpload}
                 disabled={uploading}
                 className="mt-4 bg-green-600 text-white font-medium py-2 px-6 rounded shadow hover:bg-green-700 disabled:bg-gray-400 transition"
               >
-                {uploading ? 'Uploading...' : 'Upload Document'}
+                {uploading ? 'Uploading...' : 'Upload ARR Order'}
               </button>
             </div>
           )}
         </div>
 
         <div className="mt-8">
-          <h3 className="text-lg font-semibold mb-4 border-b pb-2">Recent Uploads</h3>
-          {documents.length === 0 ? (
-            <p className="text-gray-500 italic text-sm">No documents uploaded yet.</p>
+          <h3 className="text-lg font-semibold mb-4 border-b pb-2">ARR Documents</h3>
+          {documents.filter(d => d.doc_type === 'arr_order').length === 0 ? (
+            <p className="text-gray-500 italic text-sm">No ARR documents uploaded yet.</p>
           ) : (
             <div className="space-y-3">
-              {documents.map((doc) => (
-                <div key={doc.id} className="border border-gray-200 rounded-lg p-4 flex justify-between items-center bg-gray-50">
+              {documents.filter(d => d.doc_type === 'arr_order').map((doc) => (
+                <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
                   <div>
-                    <p className="font-bold text-gray-800">{doc.filename}</p>
-                    <p className="text-xs text-gray-500 uppercase font-semibold tracking-wider">Type: {doc.doc_type}</p>
+                    <p className="font-medium text-gray-900">{doc.filename}</p>
                     <p className="text-sm text-gray-500">
-                      {doc.page_count} pages • {(doc.file_size / 1024 / 1024).toFixed(2)} MB • Status: <span className="font-semibold text-blue-600">{doc.status}</span>
+                      {doc.file_size ? `${(doc.file_size / 1024 / 1024).toFixed(1)} MB` : 'Unknown size'} • 
+                      {doc.page_count ? `${doc.page_count} pages` : 'Unknown pages'} • 
+                      Status: {doc.status}
                     </p>
                   </div>
-                  <button 
-                    onClick={() => runExtraction(doc.id)}
-                    disabled={extracting === doc.id}
-                    className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 py-1 px-4 rounded font-medium text-sm transition"
-                  >
-                    {extracting === doc.id ? 'Extracting...' : 'Extract Data'}
-                  </button>
+                  {doc.status === 'uploaded' && (
+                    <button
+                      onClick={() => runExtraction(doc.id)}
+                      disabled={extracting === doc.id}
+                      className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:bg-gray-400 transition"
+                    >
+                      {extracting === doc.id ? 'Extracting...' : 'Extract Tables'}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+
+  const renderPetitionUploadTab = () => (
+    <div className="max-w-4xl mx-auto p-6">
+      <div className="kserc-card bg-white p-6 shadow-md rounded-lg">
+        <h2 className="text-2xl font-bold mb-6 text-gray-900">Step 2: Upload Truing-Up Petition</h2>
+        
+        <div className="border-2 border-dashed border-green-300 rounded-lg p-8 text-center bg-green-50">
+          <input
+            type="file"
+            accept=".pdf"
+            onChange={handlePetitionFileSelect}
+            className="hidden"
+            id="petition-file-upload"
+          />
+          <label htmlFor="petition-file-upload" className="cursor-pointer">
+            <span className="bg-green-600 text-white font-medium py-2 px-4 rounded shadow hover:bg-green-700 transition">
+              Choose Petition PDF
+            </span>
+          </label>
+          
+          {selectedPetitionFile && (
+            <div className="mt-4">
+              <p className="text-sm text-gray-600">Selected: <span className="font-semibold">{selectedPetitionFile.name}</span></p>
+              <button
+                onClick={handlePetitionUpload}
+                disabled={uploading}
+                className="mt-4 bg-green-600 text-white font-medium py-2 px-6 rounded shadow hover:bg-green-700 disabled:bg-gray-400 transition"
+              >
+                {uploading ? 'Uploading...' : 'Upload Petition'}
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-8">
+          <h3 className="text-lg font-semibold mb-4 border-b pb-2">Petition Documents</h3>
+          {documents.filter(d => d.doc_type === 'truing_up_petition').length === 0 ? (
+            <p className="text-gray-500 italic text-sm">No petition documents uploaded yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {documents.filter(d => d.doc_type === 'truing_up_petition').map((doc) => (
+                <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
+                  <div>
+                    <p className="font-medium text-gray-900">{doc.filename}</p>
+                    <p className="text-sm text-gray-500">
+                      {doc.file_size ? `${(doc.file_size / 1024 / 1024).toFixed(1)} MB` : 'Unknown size'} • 
+                      {doc.page_count ? `${doc.page_count} pages` : 'Unknown pages'} • 
+                      Status: {doc.status}
+                    </p>
+                  </div>
+                  {doc.status === 'uploaded' && (
+                    <button
+                      onClick={() => runExtraction(doc.id)}
+                      disabled={extracting === doc.id}
+                      className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:bg-gray-400 transition"
+                    >
+                      {extracting === doc.id ? 'Extracting...' : 'Extract Tables'}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -253,44 +386,67 @@ function App() {
   const renderExtractionTab = () => (
     <div className="max-w-6xl mx-auto p-6">
       <div className="kserc-card bg-white p-6 shadow-md rounded-lg">
-        <h2 className="text-2xl font-bold mb-6 text-gray-900">Table Extraction Results</h2>
+        <h2 className="text-2xl font-bold mb-6 text-gray-900">Data Extraction Results</h2>
         {!extraction ? (
-          <p className="text-gray-500">Run extraction from the Upload tab to view extracted financial tables.</p>
+          <div className="text-center py-12">
+            <p className="text-gray-500 mb-4">Upload and extract both documents to view extracted financial tables.</p>
+            <div className="space-y-2">
+              <p className="text-sm text-gray-600">ARR Documents: {documents.filter(d => d.doc_type === 'arr_order' && d.status === 'extracted').length} extracted</p>
+              <p className="text-sm text-gray-600">Petition Documents: {documents.filter(d => d.doc_type === 'truing_up_petition' && d.status === 'extracted').length} extracted</p>
+              {documents.filter(d => d.doc_type === 'arr_order' && d.status === 'extracted').length > 0 &&
+               documents.filter(d => d.doc_type === 'truing_up_petition' && d.status === 'extracted').length > 0 && (
+                <button
+                  onClick={runComparison}
+                  className="mt-4 bg-purple-600 text-white font-medium py-2 px-6 rounded shadow hover:bg-purple-700 transition"
+                >
+                  Run AI Comparison
+                </button>
+              )}
+            </div>
+          </div>
         ) : (
           <div>
             <div className="flex gap-4 mb-6">
-              <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg flex-1">
-                <p className="text-blue-800 font-semibold">Total Rows Extracted</p>
-                <p className="text-2xl font-bold">{extraction.total_rows_extracted}</p>
-              </div>
-              <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg flex-1">
-                <p className="text-yellow-800 font-semibold">Rows Needing Review (Low Confidence)</p>
-                <p className="text-2xl font-bold">{extraction.rows_needing_review}</p>
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <h3 className="font-semibold text-blue-800">{extraction.filename}</h3>
+                <p className="text-sm text-blue-600">Type: {extraction.doc_type}</p>
+                <p className="text-sm text-blue-600">Pages: {extraction.total_pages}</p>
+                <p className="text-sm text-blue-600">Rows: {extraction.total_rows_extracted}</p>
               </div>
             </div>
-            <div className="overflow-auto max-h-96 border rounded">
-              <table className="min-w-full text-left text-sm whitespace-nowrap">
-                <thead className="bg-gray-100 sticky top-0">
+            
+            <div className="overflow-x-auto">
+              <table className="min-w-full border-collapse border border-gray-300">
+                <thead className="bg-gray-50">
                   <tr>
-                    <th className="p-3 font-semibold text-gray-700">Line Item Label</th>
-                    <th className="p-3 font-semibold text-gray-700">Extracted Value</th>
-                    <th className="p-3 font-semibold text-gray-700">Confidence Score</th>
+                    <th className="border border-gray-300 px-4 py-2 text-left">Line Item</th>
+                    <th className="border border-gray-300 px-4 py-2 text-right">Value</th>
+                    <th className="border border-gray-300 px-4 py-2 text-center">Confidence</th>
+                    <th className="border border-gray-300 px-4 py-2 text-center">Page</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {extraction.rows.slice(0, 100).map(r => (
-                    <tr key={r.id} className="hover:bg-gray-50">
-                      <td className="p-3">{r.row_label}</td>
-                      <td className="p-3 font-mono">{r.value}</td>
-                      <td className="p-3">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${r.confidence > 0.8 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                          {(r.confidence * 100).toFixed(1)}%
+                <tbody>
+                  {extraction.rows.slice(0, 20).map((row) => (
+                    <tr key={row.id} className={row.confidence < 0.6 ? 'bg-yellow-50' : ''}>
+                      <td className="border border-gray-300 px-4 py-2">{row.row_label}</td>
+                      <td className="border border-gray-300 px-4 py-2 text-right">{row.value?.toFixed(2)}</td>
+                      <td className="border border-gray-300 px-4 py-2 text-center">
+                        <span className={`px-2 py-1 rounded text-xs ${
+                          row.confidence >= 0.8 ? 'bg-green-100 text-green-800' :
+                          row.confidence >= 0.6 ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {(row.confidence * 100).toFixed(0)}%
                         </span>
                       </td>
+                      <td className="border border-gray-300 px-4 py-2 text-center">{row.page_number}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              {extraction.rows.length > 20 && (
+                <p className="text-sm text-gray-500 mt-2">Showing first 20 rows of {extraction.rows.length} total</p>
+              )}
             </div>
           </div>
         )}
@@ -299,77 +455,83 @@ function App() {
   )
 
   const renderComparisonTab = () => (
-    <div className="max-w-6xl mx-auto p-6">
+    <div className="max-w-7xl mx-auto p-6">
       <div className="kserc-card bg-white p-6 shadow-md rounded-lg">
-        <div className="flex justify-between items-center mb-6 border-b pb-4">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">Variance Comparison & Review</h2>
-            <p className="text-sm text-gray-500 mt-1">Cross-reference ARR Order (Approved) against Truing-up Petition (Actual)</p>
-          </div>
-          <button onClick={runComparison} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium shadow transition">
-            Run AI Comparison
-          </button>
-        </div>
+        <h2 className="text-2xl font-bold mb-6 text-gray-900">AI Comparison & Review</h2>
         
         {!comparison ? (
           <div className="text-center py-12">
-            <p className="text-gray-500">Click "Run AI Comparison" to generate variance analysis between uploaded documents.</p>
+            <p className="text-gray-500 mb-4">Extract both documents and click "Run AI Comparison" to generate variance analysis.</p>
           </div>
         ) : (
           <div>
-            <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg">
-                <p className="text-gray-600 font-semibold text-sm">Total Line Items</p>
-                <p className="text-2xl font-bold">{comparison.total_items}</p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="bg-green-50 p-4 rounded-lg text-center">
+                <h3 className="font-semibold text-green-800">Auto-Approved</h3>
+                <p className="text-2xl font-bold text-green-600">{comparison.auto_approved}</p>
               </div>
-              <div className="bg-green-50 border border-green-200 p-4 rounded-lg">
-                <p className="text-green-800 font-semibold text-sm">AI Auto-Approved (&lt;15% variance)</p>
-                <p className="text-2xl font-bold text-green-700">{comparison.auto_approved}</p>
+              <div className="bg-yellow-50 p-4 rounded-lg text-center">
+                <h3 className="font-semibold text-yellow-800">Review Required</h3>
+                <p className="text-2xl font-bold text-yellow-600">{comparison.review_required}</p>
               </div>
-              <div className="bg-red-50 border border-red-200 p-4 rounded-lg">
-                <p className="text-red-800 font-semibold text-sm">Review Required (≥15% variance)</p>
-                <p className="text-2xl font-bold text-red-700">{comparison.review_required}</p>
+              <div className="bg-blue-50 p-4 rounded-lg text-center">
+                <h3 className="font-semibold text-blue-800">Total Variance</h3>
+                <p className="text-2xl font-bold text-blue-600">Rs. {comparison.total_variance} Cr.</p>
               </div>
             </div>
             
-            <div className="overflow-auto border rounded-lg shadow-sm">
-              <table className="min-w-full text-left text-sm">
-                <thead className="bg-gray-100">
+            <div className="overflow-x-auto">
+              <table className="min-w-full border-collapse border border-gray-300">
+                <thead className="bg-gray-50">
                   <tr>
-                    <th className="p-3 font-semibold text-gray-700">Line Item</th>
-                    <th className="p-3 font-semibold text-gray-700 text-right">Approved (Rs. Cr)</th>
-                    <th className="p-3 font-semibold text-gray-700 text-right">Actual (Rs. Cr)</th>
-                    <th className="p-3 font-semibold text-gray-700 text-right">Variance</th>
-                    <th className="p-3 font-semibold text-gray-700 text-center">AI Classification</th>
-                    <th className="p-3 font-semibold text-gray-700 text-center">Officer Action</th>
+                    <th className="border border-gray-300 px-4 py-2 text-left">Line Item</th>
+                    <th className="border border-gray-300 px-4 py-2 text-right">ARR Approved</th>
+                    <th className="border border-gray-300 px-4 py-2 text-right">Actual</th>
+                    <th className="border border-gray-300 px-4 py-2 text-right">Claimed</th>
+                    <th className="border border-gray-300 px-4 py-2 text-right">Variance</th>
+                    <th className="border border-gray-300 px-4 py-2 text-right">Variance %</th>
+                    <th className="border border-gray-300 px-4 py-2 text-center">Status</th>
+                    <th className="border border-gray-300 px-4 py-2 text-center">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200 bg-white">
-                  {comparison.items.map(i => (
-                    <tr key={i.id} className="hover:bg-gray-50">
-                      <td className="p-3 font-medium">{i.canonical_name}</td>
-                      <td className="p-3 text-right font-mono">{i.approved_value?.toFixed(2) || '—'}</td>
-                      <td className="p-3 text-right font-mono">{i.actual_value?.toFixed(2) || '—'}</td>
-                      <td className={`p-3 text-right font-mono ${Math.abs(i.variance_percent) >= 15 ? 'text-red-600 font-bold' : 'text-green-600'}`}>
-                        {i.variance_percent > 0 ? '+' : ''}{i.variance_percent?.toFixed(2) || 0}%
+                <tbody>
+                  {comparison.items.map((item) => (
+                    <tr key={item.id} className={
+                      item.decision_class === 'AI_AUTO' ? 'bg-green-50' : 'bg-yellow-50'
+                    }>
+                      <td className="border border-gray-300 px-4 py-2 font-medium">{item.canonical_name}</td>
+                      <td className="border border-gray-300 px-4 py-2 text-right">{item.approved_value?.toFixed(2) || '-'}</td>
+                      <td className="border border-gray-300 px-4 py-2 text-right">{item.actual_value?.toFixed(2) || '-'}</td>
+                      <td className="border border-gray-300 px-4 py-2 text-right">{item.claimed_value?.toFixed(2) || '-'}</td>
+                      <td className="border border-gray-300 px-4 py-2 text-right">
+                        {item.variance !== null ? (
+                          <span className={item.variance >= 0 ? 'text-red-600' : 'text-green-600'}>
+                            {item.variance >= 0 ? '+' : ''}{item.variance.toFixed(2)}
+                          </span>
+                        ) : '-'}
                       </td>
-                      <td className="p-3 text-center">
-                        <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${
-                          i.decision_class === 'AI_AUTO' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                      <td className="border border-gray-300 px-4 py-2 text-right">
+                        {item.variance_percent !== null ? (
+                          <span className={item.variance_percent >= 0 ? 'text-red-600' : 'text-green-600'}>
+                            {item.variance_percent >= 0 ? '+' : ''}{item.variance_percent.toFixed(1)}%
+                          </span>
+                        ) : '-'}
+                      </td>
+                      <td className="border border-gray-300 px-4 py-2 text-center">
+                        <span className={`px-2 py-1 rounded text-xs ${
+                          item.decision_class === 'AI_AUTO' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
                         }`}>
-                          {i.decision_class === 'AI_AUTO' ? 'Auto-Approved' : 'Review Required'}
+                          {item.decision_class === 'AI_AUTO' ? 'AUTO' : 'REVIEW'}
                         </span>
                       </td>
-                      <td className="p-3 text-center">
-                        {i.decision_class !== 'AI_AUTO' ? (
-                          <button 
-                            onClick={() => approveItem(i.id)} 
-                            className="text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 font-medium px-3 py-1 rounded transition"
+                      <td className="border border-gray-300 px-4 py-2 text-center">
+                        {item.decision_class !== 'AI_AUTO' && (
+                          <button
+                            onClick={() => approveItem(item.id)}
+                            className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 transition"
                           >
-                            Approve Override
+                            Approve
                           </button>
-                        ) : (
-                          <span className="text-gray-400 text-xs">Reviewed</span>
                         )}
                       </td>
                     </tr>
@@ -377,6 +539,17 @@ function App() {
                 </tbody>
               </table>
             </div>
+            
+            {comparison.review_required === 0 && (
+              <div className="mt-6 text-center">
+                <button
+                  onClick={generateOrder}
+                  className="bg-green-600 text-white font-medium py-3 px-8 rounded shadow hover:bg-green-700 transition"
+                >
+                  Generate KSERC Draft Order
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -384,27 +557,25 @@ function App() {
   )
 
   const renderGenerateTab = () => (
-    <div className="max-w-6xl mx-auto p-6">
-      <div className="kserc-card bg-white p-8 shadow-md rounded-lg text-center">
-        <h2 className="text-3xl font-bold mb-4 text-gray-900">Generate Official Order</h2>
-        <p className="mb-8 text-gray-600 max-w-2xl mx-auto">
-          Generate a high-quality, formatted KSERC Truing-up Order PDF using Playwright's Headless Chromium renderer. The generated PDF includes AI-assisted variance calculations and automated narratives.
-        </p>
+    <div className="max-w-4xl mx-auto p-6">
+      <div className="kserc-card bg-white p-6 shadow-md rounded-lg">
+        <h2 className="text-2xl font-bold mb-6 text-gray-900">Generate KSERC Draft Order</h2>
         
-        <button 
-          onClick={generateOrder} 
-          disabled={!comparison} 
-          className={`px-8 py-3 rounded-lg font-bold text-white shadow-lg transition-all ${
-            comparison ? 'bg-blue-600 hover:bg-blue-700 transform hover:-translate-y-1' : 'bg-gray-400 cursor-not-allowed'
-          }`}
-        >
-          {comparison ? 'Generate PDF Draft Order' : 'Run Comparison First'}
-        </button>
-        
-        {order && (
+        {!order ? (
+          <div className="text-center py-12">
+            <p className="text-gray-500 mb-4">
+              {comparison && comparison.review_required > 0 
+                ? `Please review ${comparison.review_required} items before generating the order.`
+                : 'Complete the comparison and review process to generate the draft order.'
+              }
+            </p>
+          </div>
+        ) : (
           <div className="mt-8 p-6 bg-green-50 border-2 border-green-200 rounded-lg max-w-md mx-auto">
             <div className="flex items-center justify-center text-green-600 mb-2">
-              <svg className="w-8 h-8 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              <svg className="w-8 h-8 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
               <h3 className="text-xl font-bold text-green-800">Order Generated Successfully!</h3>
             </div>
             <a 
@@ -413,7 +584,7 @@ function App() {
               rel="noreferrer" 
               className="mt-4 inline-block bg-white text-green-700 font-bold border border-green-300 hover:bg-green-100 py-2 px-6 rounded shadow transition"
             >
-              Download PDF Output
+              Download PDF Draft
             </a>
           </div>
         )}
@@ -424,40 +595,38 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
-      <header className="bg-blue-900 text-white shadow-md">
+      <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
-            <h1 className="text-2xl font-bold tracking-tight">KSERC Decision Support System</h1>
-            <div className="flex items-center space-x-4">
-              <span className="text-sm font-medium text-blue-200">Playwright PDF Engine</span>
-              <span className="px-3 py-1 bg-green-500 text-white text-xs font-bold rounded-full shadow">
-                INTEGRATED MVP
-              </span>
+            <h1 className="text-2xl font-bold text-gray-900">KSERC Decision Support System</h1>
+            <div className="text-sm text-gray-500">
+              MVP Demo • Two-Document Workflow
             </div>
           </div>
         </div>
       </header>
 
-      {/* Navigation Tabs */}
-      <div className="bg-white shadow-sm sticky top-0 z-10 border-b border-gray-200">
+      {/* Navigation */}
+      <div className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <nav className="flex space-x-1">
             {[
-              { id: 'upload', label: '1. Upload', icon: '📄' },
-              { id: 'extraction', label: '2. Data Extraction', icon: '📊' },
-              { id: 'comparison', label: '3. AI Comparison & Review', icon: '📈' },
-              { id: 'generate', label: '4. Generate KSERC Order', icon: '📋' }
+              { id: 'arr-upload', label: '1. ARR Upload', icon: '📄' },
+              { id: 'petition-upload', label: '2. Petition Upload', icon: '📋' },
+              { id: 'extraction', label: '3. Data Extraction', icon: '📊' },
+              { id: 'comparison', label: '4. AI Comparison', icon: '📈' },
+              { id: 'generate', label: '5. Generate Order', icon: '📋' }
             ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`py-4 px-6 font-semibold text-sm transition-colors border-b-4 ${
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === tab.id
-                    ? 'border-blue-600 text-blue-700 bg-blue-50'
-                    : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50 hover:border-gray-300'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                <span className="mr-2 text-lg">{tab.icon}</span>
+                <span className="mr-2">{tab.icon}</span>
                 {tab.label}
               </button>
             ))}
@@ -467,20 +636,12 @@ function App() {
 
       {/* Main Content */}
       <main className="py-8">
-        {activeTab === 'upload' && renderUploadTab()}
+        {activeTab === 'arr-upload' && renderArrUploadTab()}
+        {activeTab === 'petition-upload' && renderPetitionUploadTab()}
         {activeTab === 'extraction' && renderExtractionTab()}
         {activeTab === 'comparison' && renderComparisonTab()}
         {activeTab === 'generate' && renderGenerateTab()}
       </main>
-
-      {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 mt-auto shadow-inner">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <p className="text-center text-sm font-medium text-gray-500">
-            KSERC Decision Support System MVP • Fully Integrated API
-          </p>
-        </div>
-      </footer>
     </div>
   )
 }
