@@ -17,10 +17,10 @@ from pathlib import Path
 from typing import List, Dict, Optional
 
 try:
-    from weasyprint import HTML, CSS
-    WEASYPRINT_AVAILABLE = True
+    from playwright.async_api import async_playwright
+    PLAYWRIGHT_AVAILABLE = True
 except ImportError:
-    WEASYPRINT_AVAILABLE = False
+    PLAYWRIGHT_AVAILABLE = False
 
 
 # ─── Output Directory ───
@@ -290,7 +290,7 @@ def generate_order_html(
     return html
 
 
-def generate_order_pdf(
+async def generate_order_pdf(
     case_id: str,
     financial_year: str,
     comparisons: List[Dict],
@@ -298,12 +298,14 @@ def generate_order_pdf(
     officer_name: str = "Demo Officer",
 ) -> Dict:
     """
-    Generate a KSERC-style PDF order.
+    Generate a KSERC-style PDF order using Playwright.
     
     Returns dict with file_path, file_hash, file_size.
     """
-    if not WEASYPRINT_AVAILABLE:
-        raise RuntimeError("WeasyPrint is not installed. Run: pip install weasyprint")
+    if not PLAYWRIGHT_AVAILABLE:
+        raise RuntimeError("Playwright is not installed. Run: pip install playwright")
+    
+    from playwright.async_api import async_playwright
     
     html_content = generate_order_html(
         case_id, financial_year, comparisons, reviews, officer_name
@@ -311,38 +313,44 @@ def generate_order_pdf(
     
     # CSS for PDF styling
     css_content = """
-        @page {
-            size: A4;
-            margin: 2.5cm 2cm 2.5cm 2cm;
-            @top-center {
-                content: "DRAFT GENERATED FOR REVIEW";
-                font-size: 16pt;
-                color: rgba(220, 38, 38, 0.12);
-                font-weight: bold;
-            }
-            @bottom-center {
-                content: "Page " counter(page) " of " counter(pages);
-                font-size: 9pt;
-                color: #9CA3AF;
-            }
-        }
+        <style>
         body {
             font-family: "Times New Roman", Georgia, serif;
             font-size: 11pt;
             line-height: 1.6;
             color: #1F2937;
         }
+        table {
+            page-break-inside: auto;
+        }
+        tr {
+            page-break-inside: avoid;
+            page-break-after: auto;
+        }
+        </style>
     """
+    html_content = html_content.replace('</head>', f'{css_content}\\n</head>')
     
     # Generate filename
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     filename = f"KSERC_TruingUp_{financial_year}_{timestamp}.pdf"
     file_path = os.path.join(OUTPUT_DIR, filename)
     
-    # Generate PDF
-    html = HTML(string=html_content)
-    css = CSS(string=css_content)
-    html.write_pdf(file_path, stylesheets=[css])
+    # Generate PDF using headless chromium
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.set_content(html_content, wait_until="networkidle")
+        await page.pdf(
+            path=file_path,
+            format="A4",
+            print_background=True,
+            display_header_footer=True,
+            header_template="""<div style='font-size: 16pt; color: rgba(220, 38, 38, 0.12); font-weight: bold; text-align: center; width: 100%;'>DRAFT GENERATED FOR REVIEW</div>""",
+            footer_template="""<div style='font-size: 9pt; color: #9CA3AF; text-align: center; width: 100%;'>Page <span class='pageNumber'></span> of <span class='totalPages'></span></div>""",
+            margin={"top": "2.5cm", "bottom": "2.5cm", "left": "2cm", "right": "2cm"}
+        )
+        await browser.close()
     
     # Calculate hash and size
     with open(file_path, "rb") as f:

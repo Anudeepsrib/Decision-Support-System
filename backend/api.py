@@ -528,12 +528,12 @@ async def generate_order(
     db: Session = Depends(get_db),
 ):
     """Generate a KSERC-style truing-up draft order PDF."""
-    from pdf_generator import generate_order_pdf, WEASYPRINT_AVAILABLE
+    from pdf_generator import generate_order_pdf, PLAYWRIGHT_AVAILABLE
     
-    if not WEASYPRINT_AVAILABLE:
+    if not PLAYWRIGHT_AVAILABLE:
         raise HTTPException(
             status_code=503,
-            detail="WeasyPrint is not installed. PDF generation unavailable."
+            detail="Playwright is not installed. PDF generation unavailable."
         )
     
     # Get comparison data
@@ -577,7 +577,7 @@ async def generate_order(
     
     # Generate PDF
     try:
-        result = generate_order_pdf(
+        result = await generate_order_pdf(
             case_id=req.case_id,
             financial_year=req.financial_year,
             comparisons=comp_dicts,
