@@ -1,5 +1,4 @@
-# KSERC Decision Support System — MVP Dependencies
-# Minimal requirements for demo-ready MVP
+# KSERC Decision Support System - local MVP dependencies
 
 # ─── Core Framework ───
 fastapi==0.115.8
@@ -17,6 +16,7 @@ pdfplumber==0.11.5
 pdfminer.six==20231228
 
 # ─── PDF Generation ───
+reportlab==4.2.5
 playwright>=1.40.0
 
 # ─── AI (Optional) ───

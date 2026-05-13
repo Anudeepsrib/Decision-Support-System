@@ -14,7 +14,10 @@ import uuid
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 
-from models import NormalizedLineItem, Comparison
+try:
+    from .models import NormalizedLineItem, Comparison
+except ImportError:  # Support direct imports from the backend directory.
+    from models import NormalizedLineItem, Comparison
 
 
 @dataclass

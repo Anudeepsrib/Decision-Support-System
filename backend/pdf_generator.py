@@ -1,7 +1,8 @@
 """
 MVP PDF Generator — Generates KSERC-style truing-up draft orders.
 
-Uses WeasyPrint to generate A4 PDF documents with:
+Uses ReportLab by default, with optional Playwright rendering, to generate
+A4 PDF documents with:
 - KSERC header and branding
 - ARR comparison tables
 - Variance analysis with color-coded flags
@@ -14,8 +15,12 @@ import hashlib
 import html as html_lib
 import os
 from datetime import datetime
-from pathlib import Path
 from typing import List, Dict, Optional
+
+try:
+    from .config import get_settings
+except ImportError:  # Support direct imports from the backend directory.
+    from config import get_settings
 
 try:
     from playwright.async_api import async_playwright
@@ -44,11 +49,9 @@ except ImportError:
 
 # ─── Output Directory ───
 
-OUTPUT_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "output"
-)
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+settings = get_settings()
+OUTPUT_DIR = str(settings.generated_reports_dir)
+settings.generated_reports_dir.mkdir(parents=True, exist_ok=True)
 
 
 def _variance_color(variance_pct: Optional[float]) -> str:
@@ -706,7 +709,7 @@ async def generate_order_pdf(
     
     Returns dict with file_path, file_hash, file_size.
     """
-    if not PLAYWRIGHT_AVAILABLE:
+    if settings.pdf_engine == "reportlab" or not PLAYWRIGHT_AVAILABLE:
         return _generate_order_pdf_reportlab(
             case_id, financial_year, comparisons, reviews, officer_name
         )

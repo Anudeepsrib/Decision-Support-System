@@ -1,45 +1,23 @@
 @echo off
-REM KSERC DSS MVP Startup Script for Windows
+setlocal
 
-echo 🚀 Starting KSERC Decision Support System MVP...
+cd /d "%~dp0"
 
-REM Check if Docker is available
-docker --version >nul 2>&1
-if %errorlevel% equ 0 (
-    docker-compose --version >nul 2>&1
-    if %errorlevel% equ 0 (
-        echo 📦 Using Docker Compose...
-        docker-compose up --build
-        goto :end
-    )
+if not exist ".venv\Scripts\python.exe" (
+    powershell -ExecutionPolicy Bypass -File scripts\setup_backend.ps1
 )
 
-echo 🐍 Docker not found, starting locally...
+if not exist "frontend\node_modules" (
+    powershell -ExecutionPolicy Bypass -File scripts\setup_frontend.ps1
+)
 
-REM Start backend
-echo 🔧 Starting backend...
-cd backend
-start /B python -m uvicorn app:app --reload --host 0.0.0.0 --port 8000
+start "KSERC Backend" .venv\Scripts\python.exe -m uvicorn backend.app:app --reload --port 8000
+start "KSERC Frontend" cmd /k "cd frontend && npm start"
 
-REM Wait for backend to start
-timeout /t 3 /nobreak >nul
-
-REM Start frontend
-echo 🎨 Starting frontend...
-cd ..\frontend
-start /B npm run dev
-
-echo ✅ MVP started!
-echo 📊 Backend: http://localhost:8000
-echo 🖥️  Frontend: http://localhost:5173
-echo 📚 API Docs: http://localhost:8000/docs
+echo Backend:  http://127.0.0.1:8000
+echo Frontend: http://127.0.0.1:5173
+echo API docs: http://127.0.0.1:8000/docs
 echo.
-echo Press any key to stop...
-pause >nul
+echo Close the two opened terminal windows to stop the MVP.
 
-REM Cleanup (optional - you may need to manually stop the processes)
-taskkill /f /im python.exe >nul 2>&1
-taskkill /f /im node.exe >nul 2>&1
-
-:end
-echo 👋 Stopped.
+endlocal

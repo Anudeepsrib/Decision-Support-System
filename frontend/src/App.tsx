@@ -11,7 +11,9 @@ import {
   X,
 } from 'lucide-react'
 
-const API_BASE = 'http://127.0.0.1:8000/api'
+const RAW_API_BASE = (import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000/api').replace(/\/$/, '')
+const API_BASE = RAW_API_BASE.endsWith('/api') ? RAW_API_BASE : `${RAW_API_BASE}/api`
+const API_ORIGIN = API_BASE.slice(0, -4)
 
 type Tab = 'arr-upload' | 'petition-upload' | 'extraction' | 'comparison' | 'generate'
 type DocType = 'arr_order' | 'truing_up_petition'
@@ -202,7 +204,7 @@ function App() {
   const arrExtraction = latestArr ? extractions[latestArr.id] : null
   const petitionExtraction = latestPetition ? extractions[latestPetition.id] : null
   const canCompare = latestArr?.status === 'extracted' && latestPetition?.status === 'extracted'
-  const reportUrl = order ? `http://127.0.0.1:8000${order.download_url}` : null
+  const reportUrl = order ? `${API_ORIGIN}${order.download_url}` : null
 
   useEffect(() => {
     loadAll().catch((err) => setError((err as Error).message))

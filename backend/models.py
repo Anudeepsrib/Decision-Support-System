@@ -18,7 +18,11 @@ from sqlalchemy import (
     ForeignKey, Index
 )
 from sqlalchemy.orm import relationship
-from database import Base
+
+try:
+    from .database import Base
+except ImportError:  # Support direct imports from the backend directory.
+    from database import Base
 
 
 def _uuid():

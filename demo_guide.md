@@ -22,7 +22,7 @@ echo "REACT_APP_DEMO_MODE=true" >> frontend/.env
 # Frontend: Ctrl+C and restart npm start
 
 # Access Demo
-# Web UI: http://localhost:3000 (auto-logged in as Demo Admin)
+# Web UI: http://localhost:5173
 # Demo case pre-loaded: demo-case-001
 ```
 
@@ -58,8 +58,7 @@ cd ..
 
 ```bash
 # Terminal 1 - Backend (from project root)
-cd backend
-uvicorn main:app --reload --port 8000
+python -m uvicorn backend.app:app --reload --port 8000
 
 # Terminal 2 - Frontend (from project root)
 cd frontend
@@ -68,7 +67,7 @@ npm start
 
 ### Step 3: Access the Application
 
-- **Web UI**: http://localhost:3000
+- **Web UI**: http://localhost:5173
 - **API Docs**: http://localhost:8000/docs
 
 ### Step 4: Login
@@ -402,11 +401,8 @@ npm start
 ### Reset Demo Data (Demo Mode)
 
 ```bash
-# Clear demo data (optional)
-cd backend
-python -m backend.scripts.seed_demo_data --clear
-
-# Or just restart - demo data auto-seeds fresh
+# Clear and reseed demo data (optional)
+python scripts/seed_demo.py --reset
 ```
 
 ### Export Demo Report

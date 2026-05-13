@@ -24,31 +24,50 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Q
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from database import SessionLocal, get_db
-from models import (
-    Document, ExtractionJob, ExtractedRow, NormalizedLineItem, Comparison, Review, GeneratedOrder
-)
-from schemas import (
-    DocumentUploadResponse, DocumentListItem,
-    ExtractionResultResponse, ExtractedRowResponse,
-    ComparisonResponse, ComparisonItemResponse,
-    ReviewRequest, ReviewResponse,
-    GenerateOrderRequest, GeneratedOrderResponse,
-    NormalizedItemResponse, AuditEntry, JobStatusResponse,
-)
-from extractor import extract_tables_from_pdf_path, get_page_count_from_path
-from normalizer import normalize_row_label
-from comparison import calculate_variance, classify_decision
-from prompts import generate_variance_explanation
+try:
+    from .config import get_settings
+    from .database import SessionLocal, get_db
+    from .models import (
+        Document, ExtractionJob, ExtractedRow, NormalizedLineItem, Comparison, Review, GeneratedOrder
+    )
+    from .schemas import (
+        DocumentUploadResponse, DocumentListItem,
+        ExtractionResultResponse, ExtractedRowResponse,
+        ComparisonResponse, ComparisonItemResponse,
+        ReviewRequest, ReviewResponse,
+        GenerateOrderRequest, GeneratedOrderResponse,
+        NormalizedItemResponse, AuditEntry, JobStatusResponse,
+    )
+    from .extractor import extract_tables_from_pdf_path
+    from .normalizer import normalize_row_label
+    from .comparison import calculate_variance, classify_decision
+    from .prompts import generate_variance_explanation
+except ImportError:  # Support direct imports from the backend directory.
+    from config import get_settings
+    from database import SessionLocal, get_db
+    from models import (
+        Document, ExtractionJob, ExtractedRow, NormalizedLineItem, Comparison, Review, GeneratedOrder
+    )
+    from schemas import (
+        DocumentUploadResponse, DocumentListItem,
+        ExtractionResultResponse, ExtractedRowResponse,
+        ComparisonResponse, ComparisonItemResponse,
+        ReviewRequest, ReviewResponse,
+        GenerateOrderRequest, GeneratedOrderResponse,
+        NormalizedItemResponse, AuditEntry, JobStatusResponse,
+    )
+    from extractor import extract_tables_from_pdf_path
+    from normalizer import normalize_row_label
+    from comparison import calculate_variance, classify_decision
+    from prompts import generate_variance_explanation
 
 router = APIRouter(prefix="/api", tags=["MVP API"])
+compat_router = APIRouter(tags=["Compatibility API"])
 
 # Upload directory
-UPLOAD_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "mvp_uploads"
-)
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+settings = get_settings()
+UPLOAD_DIR = str(settings.upload_dir)
+settings.upload_dir.mkdir(parents=True, exist_ok=True)
 
 
 def _case_id_for_year(financial_year: str) -> str:
@@ -157,8 +176,14 @@ def _update_job(
     rows_extracted: Optional[int] = None,
     case_id: Optional[str] = None,
     error_message: Optional[str] = None,
+    started_at: Optional[datetime] = None,
+    completed_at: Optional[datetime] = None,
     commit: bool = True,
 ):
+    if started_at is not None:
+        job.started_at = started_at
+    if completed_at is not None:
+        job.completed_at = completed_at
     if status is not None:
         job.status = status
         if status == "PROCESSING" and job.started_at is None:
@@ -635,6 +660,11 @@ async def _upload_document_of_type(
     background_tasks: BackgroundTasks,
 ) -> DocumentUploadResponse:
     _validate_pdf_upload(file)
+    if doc_type not in {"arr_order", "truing_up_petition"}:
+        raise HTTPException(
+            status_code=400,
+            detail="doc_type must be 'arr_order' or 'truing_up_petition'.",
+        )
 
     doc_id = str(uuid.uuid4())
     file_path = os.path.join(UPLOAD_DIR, f"{doc_id}.pdf")
@@ -675,9 +705,9 @@ async def _upload_document_of_type(
 
 @router.post("/upload/arr", response_model=DocumentUploadResponse)
 async def upload_arr_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     financial_year: str = Form("2024-25"),
-    background_tasks: BackgroundTasks = Depends(),
     db: Session = Depends(get_db),
 ):
     """Upload ARR Approval Order PDF and enqueue background extraction."""
@@ -686,9 +716,9 @@ async def upload_arr_document(
 
 @router.post("/upload/petition", response_model=DocumentUploadResponse)
 async def upload_petition_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     financial_year: str = Form("2024-25"),
-    background_tasks: BackgroundTasks = Depends(),
     db: Session = Depends(get_db),
 ):
     """Upload Truing-Up Petition PDF and enqueue background extraction."""
@@ -697,10 +727,10 @@ async def upload_petition_document(
 
 @router.post("/documents/upload", response_model=DocumentUploadResponse)
 async def upload_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     doc_type: str = Form("arr_order"),  # arr_order | truing_up_petition
     financial_year: str = Form("2024-25"),
-    background_tasks: BackgroundTasks = Depends(),
     db: Session = Depends(get_db),
 ):
     """Legacy upload endpoint - use /upload/arr or /upload/petition instead."""
@@ -792,6 +822,15 @@ async def get_latest_comparison(
     db: Session = Depends(get_db),
 ):
     """Get the current deterministic comparison case for a financial year."""
+    return _comparison_response(db, _case_id_for_year(financial_year))
+
+
+@router.get("/comparison/results", response_model=ComparisonResponse)
+async def get_comparison_results(
+    financial_year: str = "2024-25",
+    db: Session = Depends(get_db),
+):
+    """Compatibility endpoint for the latest comparison results."""
     return _comparison_response(db, _case_id_for_year(financial_year))
 
 
@@ -918,7 +957,10 @@ async def generate_order(
     db: Session = Depends(get_db),
 ):
     """Generate a KSERC-style truing-up draft order PDF."""
-    from pdf_generator import generate_order_pdf
+    try:
+        from .pdf_generator import generate_order_pdf
+    except ImportError:
+        from pdf_generator import generate_order_pdf
     
     # Get comparison data
     comparisons = db.query(Comparison).filter(
@@ -1139,3 +1181,60 @@ async def list_normalized_items(
         )
         for i in items
     ]
+
+
+# ─── 8. Local MVP Compatibility Endpoints ───
+#
+# The React app uses the /api/* routes above. These no-prefix aliases make the
+# smoke-test flow and README commands match the product workflow terms:
+# /upload/*, /comparison/results, and /report/*.
+
+@compat_router.post("/upload/arr", response_model=DocumentUploadResponse)
+async def compat_upload_arr_document(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    financial_year: str = Form("2024-25"),
+    db: Session = Depends(get_db),
+):
+    return await _upload_document_of_type(file, financial_year, "arr_order", db, background_tasks)
+
+
+@compat_router.post("/upload/petition", response_model=DocumentUploadResponse)
+async def compat_upload_petition_document(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    financial_year: str = Form("2024-25"),
+    db: Session = Depends(get_db),
+):
+    return await _upload_document_of_type(
+        file, financial_year, "truing_up_petition", db, background_tasks
+    )
+
+
+@compat_router.post("/comparison/run", response_model=ComparisonResponse)
+async def compat_run_comparison(
+    financial_year: str = "2024-25",
+    db: Session = Depends(get_db),
+):
+    return _run_comparison_for_financial_year(db, financial_year)
+
+
+@compat_router.get("/comparison/results", response_model=ComparisonResponse)
+async def compat_get_comparison_results(
+    financial_year: str = "2024-25",
+    db: Session = Depends(get_db),
+):
+    return _comparison_response(db, _case_id_for_year(financial_year))
+
+
+@compat_router.post("/report/generate", response_model=GeneratedOrderResponse)
+async def compat_generate_report(
+    req: GenerateOrderRequest,
+    db: Session = Depends(get_db),
+):
+    return await generate_order(req, db)
+
+
+@compat_router.get("/report/{order_id}")
+async def compat_download_report(order_id: str, db: Session = Depends(get_db)):
+    return await download_order(order_id, db)

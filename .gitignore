@@ -29,6 +29,7 @@ pytest_out*.txt
 .venv
 env/
 venv/
+.venv/
 ENV/
 env.bak/
 venv.bak/
@@ -39,6 +40,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 frontend/build/
+frontend/dist/
 .pnp.*
 .pnp.js
 
@@ -46,6 +48,11 @@ frontend/build/
 *.db
 *.sqlite3
 kserc_truing_up.db
+data/*.db
+mvp_uploads/*
+output/*
+!mvp_uploads/.gitkeep
+!output/.gitkeep
 
 # System Files
 .DS_Store

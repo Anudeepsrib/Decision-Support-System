@@ -1,17 +1,25 @@
 """
-MVP Database Configuration — SQLite for zero-config demo.
+MVP database configuration.
+
+SQLite is the default local database. DATABASE_URL can still point at a
+SQLAlchemy-supported database, but the documented developer path uses SQLite.
 """
 
-import os
 from sqlalchemy import text
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-# SQLite for MVP — zero external dependencies
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "kserc_dss.db")
-DATABASE_URL = f"sqlite:///{DB_PATH}"
+try:
+    from .config import get_settings
+except ImportError:  # Support direct imports from the backend directory.
+    from config import get_settings
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+
+settings = get_settings()
+DATABASE_URL = settings.database_url
+
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -27,10 +35,22 @@ def get_db():
 
 def init_db():
     """Create all tables."""
-    from models import Base  # noqa: F811
+    try:
+        from .models import Base  # noqa: F811
+    except ImportError:
+        from models import Base  # noqa: F811
+
+    settings.ensure_directories()
+    if DATABASE_URL.startswith("sqlite"):
+        db_path = DATABASE_URL.replace("sqlite:///", "", 1)
+        if db_path != ":memory:":
+            from pathlib import Path
+
+            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+
     Base.metadata.create_all(bind=engine)
     _ensure_sqlite_schema()
-    print(f"[MVP] Database initialized at {DB_PATH}")
+    print(f"[MVP] Database initialized at {DATABASE_URL}")
 
 
 def _ensure_sqlite_schema():

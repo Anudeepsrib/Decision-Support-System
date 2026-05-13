@@ -1,76 +1,42 @@
-# KSERC DSS MVP Makefile for macOS/Linux
+.PHONY: help setup backend frontend init-db seed smoke test clean
 
-.PHONY: help setup start stop clean test
+PYTHON ?= python
+VENV_PYTHON := .venv/bin/python
 
-# Default target
 help:
-	@echo "KSERC Decision Support System MVP"
-	@echo ""
-	@echo "Available commands:"
-	@echo "  make setup    - Set up the development environment"
-	@echo "  make start    - Start the MVP (backend + frontend)"
-	@echo "  make backend  - Start only the backend"
-	@echo "  make frontend - Start only the frontend"
-	@echo "  make stop     - Stop all running services"
-	@echo "  make clean    - Clean up generated files"
-	@echo "  make test     - Run tests"
+	@echo "KSERC DSS MVP local commands"
+	@echo "  make setup     Install backend/frontend dependencies and initialize DB"
+	@echo "  make backend   Start FastAPI on http://127.0.0.1:8000"
+	@echo "  make frontend  Start Vite on http://127.0.0.1:5173"
+	@echo "  make init-db   Create/update local SQLite schema"
+	@echo "  make seed      Seed deterministic demo data"
+	@echo "  make smoke     Run API smoke test against a running backend"
+	@echo "  make test      Run backend import checks and frontend build"
+	@echo "  make clean     Remove local generated state"
 
-# Setup development environment
 setup:
-	@echo "🔧 Setting up development environment..."
-	@if [ ! -d "venv-mvp" ]; then \
-		echo "📦 Creating clean Python virtual environment..."; \
-		python3 -m venv venv-mvp; \
-	fi
-	@echo "📚 Installing Python dependencies..."
-	@source venv-mvp/bin/activate && pip install --upgrade pip && pip install -r requirements.txt
-	@echo "📚 Installing Node.js dependencies..."
-	@cd frontend && npm install
-	@echo "✅ Setup complete!"
+	bash scripts/setup_backend.sh
+	bash scripts/setup_frontend.sh
 
-# Start both backend and frontend
-start:
-	@echo "🚀 Starting KSERC DSS MVP..."
-	@source venv-mvp/bin/activate && cd backend && python -m uvicorn app:app --reload --host 0.0.0.0 --port 8000 & \
-		echo "🔧 Backend started on http://localhost:8000" && \
-		sleep 5 && \
-		cd frontend && npm run dev & \
-		echo "🎨 Frontend started on http://localhost:5173" && \
-		echo "📚 API docs: http://localhost:8000/docs" && \
-		echo "🛑 Press Ctrl+C to stop" && \
-		wait
-
-# Start only backend
 backend:
-	@echo "🔧 Starting backend..."
-	@source venv-mvp/bin/activate && cd backend && python -m uvicorn app:app --reload --host 0.0.0.0 --port 8000
+	. .venv/bin/activate && python -m uvicorn backend.app:app --reload --port 8000
 
-# Start only frontend
 frontend:
-	@echo "🎨 Starting frontend..."
-	@cd frontend && npm run dev
+	cd frontend && npm start
 
-# Stop all services
-stop:
-	@echo "🛑 Stopping services..."
-	@pkill -f "uvicorn app:app" || true
-	@pkill -f "npm run dev" || true
-	@pkill -f "vite" || true
-	@echo "✅ Services stopped"
+init-db:
+	. .venv/bin/activate && python scripts/init_db.py
 
-# Clean up
-clean:
-	@echo "🧹 Cleaning up..."
-	@rm -rf venv venv-mvp
-	@rm -rf frontend/node_modules
-	@rm -rf frontend/dist
-	@rm -f kserc_dss.db
-	@rm -rf output/*
-	@rm -rf mvp_uploads/*
-	@echo "✅ Clean complete"
+seed:
+	. .venv/bin/activate && python scripts/seed_demo.py --reset
 
-# Run tests
+smoke:
+	. .venv/bin/activate && python scripts/smoke_test.py
+
 test:
-	@echo "🧪 Running tests..."
-	@source venv-mvp/bin/activate && cd backend && python -c "import app; print('✅ Backend imports successful')"
-	@cd frontend && npm test || echo "⚠️  Frontend tests not configured yet"
+	. .venv/bin/activate && python -c "import backend.app; print('backend import ok')"
+	cd frontend && npm run build
+
+clean:
+	rm -rf .venv frontend/node_modules frontend/dist data/kserc_dss.db
+	rm -rf output/* mvp_uploads/*

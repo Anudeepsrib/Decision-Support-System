@@ -1,36 +1,38 @@
 """
-KSERC Decision Support System — MVP Application Entry Point.
+KSERC Decision Support System MVP application entry point.
 
-A clean, demo-ready FastAPI application with zero external dependencies
-beyond SQLite and pdfplumber.
-
-Run with:
-    cd backend && python -m uvicorn mvp.app:app --reload --port 8000
+Documented local command:
+    python -m uvicorn backend.app:app --reload --port 8000
 """
-
-import os
-import sys
-
-# Add project root to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
-from database import init_db
-from api import router as api_router
+try:
+    from .api import compat_router, router as api_router
+    from .config import get_settings, validate_required_environment
+    from .database import init_db
+except ImportError:  # Support `cd backend && python -m uvicorn app:app`.
+    from api import compat_router, router as api_router
+    from config import get_settings, validate_required_environment
+    from database import init_db
+
+
+settings = get_settings()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize database on startup."""
+    validate_required_environment()
+    settings.ensure_directories()
     init_db()
-    
+
     # Demo data seeding disabled - only uploaded documents will be processed
     print("[MVP] Demo data seeding disabled - processing uploaded documents only")
-    
+
     yield
 
 
@@ -48,19 +50,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — allow frontend dev server
+# CORS - driven by .env so local ports are not hidden in code.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://localhost:3000",
-        "http://localhost:4173",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:5174",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:4173",
-    ],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -68,11 +61,11 @@ app.add_middleware(
 
 # Register API routes
 app.include_router(api_router)
+app.include_router(compat_router)
 
 # Serve generated PDFs as static files
-GENERATED_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "output")
-os.makedirs(GENERATED_DIR, exist_ok=True)
-app.mount("/generated", StaticFiles(directory=GENERATED_DIR), name="generated")
+settings.generated_reports_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/generated", StaticFiles(directory=settings.generated_reports_dir), name="generated")
 
 
 @app.get("/", tags=["Health"])
@@ -96,4 +89,11 @@ async def root():
 
 @app.get("/health", tags=["Health"])
 async def health():
-    return {"status": "healthy", "mode": "mvp-demo"}
+    return {
+        "status": "healthy",
+        "mode": "demo" if settings.demo_mode else "local",
+        "database": "configured",
+        "upload_dir": str(settings.upload_dir),
+        "generated_reports_dir": str(settings.generated_reports_dir),
+        "pdf_engine": settings.pdf_engine,
+    }
