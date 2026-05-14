@@ -429,6 +429,10 @@ def _numbered_paragraph(paragraph: Dict, styles: Dict[str, ParagraphStyle]) -> T
     return table
 
 
+def _numbered(no: str, text: str) -> Dict:
+    return {"no": no, "text": text}
+
+
 def _table_data(rows: List[Dict], styles: Dict[str, ParagraphStyle], unit_label: str) -> List[List[Paragraph]]:
     data = [
         [
@@ -685,102 +689,162 @@ def _row_analysis_text(row: Optional[Dict]) -> str:
     )
 
 
-def _chapter_detail_page(
-    story: List,
-    context: Dict,
-    chapter: Dict,
-    page_number: int,
-    local_index: int,
-    total_pages: int,
-    styles: Dict[str, ParagraphStyle],
-) -> None:
-    rows = chapter.get("rows") or context.get("comparison_tables") or []
-    chapter_index = chapter.get("chapter_index") or 1
-    topic = _topic_from_rows(rows, chapter.get("sbu_name") or chapter["title"], local_index)
-    section_cycle = (
-        "Petition of KSEB Ltd",
-        "Analysis and decision of the Commission",
-        "Regulatory treatment",
-        "Verification of extracted values",
-        "Commission's observations",
-        "Draft decision for internal review",
+def _opening_page(story: List, chapter: Dict, styles: Dict[str, ParagraphStyle]) -> None:
+    story.append(_p(chapter["chapter_no"], styles["chapter_no"]))
+    story.append(_p(chapter["title"], styles["chapter_title"]))
+    story.append(_p("Introduction" if chapter["key"] != "introduction" else "Background", styles["section"]))
+    story.append(_numbered_paragraph({"no": f"{chapter['chapter_index']}.1", "text": chapter["intro"]}, styles))
+
+    if chapter["key"] == "introduction":
+        for paragraph in chapter.get("background_paragraphs", [])[1:]:
+            story.append(_numbered_paragraph(paragraph, styles))
+
+    story.extend(
+        _regulatory_table_for_rows(
+            chapter.get("summary_table") or [],
+            chapter["summary_caption"],
+            chapter.get("unit_label") or "Rs. Cr.",
+            styles,
+        )
     )
 
-    if local_index == 0:
-        story.append(_p(chapter["chapter_no"], styles["chapter_no"]))
-        story.append(_p(chapter["title"], styles["chapter_title"]))
-        first_heading = "Background" if chapter_index == 1 else "Introduction"
-        story.append(_p(first_heading, styles["section"]))
-    else:
-        story.append(_p(chapter["title"], styles["chapter_title"]))
-        if chapter_index == 1 and local_index == 1:
-            heading = "Statutory provisions"
-        elif chapter_index == 1 and local_index == 2:
-            heading = "MYT framework provisions"
-        else:
-            heading = section_cycle[local_index % len(section_cycle)]
-        story.append(_p(heading, styles["section"]))
 
-    paragraph_start = (local_index * 4) + 1
-    selected_row = rows[local_index % len(rows)] if rows else None
-    paragraphs = [
-        {
-            "no": f"{chapter_index}.{paragraph_start}",
-            "text": (
-                f"The Commission has examined the material placed on record for {topic}. "
-                "The discussion in this part is prepared from the canonical comparison "
-                "available in the report context and is arranged in the style of the "
-                "truing-up order."
-            ),
-        },
-        {
-            "no": f"{chapter_index}.{paragraph_start + 1}",
-            "text": _row_analysis_text(selected_row),
-        },
-        {
-            "no": f"{chapter_index}.{paragraph_start + 2}",
-            "text": (
-                "KSEB Ltd may furnish supporting schedules, audited account references, "
-                "and reconciliation statements wherever the claim requires further "
-                "verification. This draft does not record any final approval, "
-                "disallowance, or modification."
-            ),
-        },
-        {
-            "no": f"{chapter_index}.{paragraph_start + 3}",
-            "text": (
-                "The Commission may take an appropriate decision after examining the "
-                "details submitted by KSEB Ltd, the relevant provisions of the KSERC "
-                "Tariff Regulations, 2021, and the ARR&ERC Order dated 25.06.2022."
-            ),
-        },
-    ]
-    for paragraph in paragraphs:
+def _issue_page(story: List, chapter: Dict, issue: Dict, styles: Dict[str, ParagraphStyle]) -> None:
+    story.append(_p(chapter["chapter_no"], styles["chapter_no"]))
+    story.append(_p(chapter["title"], styles["chapter_title"]))
+    story.append(_p(issue["title"], styles["section"]))
+    for paragraph in issue["paragraphs"][:4]:
         story.append(_numbered_paragraph(paragraph, styles))
-
-    if local_index == 0 or local_index % 3 == 0:
-        if local_index == 0:
-            table_no = chapter["table_no"]
-            caption = f"{table_no} {chapter['table_caption']}"
-        else:
-            table_no = f"Table {chapter_index}.{local_index + 1}"
-            caption = f"{table_no} Statement of mapped claim and deviation for {topic}"
+    story.append(_p("Analysis and decision of the Commission", styles["section"]))
+    story.append(_p(issue["analysis"], styles["body"]))
+    story.append(_p(issue["draft_decision"], styles["body"]))
+    if issue.get("table_rows"):
         story.extend(
             _regulatory_table_for_rows(
-                _cyclic_rows(rows, local_index * 3, 4),
-                caption,
+                issue["table_rows"],
+                f"{issue.get('table_no', 'Table')} {issue['title']}",
                 chapter.get("unit_label") or "Rs. Cr.",
                 styles,
             )
         )
 
-    story.append(
-        _p(
-            f"Page {page_number} of {FULL_ORDER_TARGET_PAGES} - draft regulatory order page "
-            f"{local_index + 1} of {total_pages} for this chapter.",
-            styles["body_center"],
-        )
+
+def _supporting_chapter_page(
+    story: List,
+    chapter: Dict,
+    local_index: int,
+    styles: Dict[str, ParagraphStyle],
+) -> None:
+    chapter_index = chapter["chapter_index"]
+    section_patterns = (
+        (
+            "Stakeholder comments",
+            chapter["stakeholder_placeholder"],
+        ),
+        (
+            "Provisions in regulations",
+            "The relevant provisions of the Electricity Act, 2003 and the KSERC Tariff Regulations, 2021 shall be applied while examining this part of the claim.",
+        ),
+        (
+            "Documents considered",
+            "The draft relies on uploaded ARR Order values, uploaded petition values and canonical comparison rows available in the report context.",
+        ),
+        (
+            "Views of the Commission",
+            "The Commission may examine the supporting schedules, audited accounts and clarifications submitted by KSEB Ltd before arriving at a final decision.",
+        ),
+        (
+            "Chapter decision",
+            chapter["chapter_decision"],
+        ),
     )
+    heading, text = section_patterns[local_index % len(section_patterns)]
+    focus_topics = (
+        "petition records",
+        "audited accounts reconciliation",
+        "ARR&ERC Order dated 25.06.2022",
+        "MYT framework",
+        "stakeholder submissions",
+        "supporting schedules",
+        "variance review",
+        "regulatory treatment",
+        "officer verification",
+        "draft order safeguards",
+    )
+    focus = focus_topics[local_index % len(focus_topics)]
+    paragraph_no = (local_index + 1) * 3
+
+    story.append(_p(chapter["title"], styles["chapter_title"]))
+    story.append(_p(f"{heading} - Part {local_index}", styles["section"]))
+    for offset, paragraph_text in enumerate(
+        (
+            f"{text} The specific focus of this part is {focus}.",
+            f"This part is retained in the deterministic regulatory order structure for {chapter['sbu_name']} and does not introduce any unmapped financial value.",
+            f"Final approval, disallowance or modification of matters related to {focus} shall remain subject to verification and decision by authorized officers.",
+        )
+    ):
+        story.append(
+            _numbered_paragraph(
+                {"no": f"{chapter_index}.{paragraph_no + offset}", "text": paragraph_text},
+                styles,
+            )
+        )
+
+
+def _introduction_page(story: List, chapter: Dict, local_index: int, styles: Dict[str, ParagraphStyle]) -> None:
+    if local_index == 0:
+        _opening_page(story, chapter, styles)
+        return
+
+    story.append(_p(chapter["chapter_no"], styles["chapter_no"]))
+    story.append(_p(chapter["title"], styles["chapter_title"]))
+    if local_index == 1:
+        story.append(_p("Statutory provisions", styles["section"]))
+        paragraphs = chapter["statutory_paragraphs"]
+    elif local_index == 2:
+        story.append(_p("MYT framework provisions", styles["section"]))
+        paragraphs = chapter["documents_paragraphs"]
+    elif local_index == 3:
+        story.append(_p("Public hearing and stakeholder comments", styles["section"]))
+        paragraphs = [
+            _numbered("1.7", chapter["stakeholder_placeholder"]),
+            _numbered("1.8", chapter["chapter_decision"]),
+        ]
+    else:
+        story.append(_p("Scope of draft order", styles["section"]))
+        paragraphs = [
+            _numbered(
+                f"1.{local_index + 5}",
+                "This part records procedural background and preserves space for officer-reviewed submissions in the final regulatory order.",
+            ),
+            _numbered(
+                f"1.{local_index + 6}",
+                "No item-wise financial analysis is recorded in Chapter-1; such analysis is arranged in the respective SBU chapters.",
+            ),
+        ]
+    for paragraph in paragraphs:
+        story.append(_numbered_paragraph(paragraph, styles))
+
+
+def _chapter_detail_page(
+    story: List,
+    chapter: Dict,
+    local_index: int,
+    styles: Dict[str, ParagraphStyle],
+) -> None:
+    if chapter["key"] == "introduction":
+        _introduction_page(story, chapter, local_index, styles)
+        return
+    if local_index == 0:
+        _opening_page(story, chapter, styles)
+        return
+
+    issue_index = local_index - 1
+    if issue_index < len(chapter.get("issue_blocks") or []):
+        _issue_page(story, chapter, chapter["issue_blocks"][issue_index], styles)
+        return
+
+    _supporting_chapter_page(story, chapter, local_index, styles)
 
 
 def _annexure_page(
@@ -841,12 +905,11 @@ def _build_exact_full_order_story(
     _build_title_page(story, context, styles)
     _build_toc(story, context, styles)
 
-    chapters = context["chapters"]
+    chapters = context["order_chapters"]
     for key, start_page, end_page in FULL_ORDER_CHAPTER_RANGES:
         chapter = chapters[key]
-        total_pages = end_page - start_page + 1
-        for offset, page_number in enumerate(range(start_page, end_page + 1)):
-            _chapter_detail_page(story, context, chapter, page_number, offset, total_pages, styles)
+        for offset, _page_number in enumerate(range(start_page, end_page + 1)):
+            _chapter_detail_page(story, chapter, offset, styles)
             story.append(PageBreak())
 
     for annexure_index, page_number in enumerate(range(ANNEXURE_START_PAGE, ANNEXURE_END_PAGE + 1), 1):
@@ -907,6 +970,7 @@ def _generate_order_pdf_reportlab(
         raise RuntimeError("PDF generation unavailable. Install reportlab or playwright.")
 
     context = build_report_context(case_id, financial_year, comparisons, reviews, officer_name)
+    validate_report_context(context)
     styles = _styles()
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -940,6 +1004,60 @@ def _generate_order_pdf_reportlab(
 
 def _normalise_text(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip().lower()
+
+
+def _flatten_context_text(value) -> str:
+    if isinstance(value, dict):
+        return " ".join(_flatten_context_text(item) for item in value.values())
+    if isinstance(value, list):
+        return " ".join(_flatten_context_text(item) for item in value)
+    return str(value or "")
+
+
+def validate_report_context(context: Dict) -> None:
+    """Fail fast when chapter composition violates deterministic report rules."""
+    chapters = context.get("order_chapters") or {}
+    errors: List[str] = []
+
+    for key in ("sbu_g", "sbu_t"):
+        chapter_text = _flatten_context_text(chapters.get(key, {})).lower()
+        if "purchase of power" in chapter_text:
+            errors.append(f"Purchase of Power leaked into {key}.")
+
+    for key in ("sbu_g", "sbu_t", "sbu_d", "energy_sales_td_loss", "common_expenses"):
+        chapter = chapters.get(key) or {}
+        for row in chapter.get("summary_table") or []:
+            if row.get("section") and row.get("section") != key:
+                errors.append(
+                    f"{row.get('display_name')} with section {row.get('section')} rendered in {key}."
+                )
+
+    for key, chapter in chapters.items():
+        issue_ids = [issue.get("issue_id") for issue in chapter.get("issue_blocks") or []]
+        duplicates = sorted({issue_id for issue_id in issue_ids if issue_ids.count(issue_id) > 1})
+        if duplicates:
+            errors.append(f"Duplicate issue blocks in {key}: {', '.join(duplicates)}.")
+
+    captions: List[str] = []
+    for chapter in chapters.values():
+        if chapter.get("summary_caption"):
+            captions.append(chapter["summary_caption"])
+        for issue in chapter.get("issue_blocks") or []:
+            if issue.get("table_rows"):
+                captions.append(f"{issue.get('table_no', 'Table')} {issue['title']}")
+    duplicate_captions = sorted({caption for caption in captions if captions.count(caption) > 1})
+    if duplicate_captions:
+        errors.append(f"Repeated table captions: {', '.join(duplicate_captions)}.")
+
+    full_text = _flatten_context_text(context).lower()
+    for banned in BANNED_PDF_STRINGS:
+        if banned.lower() in full_text:
+            errors.append(f"Banned report text found in context: {banned}.")
+    if "draft regulatory order page" in full_text:
+        errors.append("Debug footer text found in context.")
+
+    if errors:
+        raise ValueError("Invalid report_context for KSERC order: " + " ".join(errors))
 
 
 def score_reference_fidelity(pdf_text: str) -> Dict:

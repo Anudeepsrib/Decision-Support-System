@@ -170,7 +170,13 @@ def test_reference_pdf_fidelity():
         "INTRODUCTION",
         "Statutory provisions",
         "CHAPTER-2",
-        "TRUING UP OF ACCOUNTS OF STRATEGIC BUSINESS UNIT",
+        "TRUING UP OF ACCOUNTS OF STRATEGIC BUSINESS UNIT GENERATION",
+        "CHAPTER-3",
+        "STRATEGIC BUSINESS UNIT TRANSMISSION",
+        "CHAPTER-4",
+        "ENERGY SALES AND T&D LOSS",
+        "CHAPTER-5",
+        "STRATEGIC BUSINESS UNIT DISTRIBUTION",
         "Table-1.1",
         "Analysis and decision of the Commission",
         "Consolidated Truing up",
@@ -182,6 +188,27 @@ def test_reference_pdf_fidelity():
 
     for banned in BANNED_PDF_STRINGS:
         assert banned not in normalised
+    assert "draft regulatory order page" not in normalised
+    assert normalised.count("Statement of mapped claim and deviation for Purchase of Power") <= 1
+
+    sbu_g_text = normalised.split("CHAPTER-2", 1)[1].split("CHAPTER-3", 1)[0]
+    sbu_t_text = normalised.split("CHAPTER-3", 1)[1].split("CHAPTER-4", 1)[0]
+    sbu_d_text = normalised.split("CHAPTER-5", 1)[1].split("CHAPTER-6", 1)[0]
+    chapter_1_text = normalised.split("CHAPTER -1", 1)[1].split("CHAPTER-2", 1)[0]
+
+    assert "Purchase of Power" not in sbu_g_text
+    assert "Purchase of Power" not in sbu_t_text
+    assert "Purchase of Power" in sbu_d_text
+    assert chapter_1_text.count("Purchase of Power") <= 1
+
+    issue_expectations = {
+        sbu_g_text: ["O&M expenses", "Depreciation", "Interest and finance charges"],
+        sbu_t_text: ["Transmission O&M", "Transmission depreciation", "Interest and finance charges"],
+        sbu_d_text: ["Purchase of power", "Distribution O&M cost", "Revenue gap / surplus"],
+    }
+    for chapter_text, issue_titles in issue_expectations.items():
+        for title in issue_titles:
+            assert chapter_text.lower().count(title.lower()) <= 2, title
 
     score = score_reference_fidelity(text)
     assert score["score"] >= 85, score
