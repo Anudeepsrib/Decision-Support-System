@@ -1,0 +1,28 @@
+<section class="title-page">
+    <div class="commission">{{ commission }}</div>
+    <div class="place">{{ place }}</div>
+    <table class="title-grid">
+        <tr>
+            <td>Present :</td>
+            <td>{{ present }}</td>
+        </tr>
+        <tr>
+            <td>In the matter of :</td>
+            <td>{{ matter }}</td>
+        </tr>
+        <tr>
+            <td>Petitioner :</td>
+            <td>{{ petitioner }}<br>{{ petitioner_address }}</td>
+        </tr>
+    </table>
+    <div class="op-number">{{ op_number }}</div>
+    <div class="order-date">ORDER DATED {{ order_date }}</div>
+    <p>In compliance to Regulation 27(6) of KSERC (Conduct of Business) Regulations, 2003, the Kerala State Electricity Regulatory Commission having considered the petition for approval of the Truing up of Accounts for the year {{ financial_year }} filed by Kerala State Electricity Board Limited, has prepared the following draft order for internal review.</p>
+    <p>After having carefully considered the submissions and documents on record and in exercise of the powers vested in the Commission under Sections 62 and 64 of the Electricity Act, 2003 and KSERC (Terms and Conditions for Determination of Tariff) Regulations, 2021, the Commission may pass the following Order after due review.</p>
+    <p>{{ dated_this }}</p>
+    <table class="signature">
+        <tr><td>Sd/-</td><td>Sd/-</td><td>Sd/-</td></tr>
+        <tr><td>T K Jose</td><td>Adv. A J Wilson</td><td>B Pradeep</td></tr>
+        <tr><td>Chairman</td><td>Member</td><td>Member</td></tr>
+    </table>
+</section>

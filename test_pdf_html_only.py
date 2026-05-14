@@ -1,133 +1,82 @@
 #!/usr/bin/env python3
 """
-Test PDF HTML generation only (without WeasyPrint)
+Test deterministic KSERC order HTML generation without rendering a PDF.
 """
+
 import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "backend"))
+
+from pdf_generator import BANNED_PDF_STRINGS, generate_order_html
+
 
 def test_pdf_html_generation():
-    print("=== Testing PDF HTML Generation (WeasyPrint unavailable) ===")
-    
-    # Create a minimal HTML generator test without importing pdf_generator
-    mock_comparisons = [
-        {
-            "id": "comp1",
-            "canonical_name": "Purchase of Power",
-            "cost_head": "SBU-D",
-            "approved_value": 1000.0,
-            "actual_value": 1150.0,
-            "claimed_value": 1150.0,
-            "variance": 150.0,
-            "variance_percent": 15.0,
-            "decision_class": "REVIEW_REQUIRED"
-        }
-    ]
-    
-    # Manual HTML generation test
-    html_template = """<!DOCTYPE html>
-<html>
-<head>
-    <title>KSERC Test Order</title>
-</head>
-<body>
-    <h1>KERALA STATE ELECTRICITY REGULATORY COMMISSION</h1>
-    <h2>TRUING-UP ORDER FOR FY 2024-25</h2>
-    <p style="color:red;">DRAFT GENERATED FOR REVIEW - NOT FOR OFFICIAL USE</p>
-    
-    <h3>ARR COMPARISON - APPROVED vs ACTUAL</h3>
-    <table border="1" style="border-collapse:collapse;">
-        <tr>
-            <th>Line Item</th>
-            <th>Approved (Rs. Cr.)</th>
-            <th>Actual (Rs. Cr.)</th>
-            <th>Variance (Rs. Cr.)</th>
-            <th>Variance %</th>
-            <th>Status</th>
-        </tr>"""
-    
-    for comp in mock_comparisons:
-        approved_str = f"Rs. {comp['approved_value']:,.2f}"
-        actual_str = f"Rs. {comp['actual_value']:,.2f}"
-        variance_str = f"Rs. {comp['variance']:,.2f}"
-        variance_pct_str = f"{comp['variance_percent']:+.1f}%"
-        
-        badge = "REVIEW REQUIRED" if comp['decision_class'] == "REVIEW_REQUIRED" else "ACCEPTABLE VARIANCE"
-        
-        html_template += f"""
-        <tr>
-            <td>{comp['canonical_name']}</td>
-            <td style="text-align:right">{approved_str}</td>
-            <td style="text-align:right">{actual_str}</td>
-            <td style="text-align:right;color:red;font-weight:bold">{variance_str}</td>
-            <td style="text-align:right;color:red">{variance_pct_str}</td>
-            <td style="text-align:center">{badge}</td>
-        </tr>"""
-    
-    html_template += """
-    </table>
-    
-    <h3>OFFICER REMARKS</h3>
-    <p>This draft order has been prepared by the deterministic Decision Support System.</p>
-    
-    <footer>
-        <p>Deterministic Decision Support System v1.0-MVP</p>
-    </footer>
-</body>
-</html>"""
-    
-    print(f"HTML generated: {len(html_template)} characters")
-    
-    # Validate HTML content
-    html_checks = [
+    html_template = generate_order_html(
+        case_id="html-test",
+        financial_year="2024-25",
+        comparisons=[
+            {
+                "id": "comp1",
+                "canonical_id": "PURCHASE_OF_POWER",
+                "display_name": "Purchase of Power",
+                "sbu": "SBU-D",
+                "unit": "Rs. Cr.",
+                "section": "sbu_d",
+                "approved_value": 1000.0,
+                "actual_value": 1150.0,
+                "claimed_value": 1150.0,
+                "variance": 150.0,
+                "variance_percent": 15.0,
+                "decision_class": "REVIEW_REQUIRED",
+            }
+        ],
+        reviews=[],
+        officer_name="HTML Test Officer",
+    )
+
+    checks = [
         ("Contains KSERC header", "KERALA STATE ELECTRICITY REGULATORY COMMISSION" in html_template),
-        ("Contains financial year", "2024-25" in html_template),
-        ("Contains comparison table", "<table" in html_template),
-        ("Contains variance data", "Rs. 150.00" in html_template),
-        ("Contains decision status", "REVIEW REQUIRED" in html_template),
-        ("Contains draft watermark", "DRAFT GENERATED FOR REVIEW" in html_template),
-        ("Contains proper formatting", "text-align:right" in html_template),
-        ("Contains footer", "Deterministic Decision Support System" in html_template),
+        ("Contains title page matter marker", "In the matter of" in html_template),
+        ("Contains table of contents", "Table of Contents" in html_template),
+        ("Contains chapter marker", "CHAPTER -1" in html_template),
+        ("Contains regulatory table header", "Sought for TU" in html_template),
+        ("Contains final order", "Final Order" in html_template),
+        ("Contains signature", "Sd/-" in html_template),
     ]
-    
-    print("\nHTML validation:")
-    for check_name, passed in html_checks:
-        status = "PASS" if passed else "FAIL"
-        print(f"  {status} {check_name}")
-    
-    # Save test HTML file
-    output_file = os.path.join(os.path.dirname(__file__), "test_order_output.html")
-    with open(output_file, 'w', encoding='utf-8') as f:
+
+    for check_name, passed in checks:
+        assert passed, check_name
+    for banned in BANNED_PDF_STRINGS:
+        assert banned not in html_template
+
+    output_file = os.path.join(os.path.dirname(__file__), "output", "test_order_output.html")
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    with open(output_file, "w", encoding="utf-8") as f:
         f.write(html_template)
-    
-    print(f"\nTest HTML saved to: {output_file}")
-    print("Open this file in a browser to visualize the PDF layout")
+
 
 def test_pdf_structure_requirements():
-    """Test if PDF structure meets KSERC requirements"""
-    print("\n=== Testing PDF Structure Requirements ===")
-    
+    html_template = generate_order_html(
+        case_id="structure-test",
+        financial_year="2024-25",
+        comparisons=[],
+        reviews=[],
+        officer_name="Structure Test Officer",
+    )
     required_sections = [
-        "KSERC Header",
-        "Order Title with Financial Year", 
-        "Draft Watermark",
-        "Introduction Section",
-        "Regulatory Framework",
-        "ARR Comparison Table",
-        "Variance Analysis Summary",
-        "Officer Remarks",
-        "Recommendations",
-        "Footer with Case ID"
+        "KERALA STATE ELECTRICITY REGULATORY COMMISSION",
+        "Table of Contents",
+        "Statutory provisions",
+        "MYT framework provisions",
+        "Analysis and decision of the Commission",
+        "Order of the Commission",
     ]
-    
-    print("Required KSERC Order Sections:")
-    for i, section in enumerate(required_sections, 1):
-        print(f"  {i}. {section}")
-    
-    print("\nPASS All required sections are designed into the HTML template")
-    print("PASS Table structure includes all variance calculations")
-    print("PASS Decision badges provide clear visual indicators")
-    print("PASS Professional formatting with proper typography")
-    print("PASS Draft watermark prevents misuse")
+    for section in required_sections:
+        assert section in html_template
+
 
 if __name__ == "__main__":
     test_pdf_html_generation()
     test_pdf_structure_requirements()
+    print("PDF HTML-only tests passed.")

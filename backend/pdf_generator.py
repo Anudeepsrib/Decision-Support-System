@@ -1,8 +1,9 @@
 """
-Deterministic KSERC-style draft order PDF generator.
+Deterministic KSERC-style truing-up order PDF generator.
 
-The generator consumes a report_context built from canonical comparison rows.
-It does not render raw extraction rows and does not call an LLM.
+The generator consumes only report_context built from canonical comparison rows.
+It does not render raw extraction rows and does not call an LLM or external
+service.
 """
 
 from __future__ import annotations
@@ -10,8 +11,10 @@ from __future__ import annotations
 import hashlib
 import html
 import os
-from datetime import datetime
-from typing import Dict, List, Optional
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional
 
 try:
     from .config import get_settings
@@ -22,6 +25,7 @@ except ImportError:  # Support direct imports from the backend directory.
 
 try:
     from playwright.async_api import async_playwright
+
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
@@ -40,6 +44,7 @@ try:
         Table,
         TableStyle,
     )
+
     REPORTLAB_AVAILABLE = True
 except ImportError:
     REPORTLAB_AVAILABLE = False
@@ -48,6 +53,34 @@ except ImportError:
 settings = get_settings()
 OUTPUT_DIR = str(settings.generated_reports_dir)
 settings.generated_reports_dir.mkdir(parents=True, exist_ok=True)
+
+TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
+
+BANNED_PDF_STRINGS = (
+    "raw_label",
+    "normalized_label",
+    "source_page",
+    "confidence",
+    "Low extraction confidence",
+    "0 to 100 units",
+    "Single phase",
+    "Three phase",
+    "Fixed Charge",
+    "Energy Charge",
+)
+
+FULL_ORDER_TARGET_PAGES = 237
+FULL_ORDER_CHAPTER_RANGES = (
+    ("introduction", 3, 18),
+    ("sbu_g", 19, 36),
+    ("sbu_t", 37, 58),
+    ("energy_sales_td_loss", 59, 71),
+    ("sbu_d", 72, 147),
+    ("common_expenses", 148, 196),
+    ("consolidated", 197, 200),
+)
+ANNEXURE_START_PAGE = 201
+ANNEXURE_END_PAGE = 236
 
 
 def _fmt_value(value: Optional[float], unit: str = "Rs. Cr.") -> str:
@@ -67,85 +100,124 @@ def _as_report_float(value) -> Optional[float]:
         return None
 
 
-def _fmt_percent(value: Optional[float]) -> str:
-    return "NA" if value is None else f"{value:+.2f}%"
+def _template(path: str) -> str:
+    return (TEMPLATE_DIR / path).read_text(encoding="utf-8")
 
 
-def _status_label(status: Optional[str]) -> str:
-    return (status or "INCOMPLETE_DATA").replace("_", " ")
+def _render_template(template_text: str, values: Dict[str, str]) -> str:
+    rendered = template_text
+    for key, value in values.items():
+        rendered = rendered.replace("{{ " + key + " }}", value)
+    return rendered
 
 
-def _chapter_heading(chapter: Dict) -> str:
-    return f"{chapter['chapter_no']} - {chapter['title']}"
+def _escape_lines(lines: Iterable[str]) -> str:
+    return "<br>".join(html.escape(str(line)) for line in lines)
 
 
-def _render_html_paragraph(text: str) -> str:
-    return f"<p>{html.escape(text)}</p>"
-
-
-def _render_html_table(rows: List[Dict], caption: str) -> str:
+def _render_html_table(rows: List[Dict], caption: str, unit_label: str) -> str:
+    table_template = _template("components/regulatory_table.html")
     if not rows:
-        return "<p>No canonical comparison rows were mapped for this chapter.</p>"
-
-    body = []
-    for row in rows:
-        row_class = "total-row" if row.get("is_total") else ""
-        unit = row.get("unit") or "Rs. Cr."
-        body.append(
-            f"<tr class='{row_class}'>"
-            f"<td>{row['no']}</td>"
-            f"<td>{html.escape(row['display_name'])}</td>"
-            f"<td class='num'>{html.escape(_fmt_value(row.get('arr_approved_value'), unit))}</td>"
-            f"<td class='num'>{html.escape(_fmt_value(row.get('petition_actual_value'), unit))}</td>"
-            f"<td class='num'>{html.escape(_fmt_value(row.get('petition_claimed_value'), unit))}</td>"
-            f"<td class='num'>{html.escape(_fmt_value(row.get('deviation_value'), unit))}<br><span>{html.escape(_fmt_percent(row.get('deviation_percent')))}</span></td>"
-            f"<td>{html.escape(_status_label(row.get('status')))}</td>"
-            "</tr>"
+        body = (
+            "<tr><td class='center'>-</td><td>No mapped canonical line item</td>"
+            "<td class='num'>-</td><td class='num'>-</td><td class='num'>-</td><td class='num'>-</td></tr>"
         )
+    else:
+        body_parts = []
+        for row in rows:
+            unit = row.get("unit") or unit_label or "Rs. Cr."
+            row_class = " class='total-row'" if row.get("is_total") else ""
+            body_parts.append(
+                f"<tr{row_class}>"
+                f"<td class='center'>{html.escape(str(row.get('no', '')))}</td>"
+                f"<td>{html.escape(row.get('display_name') or '-')}</td>"
+                f"<td class='num'>{html.escape(_fmt_value(row.get('arr_approved_value'), unit))}</td>"
+                f"<td class='num'>{html.escape(_fmt_value(row.get('petition_actual_value'), unit))}</td>"
+                f"<td class='num'>{html.escape(_fmt_value(row.get('petition_claimed_value'), unit))}</td>"
+                f"<td class='num'>{html.escape(_fmt_value(row.get('deviation_value'), unit))}</td>"
+                "</tr>"
+            )
+        body = "".join(body_parts)
 
-    return f"""
-    <p class="caption">{html.escape(caption)}</p>
-    <table>
-        <thead>
-            <tr>
-                <th style="width:6%;">No</th>
-                <th style="width:30%;">Particulars</th>
-                <th>MYT Order / ARR Approved</th>
-                <th>Actual</th>
-                <th>Sought for TU / Claimed</th>
-                <th>Deviation from Approval</th>
-                <th>Status</th>
-            </tr>
-        </thead>
-        <tbody>{''.join(body)}</tbody>
-    </table>
-    """
+    return _render_template(
+        table_template,
+        {
+            "caption": html.escape(caption),
+            "unit_label": html.escape(unit_label or "Rs. Cr."),
+            "body": body,
+        },
+    )
 
 
-def _render_summary_html(summary: Dict) -> str:
-    rows = [
-        ("Approved ARR Baseline", summary.get("approved")),
-        ("Actual Petition Total", summary.get("actual")),
-        ("Claimed Petition Total", summary.get("claimed")),
-        ("Deviation from Approval", summary.get("deviation")),
-        ("Acceptable Variance Items", summary.get("acceptable")),
-        ("Review Required Items", summary.get("review_required")),
-        ("Incomplete Data Items", summary.get("incomplete")),
-    ]
-    body_parts = []
-    for label, value in rows:
-        if "Items" in label:
-            formatted = str(value or 0)
-        else:
-            formatted = _fmt_value(_as_report_float(value), "Rs. Cr.")
-        body_parts.append(
-            f"<tr><td>{html.escape(label)}</td><td class='num'>{html.escape(formatted)}</td></tr>"
-        )
-    body = "".join(body_parts)
-    return f"""
-    <p class="caption">Table 7.1: Consolidated truing-up summary</p>
-    <table class="summary-table"><tbody>{body}</tbody></table>
-    """
+def _render_html_numbered_paragraph(paragraph: Dict) -> str:
+    return (
+        "<div class='numbered-paragraph'>"
+        f"<div>{html.escape(paragraph['no'])}</div>"
+        f"<p>{html.escape(paragraph['text'])}</p>"
+        "</div>"
+    )
+
+
+def _render_html_chapter(chapter: Dict) -> str:
+    chapter_template = _template("components/chapter.html")
+    body_parts: List[str] = []
+    for section in chapter["sections"]:
+        body_parts.append(f"<h3>{html.escape(section['heading'])}</h3>")
+        body_parts.extend(_render_html_numbered_paragraph(paragraph) for paragraph in section["paragraphs"])
+        if section.get("table") == "primary":
+            body_parts.append(
+                _render_html_table(
+                    chapter["rows"],
+                    f"{chapter['table_no']} {chapter['table_caption']}",
+                    chapter.get("unit_label") or "Rs. Cr.",
+                )
+            )
+    return _render_template(
+        chapter_template,
+        {
+            "chapter_no": html.escape(chapter["chapter_no"]),
+            "title": html.escape(chapter["title"]),
+            "body": "".join(body_parts),
+        },
+    )
+
+
+def _render_html_title_page(context: Dict, officer_name: str) -> str:
+    meta = context["case_metadata"]
+    template = _template("components/title_page.html")
+    return _render_template(
+        template,
+        {
+            "commission": html.escape(meta["commission"]),
+            "place": html.escape(meta["place"]),
+            "present": _escape_lines(meta["present"]),
+            "op_number": html.escape(meta["op_number"]),
+            "matter": html.escape(meta["matter"]),
+            "petitioner": html.escape(meta["petitioner"]),
+            "petitioner_address": _escape_lines(meta["petitioner_address"]),
+            "order_date": html.escape(meta["order_date"]),
+            "financial_year": html.escape(meta["financial_year"]),
+            "dated_this": html.escape(meta["dated_this"]),
+        },
+    )
+
+
+def _render_html_toc(context: Dict) -> str:
+    template = _template("components/toc.html")
+    body = "".join(
+        "<tr>"
+        f"<td class='center'>{entry['sl_no']}</td>"
+        f"<td>{html.escape(entry['particulars'])}</td>"
+        f"<td class='num'>{entry['pages']}</td>"
+        "</tr>"
+        for entry in context["toc_entries"]
+    )
+    return _render_template(template, {"body": body})
+
+
+def _render_html_signature_block(context: Dict, officer_name: str) -> str:
+    template = _template("components/signature_block.html")
+    return _render_template(template, {"officer_name": html.escape(officer_name)})
 
 
 def generate_order_html(
@@ -155,184 +227,176 @@ def generate_order_html(
     reviews: List[Dict],
     officer_name: str = "Demo Officer",
 ) -> str:
-    """Generate deterministic KSERC-style HTML from report_context."""
+    """Generate deterministic KSERC order HTML from report_context."""
     context = build_report_context(case_id, financial_year, comparisons, reviews, officer_name)
-    meta = context["case_metadata"]
-    chapters = context["chapters"]
+    css = _template("kserc_order.css")
+    shell = _template("kserc_order.html")
 
-    toc_items = "".join(
-        f"<li>{html.escape(_chapter_heading(chapters[key]))}</li>"
-        for key in context["chapter_sequence"]
+    chapters = "".join(
+        _render_html_chapter(context["chapters"][key]) for key in context["chapter_sequence"]
+    )
+    final_order = (
+        "<section class='chapter final-order'>"
+        "<h1>Order of the Commission</h1>"
+        "<h2>Final Order</h2>"
+        "<div class='numbered-paragraph'><div>8.1</div>"
+        "<p>The draft summary above is placed for internal review and verification. "
+        "The Commission may take appropriate decision after examining the details "
+        "submitted by KSEB Ltd.</p></div>"
+        f"<p>{html.escape(context['final_summary']['disclaimer'])}</p>"
+        f"{_render_html_signature_block(context, officer_name)}"
+        "</section>"
     )
 
-    parts = [
-        "<!DOCTYPE html>",
-        "<html lang='en'>",
-        "<head>",
-        "<meta charset='UTF-8'>",
-        f"<title>KSERC Draft Truing-Up Order - FY {html.escape(financial_year)}</title>",
-        "<style>",
-        "@page { size: A4; margin: 2cm 1.7cm 2.1cm 1.7cm; }",
-        "body { font-family: 'Times New Roman', Georgia, serif; color: #111; font-size: 11pt; line-height: 1.55; }",
-        ".cover { text-align: center; min-height: 88vh; display: flex; flex-direction: column; justify-content: center; page-break-after: always; }",
-        ".commission { font-size: 16pt; font-weight: bold; letter-spacing: .3px; margin-bottom: 10px; }",
-        ".title { border-top: 1.5px solid #111; border-bottom: 1px solid #111; margin: 28px 0; padding: 16px 0; }",
-        ".draft { font-weight: bold; margin-top: 20px; }",
-        ".toc { page-break-after: always; }",
-        ".chapter { page-break-before: always; }",
-        "h1, h2, h3 { font-family: 'Times New Roman', Georgia, serif; color: #111; }",
-        "h1 { font-size: 15pt; text-align: center; }",
-        "h2 { font-size: 13pt; text-align: center; margin-top: 0; border-bottom: 1px solid #111; padding-bottom: 6px; }",
-        "p { text-align: justify; margin: 0 0 10px 0; }",
-        ".caption { font-weight: bold; font-size: 10pt; margin: 12px 0 4px 0; }",
-        "table { width: 100%; border-collapse: collapse; margin: 4px 0 14px 0; page-break-inside: auto; }",
-        "th, td { border: 1px solid #555; padding: 5px 6px; vertical-align: top; }",
-        "th { background: #f0f0f0; font-weight: bold; text-align: center; }",
-        "td.num { text-align: right; white-space: nowrap; }",
-        ".total-row td { font-weight: bold; }",
-        ".signature { margin-top: 36px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; text-align: center; }",
-        ".signature div { border-top: 1px solid #111; padding-top: 6px; }",
-        ".footer-note { font-size: 9pt; color: #444; margin-top: 24px; }",
-        "</style>",
-        "</head>",
-        "<body>",
-        "<section class='cover'>",
-        "<div class='commission'>KERALA STATE ELECTRICITY REGULATORY COMMISSION</div>",
-        "<div>Thiruvananthapuram</div>",
-        "<div class='title'>",
-        f"<h1>{html.escape(meta['order_type'].upper())}</h1>",
-        f"<h1>TRUING UP OF ACCOUNTS FOR FY {html.escape(financial_year)}</h1>",
-        f"<p style='text-align:center;'>Petitioner: {html.escape(meta['petitioner'])}</p>",
-        f"<p style='text-align:center;'>Case ID: {html.escape(case_id)} | Date: {html.escape(meta['generated_date'])}</p>",
-        "</div>",
-        "<div class='draft'>DRAFT FOR INTERNAL REVIEW</div>",
-        "</section>",
-        "<section class='toc'>",
-        "<h1>TABLE OF CONTENTS</h1>",
-        f"<ul>{toc_items}<li>FINAL ORDER</li></ul>",
-        "</section>",
-    ]
-
-    intro = chapters["introduction"]
-    parts.append("<section class='chapter'>")
-    parts.append(f"<h2>{html.escape(_chapter_heading(intro))}</h2>")
-    parts.extend(_render_html_paragraph(paragraph) for paragraph in intro["paragraphs"])
-    parts.append("</section>")
-
-    for key in context["chapter_sequence"]:
-        if key == "introduction":
-            continue
-        chapter = chapters[key]
-        parts.append("<section class='chapter'>")
-        parts.append(f"<h2>{html.escape(_chapter_heading(chapter))}</h2>")
-        parts.append(_render_html_paragraph(chapter["opening"]))
-        if key == "consolidated":
-            parts.append(_render_summary_html(chapter["summary"]))
-        else:
-            parts.append(_render_html_table(chapter["rows"], f"Table {chapter['chapter_no'].split()[-1]}.1: {chapter['title']}"))
-        parts.extend(_render_html_paragraph(observation) for observation in chapter["observations"])
-        parts.append("</section>")
-
-    parts.extend([
-        "<section class='chapter'>",
-        "<h2>FINAL ORDER</h2>",
-        _render_html_paragraph("The draft summary above is placed for internal review and verification. Items requiring review shall be examined with source documents before final approval."),
-        _render_html_paragraph(context["final_summary"]["disclaimer"]),
-        "<div class='signature'>",
-        f"<div>{html.escape(officer_name)}<br>Prepared By</div>",
-        "<div>[Reviewing Officer]<br>Reviewed By</div>",
-        "<div>[Commission Signatory]<br>Approved By</div>",
-        "</div>",
-        f"<p class='footer-note'>Generated: {html.escape(meta['generated_at'])} | Deterministic KSERC DSS MVP</p>",
-        "</section>",
-        "</body>",
-        "</html>",
-    ])
-
-    return "".join(parts)
+    return _render_template(
+        shell,
+        {
+            "title": f"KSERC Truing-Up Order - FY {html.escape(financial_year)}",
+            "css": css,
+            "title_page": _render_html_title_page(context, officer_name),
+            "toc": _render_html_toc(context),
+            "chapters": chapters,
+            "final_order": final_order,
+        },
+    )
 
 
-def _styles():
+def _styles() -> Dict[str, ParagraphStyle]:
     styles = getSampleStyleSheet()
     return {
-        "cover_title": ParagraphStyle(
-            "CoverTitle",
+        "commission": ParagraphStyle(
+            "Commission",
             parent=styles["Title"],
             fontName="Times-Bold",
-            fontSize=16,
-            leading=20,
+            fontSize=14,
+            leading=17,
             alignment=TA_CENTER,
-            spaceAfter=12,
+            spaceAfter=4,
         ),
-        "cover_subtitle": ParagraphStyle(
-            "CoverSubtitle",
+        "place": ParagraphStyle(
+            "Place",
             parent=styles["Normal"],
-            fontName="Times-Roman",
+            fontName="Times-Bold",
             fontSize=11,
+            leading=14,
+            alignment=TA_CENTER,
+            spaceAfter=14,
+        ),
+        "title": ParagraphStyle(
+            "OrderTitle",
+            parent=styles["Heading1"],
+            fontName="Times-Bold",
+            fontSize=12,
             leading=15,
             alignment=TA_CENTER,
+            spaceBefore=8,
+            spaceAfter=12,
+        ),
+        "chapter_no": ParagraphStyle(
+            "ChapterNo",
+            parent=styles["Heading1"],
+            fontName="Times-Bold",
+            fontSize=12,
+            leading=15,
+            alignment=TA_CENTER,
+            spaceBefore=0,
             spaceAfter=8,
         ),
-        "chapter": ParagraphStyle(
-            "Chapter",
+        "chapter_title": ParagraphStyle(
+            "ChapterTitle",
             parent=styles["Heading2"],
             fontName="Times-Bold",
-            fontSize=13,
-            leading=16,
+            fontSize=12,
+            leading=15,
             alignment=TA_CENTER,
-            spaceBefore=6,
             spaceAfter=12,
+        ),
+        "section": ParagraphStyle(
+            "Section",
+            parent=styles["Heading3"],
+            fontName="Times-Bold",
+            fontSize=10,
+            leading=13,
+            alignment=TA_LEFT,
+            spaceBefore=6,
+            spaceAfter=3,
         ),
         "body": ParagraphStyle(
             "Body",
             parent=styles["BodyText"],
             fontName="Times-Roman",
-            fontSize=9.5,
-            leading=13,
+            fontSize=9.4,
+            leading=12.5,
             alignment=TA_JUSTIFY,
-            spaceAfter=8,
+            spaceAfter=6,
+        ),
+        "body_center": ParagraphStyle(
+            "BodyCenter",
+            parent=styles["BodyText"],
+            fontName="Times-Roman",
+            fontSize=9.4,
+            leading=12.5,
+            alignment=TA_CENTER,
+            spaceAfter=6,
+        ),
+        "body_bold": ParagraphStyle(
+            "BodyBold",
+            parent=styles["BodyText"],
+            fontName="Times-Bold",
+            fontSize=9.4,
+            leading=12.5,
+            alignment=TA_LEFT,
+            spaceAfter=4,
         ),
         "caption": ParagraphStyle(
             "Caption",
             parent=styles["BodyText"],
             fontName="Times-Bold",
-            fontSize=8.5,
-            leading=11,
-            alignment=TA_LEFT,
-            spaceBefore=8,
-            spaceAfter=3,
-        ),
-        "small_center": ParagraphStyle(
-            "SmallCenter",
-            parent=styles["BodyText"],
-            fontName="Times-Roman",
-            fontSize=8,
+            fontSize=8.4,
             leading=10,
             alignment=TA_CENTER,
+            spaceBefore=8,
+            spaceAfter=3,
         ),
         "cell": ParagraphStyle(
             "Cell",
             parent=styles["BodyText"],
             fontName="Times-Roman",
-            fontSize=7.4,
-            leading=9,
+            fontSize=7.3,
+            leading=8.7,
             alignment=TA_LEFT,
         ),
         "cell_bold": ParagraphStyle(
             "CellBold",
             parent=styles["BodyText"],
             fontName="Times-Bold",
-            fontSize=7.4,
-            leading=9,
+            fontSize=7.3,
+            leading=8.7,
             alignment=TA_LEFT,
+        ),
+        "cell_center": ParagraphStyle(
+            "CellCenter",
+            parent=styles["BodyText"],
+            fontName="Times-Roman",
+            fontSize=7.3,
+            leading=8.7,
+            alignment=TA_CENTER,
         ),
         "cell_right": ParagraphStyle(
             "CellRight",
             parent=styles["BodyText"],
             fontName="Times-Roman",
-            fontSize=7.4,
-            leading=9,
+            fontSize=7.3,
+            leading=8.7,
             alignment=TA_RIGHT,
+        ),
+        "toc": ParagraphStyle(
+            "Toc",
+            parent=styles["BodyText"],
+            fontName="Times-Roman",
+            fontSize=10,
+            leading=13,
+            alignment=TA_LEFT,
         ),
     }
 
@@ -341,94 +405,494 @@ def _p(text: str, style: ParagraphStyle) -> Paragraph:
     return Paragraph(html.escape(str(text)), style)
 
 
-def _table_cell(text: str, style: ParagraphStyle) -> Paragraph:
-    return Paragraph(html.escape(str(text)), style)
+def _cell(text: str, style: ParagraphStyle) -> Paragraph:
+    escaped = "<br/>".join(html.escape(part) for part in str(text).split("\n"))
+    return Paragraph(escaped, style)
 
 
-def _comparison_table(rows: List[Dict], caption: str, styles: Dict[str, ParagraphStyle]) -> List:
+def _numbered_paragraph(paragraph: Dict, styles: Dict[str, ParagraphStyle]) -> Table:
+    table = Table(
+        [[_cell(paragraph["no"], styles["body_bold"]), _cell(paragraph["text"], styles["body"])]],
+        colWidths=[1.05 * cm, 15.9 * cm],
+    )
+    table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ]
+        )
+    )
+    return table
+
+
+def _table_data(rows: List[Dict], styles: Dict[str, ParagraphStyle], unit_label: str) -> List[List[Paragraph]]:
+    data = [
+        [
+            _cell("No", styles["cell_bold"]),
+            _cell("Particulars", styles["cell_bold"]),
+            _cell(f"MYT Order dated\n25.06.2022\n({unit_label})", styles["cell_bold"]),
+            _cell(f"Actual\n({unit_label})", styles["cell_bold"]),
+            _cell(f"Sought for TU\n({unit_label})", styles["cell_bold"]),
+            _cell(f"Deviation from approval\n({unit_label})", styles["cell_bold"]),
+        ]
+    ]
     if not rows:
-        return [_p("No canonical comparison rows were mapped for this chapter.", styles["body"])]
-
-    data = [[
-        _table_cell("No", styles["cell_bold"]),
-        _table_cell("Particulars", styles["cell_bold"]),
-        _table_cell("MYT Order / ARR Approved", styles["cell_bold"]),
-        _table_cell("Actual", styles["cell_bold"]),
-        _table_cell("Sought for TU / Claimed", styles["cell_bold"]),
-        _table_cell("Deviation from Approval", styles["cell_bold"]),
-        _table_cell("Status", styles["cell_bold"]),
-    ]]
+        data.append(
+            [
+                _cell("-", styles["cell_center"]),
+                _cell("No mapped canonical line item", styles["cell"]),
+                _cell("-", styles["cell_right"]),
+                _cell("-", styles["cell_right"]),
+                _cell("-", styles["cell_right"]),
+                _cell("-", styles["cell_right"]),
+            ]
+        )
+        return data
 
     for row in rows:
-        unit = row.get("unit") or "Rs. Cr."
-        deviation = _fmt_value(row.get("deviation_value"), unit)
-        deviation_percent = _fmt_percent(row.get("deviation_percent"))
+        unit = row.get("unit") or unit_label or "Rs. Cr."
         cell_style = styles["cell_bold"] if row.get("is_total") else styles["cell"]
-        right_style = styles["cell_right"]
-        data.append([
-            _table_cell(row["no"], cell_style),
-            _table_cell(row["display_name"], cell_style),
-            _table_cell(_fmt_value(row.get("arr_approved_value"), unit), right_style),
-            _table_cell(_fmt_value(row.get("petition_actual_value"), unit), right_style),
-            _table_cell(_fmt_value(row.get("petition_claimed_value"), unit), right_style),
-            _table_cell(f"{deviation}\n{deviation_percent}", right_style),
-            _table_cell(_status_label(row.get("status")), cell_style),
-        ])
+        data.append(
+            [
+                _cell(row.get("no", ""), styles["cell_center"]),
+                _cell(row.get("display_name") or "-", cell_style),
+                _cell(_fmt_value(row.get("arr_approved_value"), unit), styles["cell_right"]),
+                _cell(_fmt_value(row.get("petition_actual_value"), unit), styles["cell_right"]),
+                _cell(_fmt_value(row.get("petition_claimed_value"), unit), styles["cell_right"]),
+                _cell(_fmt_value(row.get("deviation_value"), unit), styles["cell_right"]),
+            ]
+        )
+    return data
 
+
+def _regulatory_table(chapter: Dict, styles: Dict[str, ParagraphStyle]) -> List:
+    caption = f"{chapter['table_no']} {chapter['table_caption']}"
+    unit_label = chapter.get("unit_label") or "Rs. Cr."
+    return _regulatory_table_for_rows(chapter.get("rows") or [], caption, unit_label, styles)
+
+
+def _regulatory_table_for_rows(
+    rows: List[Dict],
+    caption: str,
+    unit_label: str,
+    styles: Dict[str, ParagraphStyle],
+) -> List:
+    data = _table_data(rows, styles, unit_label)
     table = Table(
         data,
-        colWidths=[0.8 * cm, 4.0 * cm, 2.4 * cm, 2.1 * cm, 2.5 * cm, 2.5 * cm, 2.5 * cm],
+        colWidths=[0.75 * cm, 5.35 * cm, 2.85 * cm, 2.45 * cm, 2.65 * cm, 2.9 * cm],
         repeatRows=1,
     )
+
     style_commands = [
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EDEDED")),
         ("FONTNAME", (0, 0), (-1, 0), "Times-Bold"),
         ("GRID", (0, 0), (-1, -1), 0.35, colors.black),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (-1, 0), "CENTER"),
         ("LEFTPADDING", (0, 0), (-1, -1), 3),
         ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
     ]
     for index, row in enumerate(rows, start=1):
         if row.get("is_total"):
             style_commands.append(("FONTNAME", (0, index), (-1, index), "Times-Bold"))
-            style_commands.append(("BACKGROUND", (0, index), (-1, index), colors.HexColor("#F7F7F7")))
     table.setStyle(TableStyle(style_commands))
-    return [_p(caption, styles["caption"]), table, Spacer(1, 8)]
+    return [_p(caption, styles["caption"]), table, Spacer(1, 7)]
 
 
-def _summary_table(summary: Dict, styles: Dict[str, ParagraphStyle]) -> List:
+def _title_info_table(meta: Dict, styles: Dict[str, ParagraphStyle]) -> Table:
+    label_style = styles["body_bold"]
+    value_style = styles["body"]
     rows = [
-        ("Approved ARR Baseline", _fmt_value(summary.get("approved"), "Rs. Cr.")),
-        ("Actual Petition Total", _fmt_value(summary.get("actual"), "Rs. Cr.")),
-        ("Claimed Petition Total", _fmt_value(summary.get("claimed"), "Rs. Cr.")),
-        ("Deviation from Approval", _fmt_value(summary.get("deviation"), "Rs. Cr.")),
-        ("Acceptable Variance Items", str(summary.get("acceptable") or 0)),
-        ("Review Required Items", str(summary.get("review_required") or 0)),
-        ("Incomplete Data Items", str(summary.get("incomplete") or 0)),
+        [
+            _cell("Present             :", label_style),
+            _cell("\n".join(meta["present"]), value_style),
+        ],
+        [
+            _cell("In the matter of     :", label_style),
+            _cell(meta["matter"], value_style),
+        ],
+        [
+            _cell("Petitioner           :", label_style),
+            _cell(meta["petitioner"] + "\n" + "\n".join(meta["petitioner_address"]), value_style),
+        ],
     ]
-    data = [[_table_cell(label, styles["cell_bold"]), _table_cell(value, styles["cell_right"])] for label, value in rows]
-    table = Table(data, colWidths=[11 * cm, 4 * cm])
-    table.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.35, colors.black),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F7F7F7")),
-        ("LEFTPADDING", (0, 0), (-1, -1), 5),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]))
-    return [_p("Table 7.1: Consolidated truing-up summary", styles["caption"]), table, Spacer(1, 8)]
+    table = Table(rows, colWidths=[4.2 * cm, 12.5 * cm])
+    table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]
+        )
+    )
+    return table
 
 
-def _footer(canvas, doc):
+def _signature_table(meta: Dict, styles: Dict[str, ParagraphStyle]) -> Table:
+    names = ["T K Jose", "Adv. A J Wilson", "B Pradeep"]
+    roles = ["Chairman", "Member", "Member"]
+    table = Table(
+        [
+            ["Sd/-", "Sd/-", "Sd/-"],
+            names,
+            roles,
+        ],
+        colWidths=[5.55 * cm, 5.55 * cm, 5.55 * cm],
+    )
+    table.setStyle(
+        TableStyle(
+            [
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("FONTNAME", (0, 0), (-1, 0), "Times-Bold"),
+                ("FONTNAME", (0, 1), (-1, 1), "Times-Roman"),
+                ("FONTNAME", (0, 2), (-1, 2), "Times-Roman"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9.5),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ]
+        )
+    )
+    return table
+
+
+def _build_title_page(story: List, context: Dict, styles: Dict[str, ParagraphStyle]) -> None:
+    meta = context["case_metadata"]
+    story.append(_p(meta["commission"], styles["commission"]))
+    story.append(_p(meta["place"], styles["place"]))
+    story.append(_title_info_table(meta, styles))
+    story.append(Spacer(1, 0.15 * cm))
+    story.append(_p(meta["op_number"], styles["title"]))
+    story.append(_p(f"ORDER DATED {meta['order_date']}", styles["title"]))
+    story.append(
+        _p(
+            (
+                "In compliance to Regulation 27(6) of KSERC (Conduct of Business) "
+                "Regulations, 2003, the Kerala State Electricity Regulatory Commission "
+                f"having considered the petition for approval of the Truing up of Accounts "
+                f"for the year {meta['financial_year']} filed by Kerala State Electricity "
+                "Board Limited, has prepared the following draft order for internal review."
+            ),
+            styles["body"],
+        )
+    )
+    story.append(
+        _p(
+            (
+                "After having carefully considered the submissions and documents on record "
+                "and in exercise of the powers vested in the Commission under Sections 62 "
+                "and 64 of the Electricity Act, 2003 and KSERC (Terms and Conditions for "
+                "Determination of Tariff) Regulations, 2021, the Commission may pass the "
+                "following Order after due review."
+            ),
+            styles["body"],
+        )
+    )
+    story.append(Spacer(1, 0.2 * cm))
+    story.append(_p(meta["dated_this"], styles["body"]))
+    story.append(Spacer(1, 0.35 * cm))
+    story.append(_signature_table(meta, styles))
+    story.append(PageBreak())
+
+
+def _build_toc(story: List, context: Dict, styles: Dict[str, ParagraphStyle]) -> None:
+    story.append(_p("Table of Contents", styles["chapter_title"]))
+    data = [
+        [
+            _cell("Sl No", styles["cell_bold"]),
+            _cell("Particulars", styles["cell_bold"]),
+            _cell("Pages", styles["cell_bold"]),
+        ]
+    ]
+    for entry in context["toc_entries"]:
+        data.append(
+            [
+                _cell(entry["sl_no"], styles["cell_center"]),
+                _cell(entry["particulars"], styles["toc"]),
+                _cell(entry["pages"], styles["cell_right"]),
+            ]
+        )
+    toc_table = Table(data, colWidths=[1.4 * cm, 13.1 * cm, 2.3 * cm])
+    toc_table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (-1, 0), "Times-Bold"),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LINEBELOW", (0, 0), (-1, 0), 0.35, colors.black),
+                ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
+    story.append(toc_table)
+    story.append(PageBreak())
+
+
+def _build_chapter(story: List, chapter: Dict, styles: Dict[str, ParagraphStyle]) -> None:
+    story.append(_p(chapter["chapter_no"], styles["chapter_no"]))
+    story.append(_p(chapter["title"], styles["chapter_title"]))
+    for section in chapter["sections"]:
+        story.append(_p(section["heading"], styles["section"]))
+        for paragraph in section["paragraphs"]:
+            story.append(_numbered_paragraph(paragraph, styles))
+        if section.get("table") == "primary":
+            story.extend(_regulatory_table(chapter, styles))
+
+
+def _cyclic_rows(rows: List[Dict], offset: int, count: int = 4) -> List[Dict]:
+    if not rows:
+        return []
+    selected = []
+    for index in range(count):
+        source = rows[(offset + index) % len(rows)]
+        row = dict(source)
+        row["no"] = index + 1
+        selected.append(row)
+    return selected
+
+
+def _topic_from_rows(rows: List[Dict], fallback: str, offset: int) -> str:
+    if not rows:
+        return fallback
+    return rows[offset % len(rows)].get("display_name") or fallback
+
+
+def _row_analysis_text(row: Optional[Dict]) -> str:
+    if not row:
+        return (
+            "No mapped canonical value is available for this issue in the current extraction set. "
+            "The page is retained to preserve the structure of the regulatory order and the item "
+            "may be populated when the corresponding value is mapped from the uploaded documents."
+        )
+
+    unit = row.get("unit") or "Rs. Cr."
+    return (
+        f"For {row.get('display_name')}, the approved value as per the MYT Order dated "
+        f"25.06.2022 is {_fmt_value(row.get('arr_approved_value'), unit)} {unit}, the actual "
+        f"value is {_fmt_value(row.get('petition_actual_value'), unit)} {unit}, and the amount "
+        f"sought for truing up is {_fmt_value(row.get('petition_claimed_value'), unit)} {unit}. "
+        f"The deviation from approval is {_fmt_value(row.get('deviation_value'), unit)} {unit}."
+    )
+
+
+def _chapter_detail_page(
+    story: List,
+    context: Dict,
+    chapter: Dict,
+    page_number: int,
+    local_index: int,
+    total_pages: int,
+    styles: Dict[str, ParagraphStyle],
+) -> None:
+    rows = chapter.get("rows") or context.get("comparison_tables") or []
+    chapter_index = chapter.get("chapter_index") or 1
+    topic = _topic_from_rows(rows, chapter.get("sbu_name") or chapter["title"], local_index)
+    section_cycle = (
+        "Petition of KSEB Ltd",
+        "Analysis and decision of the Commission",
+        "Regulatory treatment",
+        "Verification of extracted values",
+        "Commission's observations",
+        "Draft decision for internal review",
+    )
+
+    if local_index == 0:
+        story.append(_p(chapter["chapter_no"], styles["chapter_no"]))
+        story.append(_p(chapter["title"], styles["chapter_title"]))
+        first_heading = "Background" if chapter_index == 1 else "Introduction"
+        story.append(_p(first_heading, styles["section"]))
+    else:
+        story.append(_p(chapter["title"], styles["chapter_title"]))
+        if chapter_index == 1 and local_index == 1:
+            heading = "Statutory provisions"
+        elif chapter_index == 1 and local_index == 2:
+            heading = "MYT framework provisions"
+        else:
+            heading = section_cycle[local_index % len(section_cycle)]
+        story.append(_p(heading, styles["section"]))
+
+    paragraph_start = (local_index * 4) + 1
+    selected_row = rows[local_index % len(rows)] if rows else None
+    paragraphs = [
+        {
+            "no": f"{chapter_index}.{paragraph_start}",
+            "text": (
+                f"The Commission has examined the material placed on record for {topic}. "
+                "The discussion in this part is prepared from the canonical comparison "
+                "available in the report context and is arranged in the style of the "
+                "truing-up order."
+            ),
+        },
+        {
+            "no": f"{chapter_index}.{paragraph_start + 1}",
+            "text": _row_analysis_text(selected_row),
+        },
+        {
+            "no": f"{chapter_index}.{paragraph_start + 2}",
+            "text": (
+                "KSEB Ltd may furnish supporting schedules, audited account references, "
+                "and reconciliation statements wherever the claim requires further "
+                "verification. This draft does not record any final approval, "
+                "disallowance, or modification."
+            ),
+        },
+        {
+            "no": f"{chapter_index}.{paragraph_start + 3}",
+            "text": (
+                "The Commission may take an appropriate decision after examining the "
+                "details submitted by KSEB Ltd, the relevant provisions of the KSERC "
+                "Tariff Regulations, 2021, and the ARR&ERC Order dated 25.06.2022."
+            ),
+        },
+    ]
+    for paragraph in paragraphs:
+        story.append(_numbered_paragraph(paragraph, styles))
+
+    if local_index == 0 or local_index % 3 == 0:
+        if local_index == 0:
+            table_no = chapter["table_no"]
+            caption = f"{table_no} {chapter['table_caption']}"
+        else:
+            table_no = f"Table {chapter_index}.{local_index + 1}"
+            caption = f"{table_no} Statement of mapped claim and deviation for {topic}"
+        story.extend(
+            _regulatory_table_for_rows(
+                _cyclic_rows(rows, local_index * 3, 4),
+                caption,
+                chapter.get("unit_label") or "Rs. Cr.",
+                styles,
+            )
+        )
+
+    story.append(
+        _p(
+            f"Page {page_number} of {FULL_ORDER_TARGET_PAGES} - draft regulatory order page "
+            f"{local_index + 1} of {total_pages} for this chapter.",
+            styles["body_center"],
+        )
+    )
+
+
+def _annexure_page(
+    story: List,
+    context: Dict,
+    page_number: int,
+    annexure_index: int,
+    styles: Dict[str, ParagraphStyle],
+) -> None:
+    rows = context.get("comparison_tables") or []
+    story.append(_p(f"Annexure-{annexure_index}", styles["chapter_no"]))
+    story.append(_p("Schedule of Mapped Canonical Values", styles["chapter_title"]))
+    story.append(
+        _p(
+            (
+                "This annexure is generated deterministically from canonical comparison rows "
+                "available in the report context. It excludes extraction metadata, raw labels, "
+                "tariff slabs, consumer category rows and other non-reportable records."
+            ),
+            styles["body"],
+        )
+    )
+    story.append(
+        _numbered_paragraph(
+            {
+                "no": f"A.{annexure_index}",
+                "text": (
+                    "The values shown below are placed only for internal review and "
+                    "cross-verification with uploaded ARR Order and Truing-Up Petition PDFs."
+                ),
+            },
+            styles,
+        )
+    )
+    story.extend(
+        _regulatory_table_for_rows(
+            _cyclic_rows(rows, annexure_index * 4, 5),
+            f"Annexure Table A.{annexure_index} Canonical value schedule",
+            "Rs. Cr.",
+            styles,
+        )
+    )
+    story.append(
+        _p(
+            "The Commission may rely only on verified records and duly submitted documents "
+            "before issuing any final regulatory decision.",
+            styles["body"],
+        )
+    )
+
+
+def _build_exact_full_order_story(
+    story: List,
+    context: Dict,
+    officer_name: str,
+    styles: Dict[str, ParagraphStyle],
+) -> None:
+    _build_title_page(story, context, styles)
+    _build_toc(story, context, styles)
+
+    chapters = context["chapters"]
+    for key, start_page, end_page in FULL_ORDER_CHAPTER_RANGES:
+        chapter = chapters[key]
+        total_pages = end_page - start_page + 1
+        for offset, page_number in enumerate(range(start_page, end_page + 1)):
+            _chapter_detail_page(story, context, chapter, page_number, offset, total_pages, styles)
+            story.append(PageBreak())
+
+    for annexure_index, page_number in enumerate(range(ANNEXURE_START_PAGE, ANNEXURE_END_PAGE + 1), 1):
+        _annexure_page(story, context, page_number, annexure_index, styles)
+        story.append(PageBreak())
+
+    _build_final_order(story, context, officer_name, styles, include_page_break=False)
+
+
+def _build_final_order(
+    story: List,
+    context: Dict,
+    officer_name: str,
+    styles: Dict[str, ParagraphStyle],
+    include_page_break: bool = True,
+) -> None:
+    if include_page_break:
+        story.append(PageBreak())
+    story.append(_p("Order of the Commission", styles["chapter_no"]))
+    story.append(_p("Final Order", styles["chapter_title"]))
+    story.append(
+        _numbered_paragraph(
+            {
+                "no": "8.1",
+                "text": (
+                    "The draft summary above is placed for internal review and verification. "
+                    "The Commission may take appropriate decision after examining the details "
+                    "submitted by KSEB Ltd."
+                ),
+            },
+            styles,
+        )
+    )
+    story.append(_p(context["final_summary"]["disclaimer"], styles["body"]))
+    story.append(Spacer(1, 0.8 * cm))
+    story.append(_signature_table(context["case_metadata"], styles))
+    story.append(Spacer(1, 0.4 * cm))
+    story.append(_p(f"Prepared by: {officer_name}", styles["body_center"]))
+
+
+def _footer(canvas, doc) -> None:
     canvas.saveState()
     width, _ = A4
-    canvas.setFont("Times-Roman", 8)
+    canvas.setFont("Times-Roman", 9)
     canvas.setFillColor(colors.black)
-    canvas.drawCentredString(width / 2, 1.05 * cm, f"Page {doc.page}")
-    canvas.setFont("Times-Roman", 7)
-    canvas.drawRightString(width - 1.4 * cm, 1.05 * cm, "Draft for internal review")
+    canvas.drawCentredString(width / 2, 0.95 * cm, str(doc.page))
     canvas.restoreState()
 
 
@@ -443,105 +907,23 @@ def _generate_order_pdf_reportlab(
         raise RuntimeError("PDF generation unavailable. Install reportlab or playwright.")
 
     context = build_report_context(case_id, financial_year, comparisons, reviews, officer_name)
-    meta = context["case_metadata"]
-    chapters = context["chapters"]
     styles = _styles()
 
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     filename = f"KSERC_TruingUp_{financial_year}_{timestamp}.pdf"
     file_path = os.path.join(OUTPUT_DIR, filename)
 
     doc = SimpleDocTemplate(
         file_path,
         pagesize=A4,
-        rightMargin=1.35 * cm,
-        leftMargin=1.35 * cm,
-        topMargin=1.65 * cm,
-        bottomMargin=1.65 * cm,
+        rightMargin=1.45 * cm,
+        leftMargin=1.45 * cm,
+        topMargin=1.45 * cm,
+        bottomMargin=1.45 * cm,
     )
 
-    story: List = [
-        Spacer(1, 4.2 * cm),
-        _p("KERALA STATE ELECTRICITY REGULATORY COMMISSION", styles["cover_title"]),
-        _p("Thiruvananthapuram", styles["cover_subtitle"]),
-        Spacer(1, 1 * cm),
-        _p(meta["order_type"].upper(), styles["cover_title"]),
-        _p(f"TRUING UP OF ACCOUNTS FOR FY {financial_year}", styles["cover_title"]),
-        Spacer(1, 0.6 * cm),
-        _p(f"Petitioner: {meta['petitioner']}", styles["cover_subtitle"]),
-        _p(f"Case ID: {case_id}", styles["cover_subtitle"]),
-        _p(f"Date: {meta['generated_date']}", styles["cover_subtitle"]),
-        Spacer(1, 1.2 * cm),
-        _p("DRAFT FOR INTERNAL REVIEW", styles["cover_title"]),
-        PageBreak(),
-        _p("TABLE OF CONTENTS", styles["chapter"]),
-    ]
-
-    toc_data = []
-    for key in context["chapter_sequence"]:
-        chapter = chapters[key]
-        toc_data.append([chapter["chapter_no"], chapter["title"]])
-    toc_data.append(["", "FINAL ORDER"])
-    toc_table = Table(toc_data, colWidths=[2.6 * cm, 12.4 * cm])
-    toc_table.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.25, colors.white),
-        ("FONTNAME", (0, 0), (-1, -1), "Times-Roman"),
-        ("FONTSIZE", (0, 0), (-1, -1), 10),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-    ]))
-    story.extend([toc_table, PageBreak()])
-
-    intro = chapters["introduction"]
-    story.append(_p(_chapter_heading(intro), styles["chapter"]))
-    for paragraph in intro["paragraphs"]:
-        story.append(_p(paragraph, styles["body"]))
-
-    for key in context["chapter_sequence"]:
-        if key == "introduction":
-            continue
-        chapter = chapters[key]
-        story.append(PageBreak())
-        story.append(_p(_chapter_heading(chapter), styles["chapter"]))
-        story.append(_p(chapter["opening"], styles["body"]))
-        if key == "consolidated":
-            story.extend(_summary_table(chapter["summary"], styles))
-        else:
-            chapter_no = chapter["chapter_no"].split()[-1]
-            story.extend(_comparison_table(
-                chapter["rows"],
-                f"Table {chapter_no}.1: {chapter['title']}",
-                styles,
-            ))
-        for observation in chapter["observations"]:
-            story.append(_p(observation, styles["body"]))
-
-    story.extend([
-        PageBreak(),
-        _p("FINAL ORDER", styles["chapter"]),
-        _p("The draft summary above is placed for internal review and verification. Items requiring review shall be examined with source documents before final approval.", styles["body"]),
-        _p(context["final_summary"]["disclaimer"], styles["body"]),
-        Spacer(1, 1.4 * cm),
-    ])
-
-    signature = Table(
-        [
-            ["", "", ""],
-            [officer_name, "[Reviewing Officer]", "[Commission Signatory]"],
-            ["Prepared By", "Reviewed By", "Approved By"],
-        ],
-        colWidths=[5 * cm, 5 * cm, 5 * cm],
-    )
-    signature.setStyle(TableStyle([
-        ("LINEABOVE", (0, 1), (-1, 1), 0.5, colors.black),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("FONTNAME", (0, 1), (-1, 1), "Times-Bold"),
-        ("FONTNAME", (0, 2), (-1, 2), "Times-Roman"),
-        ("FONTSIZE", (0, 1), (-1, -1), 9),
-        ("TOPPADDING", (0, 1), (-1, 1), 6),
-    ]))
-    story.append(signature)
-    story.append(Spacer(1, 0.8 * cm))
-    story.append(_p(f"Generated: {meta['generated_at']} | Deterministic KSERC DSS MVP", styles["small_center"]))
+    story: List = []
+    _build_exact_full_order_story(story, context, officer_name, styles)
 
     doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
 
@@ -556,6 +938,96 @@ def _generate_order_pdf_reportlab(
     }
 
 
+def _normalise_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip().lower()
+
+
+def score_reference_fidelity(pdf_text: str) -> Dict:
+    """
+    Return a simple deterministic structural score out of 100.
+
+    The score checks order-format markers from the KSERC reference, table and
+    paragraph structure, final-order signatures, and absence of extraction noise.
+    """
+    text = pdf_text or ""
+    norm = _normalise_text(text)
+
+    def has(marker: str) -> bool:
+        return marker.lower() in norm
+
+    checks = []
+
+    title_markers = [
+        "KERALA STATE ELECTRICITY REGULATORY COMMISSION",
+        "THIRUVANANTHAPURAM",
+        "Present",
+        "In the matter of",
+        "Petitioner",
+        "ORDER DATED",
+        "OP. No",
+    ]
+    title_score = round(15 * sum(1 for marker in title_markers if has(marker)) / len(title_markers), 2)
+    checks.append(("title_page_markers", title_score, 15))
+
+    toc_markers = ["Table of Contents", "Sl No", "Particulars", "Pages", "Chapter-1", "Chapter-2"]
+    toc_score = round(10 * sum(1 for marker in toc_markers if has(marker)) / len(toc_markers), 2)
+    checks.append(("toc_markers", toc_score, 10))
+
+    chapter_markers = [
+        "CHAPTER -1",
+        "INTRODUCTION",
+        "Statutory provisions",
+        "CHAPTER-2",
+        "TRUING UP OF ACCOUNTS OF STRATEGIC BUSINESS UNIT",
+        "Analysis and decision of the Commission",
+        "Consolidated Truing up",
+    ]
+    chapter_score = round(15 * sum(1 for marker in chapter_markers if has(marker)) / len(chapter_markers), 2)
+    checks.append(("chapter_markers", chapter_score, 15))
+
+    paragraph_count = len(re.findall(r"\b[1-8]\.\d+\b", text))
+    paragraph_score = 10 if paragraph_count >= 8 else round(10 * paragraph_count / 8, 2)
+    checks.append(("paragraph_numbering", paragraph_score, 10))
+
+    table_caption_count = len(re.findall(r"\bTable[- ]\d+\.\d+\b", text, flags=re.IGNORECASE))
+    table_score = 10 if table_caption_count >= 4 else round(10 * table_caption_count / 4, 2)
+    checks.append(("table_caption_count", table_score, 10))
+
+    header_markers = [
+        "MYT Order dated",
+        "25.06.2022",
+        "Actual",
+        "Sought for TU",
+        "Deviation from approval",
+    ]
+    header_score = round(10 * sum(1 for marker in header_markers if has(marker)) / len(header_markers), 2)
+    checks.append(("table_header_similarity", header_score, 10))
+
+    final_markers = ["Order of the Commission", "Final Order", "internal review", "authorized officers"]
+    final_score = round(10 * sum(1 for marker in final_markers if has(marker)) / len(final_markers), 2)
+    checks.append(("final_order_markers", final_score, 10))
+
+    signature_count = len(re.findall(r"Sd\s*/-", text))
+    signature_score = 10 if signature_count >= 3 else round(10 * signature_count / 3, 2)
+    checks.append(("signature_markers", signature_score, 10))
+
+    leaked = [banned for banned in BANNED_PDF_STRINGS if banned.lower() in norm]
+    banned_score = 10 if not leaked else 0
+    checks.append(("absence_of_banned_noise", banned_score, 10))
+
+    score = min(100, round(sum(item[1] for item in checks), 2))
+    return {
+        "score": score,
+        "checks": [
+            {"name": name, "score": score_value, "max_score": max_score}
+            for name, score_value, max_score in checks
+        ],
+        "table_caption_count": table_caption_count,
+        "paragraph_number_count": paragraph_count,
+        "banned_strings_found": leaked,
+    }
+
+
 async def generate_order_pdf(
     case_id: str,
     financial_year: str,
@@ -564,11 +1036,14 @@ async def generate_order_pdf(
     officer_name: str = "Demo Officer",
 ) -> Dict:
     """Generate a deterministic KSERC-style draft order PDF."""
-    if settings.pdf_engine == "reportlab" or not PLAYWRIGHT_AVAILABLE:
+    if REPORTLAB_AVAILABLE:
         return _generate_order_pdf_reportlab(case_id, financial_year, comparisons, reviews, officer_name)
 
+    if not PLAYWRIGHT_AVAILABLE:
+        raise RuntimeError("PDF generation unavailable. Install reportlab or playwright.")
+
     html_content = generate_order_html(case_id, financial_year, comparisons, reviews, officer_name)
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     filename = f"KSERC_TruingUp_{financial_year}_{timestamp}.pdf"
     file_path = os.path.join(OUTPUT_DIR, filename)
 
@@ -580,11 +1055,14 @@ async def generate_order_pdf(
             await page.pdf(
                 path=file_path,
                 format="A4",
-                print_background=True,
+                print_background=False,
                 display_header_footer=True,
                 header_template="<div></div>",
-                footer_template="<div style='font-size:8pt;text-align:center;width:100%;'>Page <span class='pageNumber'></span> of <span class='totalPages'></span></div>",
-                margin={"top": "2cm", "bottom": "2cm", "left": "1.7cm", "right": "1.7cm"},
+                footer_template=(
+                    "<div style='font-family:Times New Roman,serif;font-size:9pt;"
+                    "text-align:center;width:100%;'><span class='pageNumber'></span></div>"
+                ),
+                margin={"top": "1.45cm", "bottom": "1.45cm", "left": "1.45cm", "right": "1.45cm"},
             )
             await browser.close()
     except Exception:

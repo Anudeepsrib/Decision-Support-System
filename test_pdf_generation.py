@@ -7,7 +7,7 @@ import sys
 import asyncio
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
 
-from pdf_generator import generate_order_html, generate_order_pdf
+from pdf_generator import BANNED_PDF_STRINGS, generate_order_html, generate_order_pdf
 
 
 def test_pdf_generation():
@@ -91,14 +91,17 @@ def test_pdf_generation():
         ("Contains KSERC header", "KERALA STATE ELECTRICITY REGULATORY COMMISSION" in html_content),
         ("Contains case ID", "test-case-123" in html_content),
         ("Contains financial year", "2024-25" in html_content),
-        ("Contains table of contents", "TABLE OF CONTENTS" in html_content),
-        ("Contains SBU-D chapter", "TRUING UP OF SBU-D" in html_content),
+        ("Contains table of contents", "Table of Contents" in html_content),
+        ("Contains SBU-D chapter", "STRATEGIC BUSINESS UNIT DISTRIBUTION" in html_content),
         ("Contains variance data", "Rs. Cr." in html_content or "%" in html_content),
         ("Contains order narrative", "The Commission has" in html_content),
-        ("Contains draft notice", "DRAFT FOR INTERNAL REVIEW" in html_content),
+        ("Contains order date", "ORDER DATED" in html_content),
         ("Contains officer name", "Test Officer" in html_content),
-        ("Contains deterministic footer", "Deterministic KSERC DSS MVP" in html_content),
+        ("Contains signature marker", "Sd/-" in html_content),
     ]
+
+    for banned in BANNED_PDF_STRINGS:
+        assert banned not in html_content
     
     print("\nHTML validation:")
     for check_name, passed in html_checks:
@@ -161,12 +164,12 @@ def test_pdf_quality():
         # Quality checks
         quality_checks = [
             ("Title page", "KERALA STATE ELECTRICITY REGULATORY COMMISSION" in html_content),
-            ("Table of contents", "TABLE OF CONTENTS" in html_content),
-            ("SBU-G chapter", "TRUING UP OF SBU-G" in html_content),
-            ("SBU-T chapter", "TRUING UP OF SBU-T" in html_content),
-            ("SBU-D chapter", "TRUING UP OF SBU-D" in html_content),
+            ("Table of contents", "Table of Contents" in html_content),
+            ("SBU-G chapter", "STRATEGIC BUSINESS UNIT GENERATION" in html_content),
+            ("SBU-T chapter", "STRATEGIC BUSINESS UNIT TRANSMISSION" in html_content),
+            ("SBU-D chapter", "STRATEGIC BUSINESS UNIT DISTRIBUTION" in html_content),
             ("Proper formatting", "<table" in html_content and "</table>" in html_content),
-            ("CSS styling", "style=" in html_content),
+            ("Reference table header", "Sought for TU" in html_content),
         ]
         
         print("Quality validation:")
