@@ -94,6 +94,11 @@ interface ExtractionResult {
 
 interface ComparisonItem {
   id: string
+  canonical_id: string | null
+  display_name: string | null
+  sbu: string | null
+  unit: string | null
+  section: string | null
   canonical_name: string
   cost_head: string | null
   approved_value: number | null
@@ -640,7 +645,7 @@ function App() {
             <>
               <div className="mb-6 grid gap-4 md:grid-cols-4">
                 <Metric label="Total Items" value={comparison.total_items} />
-                <Metric label="AI Auto" value={comparison.auto_approved} tone="green" />
+                <Metric label="Acceptable" value={comparison.auto_approved} tone="green" />
                 <Metric label="Review Required" value={comparison.review_required} tone="amber" />
                 <Metric label="Total Variance" value={`${comparison.total_variance.toFixed(2)} Cr.`} tone="blue" />
               </div>
@@ -664,12 +669,12 @@ function App() {
                         edited_value: String(item.actual_value ?? ''),
                         officer_comment: item.latest_review_comment ?? '',
                       }
-                      const isReview = item.decision_class !== 'AI_AUTO'
+                      const isReview = item.decision_class !== 'ACCEPTABLE_VARIANCE'
                       return (
                         <tr key={item.id} className={isReview ? 'bg-amber-50' : 'bg-emerald-50'}>
                           <td className="border border-slate-200 px-3 py-2 align-top">
-                            <p className="font-semibold text-slate-900">{item.canonical_name}</p>
-                            <p className="text-xs text-slate-500">{item.cost_head ?? 'Other'}</p>
+                            <p className="font-semibold text-slate-900">{item.display_name ?? item.canonical_name}</p>
+                            <p className="text-xs text-slate-500">{item.sbu ?? item.cost_head ?? 'Other'}</p>
                             {item.flag_reason && <p className="mt-1 text-xs text-slate-600">{item.flag_reason}</p>}
                           </td>
                           <td className="border border-slate-200 px-3 py-2 text-right align-top">{fmtMoney(item.approved_value)}</td>

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test AI safety and narrative generation
+Test deterministic narrative generation
 """
 import os
 import sys
@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
 from prompts import generate_variance_explanation
 
 def test_ai_safety():
-    print("=== Testing AI Safety ===")
+    print("=== Testing Deterministic Narrative Safety ===")
     
     # Test cases with different scenarios
     test_cases = [
@@ -38,8 +38,8 @@ def test_ai_safety():
     
     for i, case in enumerate(test_cases):
         print(f"\nTest Case {i+1}: {case['line_item']}")
-        print(f"  Approved: ₹{case['approved_value']:,.2f} Cr.")
-        print(f"  Actual: ₹{case['actual_value']:,.2f} Cr.")
+        print(f"  Approved: Rs. {case['approved_value']:,.2f} Cr.")
+        print(f"  Actual: Rs. {case['actual_value']:,.2f} Cr.")
         print(f"  Variance: {case['variance_percent']:+.1f}%")
         
         explanation = generate_variance_explanation(
@@ -54,20 +54,17 @@ def test_ai_safety():
         
         # Safety checks
         safety_checks = [
-            ("No fabricated numbers", all(str(x) in explanation for x in [case['approved_value'], case['actual_value']])),
-            ("No hallucinated regulations", "KSERC" in explanation or "regulation" in explanation or "Commission" in explanation),
+            ("Contains supplied values", all(f"{x:,.2f}" in explanation for x in [case['approved_value'], case['actual_value']])),
+            ("No unsupported legal conclusion", "final approval" not in explanation.lower()),
             ("Reasonable length", len(explanation) < 500),
-            ("Professional tone", any(word in explanation.lower() for word in ["may", "likely", "attributed", "due"])),
+            ("Deterministic tone", "deterministic" in explanation.lower() or "reviewing officer" in explanation.lower()),
         ]
         
         for check_name, passed in safety_checks:
-            status = "✓" if passed else "✗"
+            status = "PASS" if passed else "FAIL"
             print(f"  {status} {check_name}")
     
-    print("\n=== Testing Template Fallback ===")
-    
-    # Test with no OpenAI key (force template fallback)
-    os.environ['OPENAI_API_KEY'] = ''
+    print("\n=== Testing Template Output ===")
     
     explanation = generate_variance_explanation(
         "Power Purchase Cost",
@@ -81,18 +78,18 @@ def test_ai_safety():
     
     # Verify template contains expected elements
     template_checks = [
-        ("Contains variance amount", "₹150.00" in explanation or "150.00" in explanation),
+        ("Contains variance amount", "Rs. 150.00" in explanation or "150.00" in explanation),
         ("Contains percentage", "+15.0%" in explanation or "15.0%" in explanation),
-        ("Contains cost head explanation", "power purchase" in explanation.lower()),
-        ("Professional language", "may be attributed" in explanation.lower()),
+        ("Contains line item", "power purchase" in explanation.lower()),
+        ("Professional language", "reviewing officer" in explanation.lower()),
     ]
     
     for check_name, passed in template_checks:
-        status = "✓" if passed else "✗"
+        status = "PASS" if passed else "FAIL"
         print(f"  {status} {check_name}")
 
 def test_no_number_fabrication():
-    """Test that AI doesn't fabricate numbers"""
+    """Test that deterministic templates do not fabricate numbers."""
     print("\n=== Testing Number Fabrication Prevention ===")
     
     # Test with specific numbers
@@ -110,19 +107,19 @@ def test_no_number_fabrication():
     numbers_in_text = []
     for word in explanation.split():
         try:
-            num = float(word.replace('₹', '').replace(',', '').replace('%', ''))
+            num = float(word.replace('Rs.', '').replace(',', '').replace('%', ''))
             numbers_in_text.append(num)
         except ValueError:
             continue
     
-    expected_numbers = [123.45, 156.78, 27.0]
+    expected_numbers = [123.45, 156.78, 33.33, 27.0]
     unexpected_numbers = [n for n in numbers_in_text if n not in expected_numbers]
     
     if unexpected_numbers:
-        print(f"✗ UNEXPECTED NUMBERS FOUND: {unexpected_numbers}")
+        print(f"FAIL UNEXPECTED NUMBERS FOUND: {unexpected_numbers}")
         print("This indicates potential number fabrication!")
     else:
-        print("✓ No unexpected numbers found - safety check passed")
+        print("PASS No unexpected numbers found - safety check passed")
 
 if __name__ == "__main__":
     test_ai_safety()

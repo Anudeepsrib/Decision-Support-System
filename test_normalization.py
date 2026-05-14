@@ -68,7 +68,7 @@ def test_normalization():
         med_conf = sum(1 for r in normalized_results if 0.6 <= r.confidence < 0.8)
         low_conf = sum(1 for r in normalized_results if r.confidence < 0.6)
         
-        print(f"\n=== Normalization Confidence Distribution ===")
+        print("\n=== Normalization Confidence Distribution ===")
         print(f"High (>=0.8): {high_conf} ({high_conf/len(normalized_results)*100:.1f}%)")
         print(f"Medium (0.6-0.8): {med_conf} ({med_conf/len(normalized_results)*100:.1f}%)")
         print(f"Low (<0.6): {low_conf} ({low_conf/len(normalized_results)*100:.1f}%)")
@@ -76,7 +76,7 @@ def test_normalization():
         # Show unmapped items
         unmapped = [r for r in normalized_results if r.confidence < 0.6]
         if unmapped:
-            print(f"\n=== Unmapped Items (confidence < 0.6) ===")
+            print("\n=== Unmapped Items (confidence < 0.6) ===")
             for i, r in enumerate(unmapped[:10]):  # Show first 10
                 print(f"{i+1}. '{r.canonical_name}' (from: '{all_labels[normalized_results.index(r)]}')")
         

@@ -101,7 +101,6 @@ CORS_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
 UPLOAD_DIR=mvp_uploads
 GENERATED_REPORTS_DIR=output
 DEMO_MODE=true
-OPENAI_API_KEY=
 PDF_ENGINE=reportlab
 OCR_ENABLED=false
 ```

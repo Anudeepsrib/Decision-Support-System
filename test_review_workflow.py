@@ -3,8 +3,6 @@
 Test human review workflow via API
 """
 import requests
-import json
-import time
 
 API_BASE = "http://localhost:8000/api"
 
@@ -59,7 +57,7 @@ def test_review_workflow():
             
             if review_response.status_code == 200:
                 review_result = review_response.json()
-                print(f"Review submitted successfully:")
+                print("Review submitted successfully:")
                 print(f"  Action: {review_result['action']}")
                 print(f"  Officer: {review_result['officer_name']}")
                 print(f"  Comment: {review_result['officer_comment']}")
@@ -83,7 +81,7 @@ def test_review_workflow():
         
         if generate_response.status_code == 200:
             order_result = generate_response.json()
-            print(f"PDF generation initiated:")
+            print("PDF generation initiated:")
             print(f"  Order ID: {order_result['id']}")
             print(f"  File path: {order_result['file_path']}")
             print(f"  File size: {order_result['file_size']} bytes")

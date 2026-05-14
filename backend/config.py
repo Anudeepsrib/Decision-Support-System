@@ -120,7 +120,6 @@ class Settings:
     upload_dir: Path
     generated_reports_dir: Path
     demo_mode: bool
-    openai_api_key: str | None
     pdf_engine: str
     ocr_enabled: bool
 
@@ -149,7 +148,6 @@ def _build_settings() -> Settings:
         upload_dir=_resolve_path(os.getenv("UPLOAD_DIR"), "mvp_uploads"),
         generated_reports_dir=_resolve_path(os.getenv("GENERATED_REPORTS_DIR"), "output"),
         demo_mode=_bool_env(os.getenv("DEMO_MODE"), default=True),
-        openai_api_key=os.getenv("OPENAI_API_KEY") or None,
         pdf_engine=_normalize_pdf_engine(os.getenv("PDF_ENGINE")),
         ocr_enabled=_bool_env(os.getenv("OCR_ENABLED"), default=False),
     )

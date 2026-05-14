@@ -1,26 +1,24 @@
 """
-MVP PDF Generator — Generates KSERC-style truing-up draft orders.
+Deterministic KSERC-style draft order PDF generator.
 
-Uses ReportLab by default, with optional Playwright rendering, to generate
-A4 PDF documents with:
-- KSERC header and branding
-- ARR comparison tables
-- Variance analysis with color-coded flags
-- Officer remarks
-- Summary recommendations
-- "DRAFT GENERATED FOR REVIEW" watermark
+The generator consumes a report_context built from canonical comparison rows.
+It does not render raw extraction rows and does not call an LLM.
 """
 
+from __future__ import annotations
+
 import hashlib
-import html as html_lib
+import html
 import os
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 
 try:
     from .config import get_settings
+    from .report_context import build_report_context
 except ImportError:  # Support direct imports from the backend directory.
     from config import get_settings
+    from report_context import build_report_context
 
 try:
     from playwright.async_api import async_playwright
@@ -47,276 +45,107 @@ except ImportError:
     REPORTLAB_AVAILABLE = False
 
 
-# ─── Output Directory ───
-
 settings = get_settings()
 OUTPUT_DIR = str(settings.generated_reports_dir)
 settings.generated_reports_dir.mkdir(parents=True, exist_ok=True)
 
 
-def _variance_color(variance_pct: Optional[float]) -> str:
-    """Get color for variance highlighting."""
-    if variance_pct is None:
-        return "#6B7280"  # gray
-    if abs(variance_pct) < 5:
-        return "#059669"  # green
-    if abs(variance_pct) < 15:
-        return "#D97706"  # amber
-    return "#DC2626"  # red
+def _fmt_value(value: Optional[float], unit: str = "Rs. Cr.") -> str:
+    if value is None:
+        return "-"
+    if unit == "%":
+        return f"{value:,.2f}%"
+    return f"{value:,.2f}"
 
 
-def _fmt_money(value: Optional[float]) -> str:
-    return f"{value:,.2f}" if value is not None else "-"
+def _as_report_float(value) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _fmt_percent(value: Optional[float]) -> str:
-    return f"{value:+.1f}%" if value is not None else "-"
+    return "NA" if value is None else f"{value:+.2f}%"
 
 
-def _semantic_section_for_cost_head(cost_head: Optional[str], row_label: Optional[str] = None) -> str:
-    if cost_head:
-        normalized = cost_head.strip().lower()
-    else:
-        normalized = (row_label or "").strip().lower()
-
-    if any(token in normalized for token in ("power purchase", "generation", "hydro", "coal", "fuel")):
-        return "Generation & Power Purchase"
-    if any(token in normalized for token in ("transmission", "wheeling", "t&d", "t d", "t & d", "loss")):
-        return "Transmission & Wheeling"
-    if any(token in normalized for token in ("o&m", "o & m", "operation", "maintenance", "employee", "repair", "a&g", "a & g")):
-        return "Distribution & O&M"
-    if any(token in normalized for token in ("interest", "finance", "depreciation", "return on equity", "roe", "return")):
-        return "Finance, Depreciation & Return"
-    if any(token in normalized for token in ("revenue gap", "arr" , "approved", "claimed", "revenue")):
-        return "Revenue Gap & Summary"
-    return "Other Regulatory Items"
+def _status_label(status: Optional[str]) -> str:
+    return (status or "INCOMPLETE_DATA").replace("_", " ")
 
 
-def _format_currency(value: Optional[float]) -> str:
-    return f"₹{value:,.2f}" if value is not None else "—"
+def _chapter_heading(chapter: Dict) -> str:
+    return f"{chapter['chapter_no']} - {chapter['title']}"
 
 
-def _build_semantic_report(
-    case_id: str,
-    financial_year: str,
-    comparisons: List[Dict],
-    reviews: List[Dict],
-    officer_name: str,
-) -> Dict:
-    report = {
-        "case_id": case_id,
-        "financial_year": financial_year,
-        "officer_name": officer_name,
-        "generated_at": datetime.utcnow(),
-        "total_items": len(comparisons),
-        "groups": [],
-        "summary": {},
-        "findings": [],
-        "observations": [],
-    }
-
-    review_by_comp = {r.get("comparison_id"): r for r in reviews}
-    groups: Dict[str, Dict] = {}
-
-    for c in comparisons:
-        category = _semantic_section_for_cost_head(c.get("cost_head"), c.get("canonical_name"))
-        group = groups.setdefault(category, {
-            "name": category,
-            "items": [],
-            "approved": 0.0,
-            "actual": 0.0,
-            "claimed": 0.0,
-            "variance": 0.0,
-            "auto_count": 0,
-            "review_count": 0,
-        })
-        group["items"].append(c)
-        group["approved"] += c.get("approved_value") or 0.0
-        group["actual"] += c.get("actual_value") or 0.0
-        group["claimed"] += c.get("claimed_value") or 0.0
-        group["variance"] += c.get("variance") or 0.0
-        if c.get("decision_class") == "AI_AUTO":
-            group["auto_count"] += 1
-        else:
-            group["review_count"] += 1
-
-    # Sort groups in regulatory priority order
-    priority = [
-        "Generation & Power Purchase",
-        "Transmission & Wheeling",
-        "Distribution & O&M",
-        "Finance, Depreciation & Return",
-        "Revenue Gap & Summary",
-        "Other Regulatory Items",
-    ]
-    ordered_groups = sorted(groups.values(), key=lambda g: priority.index(g["name"]) if g["name"] in priority else len(priority))
-
-    for group in ordered_groups:
-        items = sorted(group["items"], key=lambda item: abs(item.get("variance") or 0.0), reverse=True)
-        group["top_issues"] = items[:5]
-        group["total_items"] = len(items)
-        group["positive_variance_count"] = sum(1 for item in items if (item.get("variance") or 0) > 0)
-        group["negative_variance_count"] = sum(1 for item in items if (item.get("variance") or 0) < 0)
-        group["review_notes"] = [review_by_comp.get(item.get("id")) for item in items if review_by_comp.get(item.get("id"))]
-
-    total_approved = sum(c.get("approved_value") or 0.0 for c in comparisons)
-    total_actual = sum(c.get("actual_value") or 0.0 for c in comparisons)
-    total_claimed = sum(c.get("claimed_value") or 0.0 for c in comparisons)
-    total_variance = total_actual - total_approved
-    auto_items = sum(1 for c in comparisons if c.get("decision_class") == "AI_AUTO")
-    review_items = len(comparisons) - auto_items
-
-    report["groups"] = ordered_groups
-    report["summary"] = {
-        "total_approved": total_approved,
-        "total_actual": total_actual,
-        "total_claimed": total_claimed,
-        "total_variance": total_variance,
-        "auto_items": auto_items,
-        "review_items": review_items,
-    }
-
-    # Findings and observations
-    if total_variance > 0:
-        report["findings"].append(
-            f"The Petition indicates a net revenue gap of { _format_currency(total_variance) } relative to the approved ARR baseline."
-        )
-    elif total_variance < 0:
-        report["findings"].append(
-            f"The Petition indicates a net surplus of { _format_currency(abs(total_variance)) } relative to the approved ARR baseline."
-        )
-    else:
-        report["findings"].append(
-            "The Petition totals are in line with the approved ARR baseline with no net variance."
-        )
-
-    if review_items:
-        report["findings"].append(
-            f"{review_items} line item(s) have been flagged for further officer review due to significant variance or low extraction confidence."
-        )
-    else:
-        report["findings"].append(
-            "All line items are within auto-routing thresholds and are flagged as suitable for preliminary approval."
-        )
-
-    report["observations"].append(
-        "The Commission has examined the Petition and ARR Order submissions. The draft order presents structured, chapter-wise findings and supports officer review without relying on a raw extraction dump."
-    )
-    report["observations"].append(
-        "All values in this draft are sourced from extracted comparison rows, and the narrative is based on semantic groupings of the underlying financial categories."
-    )
-
-    return report
+def _render_html_paragraph(text: str) -> str:
+    return f"<p>{html.escape(text)}</p>"
 
 
-def _render_summary_table_html(group: Dict) -> str:
-    rows = ""
-    for item in group.get("top_issues", []):
-        rows += f"""
-        <tr>
-            <td style=\"border:1px solid #D1D5DB;padding:8px;font-size:11px;\">{html_lib.escape(item.get('canonical_name', ''))}</td>
-            <td style=\"border:1px solid #D1D5DB;padding:8px;text-align:right;font-size:11px;\">{_format_currency(item.get('approved_value'))}</td>
-            <td style=\"border:1px solid #D1D5DB;padding:8px;text-align:right;font-size:11px;\">{_format_currency(item.get('actual_value'))}</td>
-            <td style=\"border:1px solid #D1D5DB;padding:8px;text-align:right;font-size:11px;\">{_format_currency(item.get('variance'))}</td>
-            <td style=\"border:1px solid #D1D5DB;padding:8px;text-align:right;font-size:11px;\">{_fmt_percent(item.get('variance_percent'))}</td>
-        </tr>
-        """
-    return f"""
-    <div style=\"margin-top:18px;\">
-        <h4 style=\"font-size:12px;font-weight:bold;margin-bottom:8px;\">Summary of Key Issues — {group.get('name')} </h4>
-        <table style=\"width:100%;border-collapse:collapse;font-size:11px;\">
-            <thead>
-                <tr style=\"background-color:#F3F4F6;\">
-                    <th style=\"border:1px solid #D1D5DB;padding:8px;text-align:left;\">Item</th>
-                    <th style=\"border:1px solid #D1D5DB;padding:8px;text-align:right;\">Approved</th>
-                    <th style=\"border:1px solid #D1D5DB;padding:8px;text-align:right;\">Actual</th>
-                    <th style=\"border:1px solid #D1D5DB;padding:8px;text-align:right;\">Variance</th>
-                    <th style=\"border:1px solid #D1D5DB;padding:8px;text-align:right;\">Variance %</th>
-                </tr>
-            </thead>
-            <tbody>
-                {rows}
-            </tbody>
-        </table>
-    </div>
-    """
+def _render_html_table(rows: List[Dict], caption: str) -> str:
+    if not rows:
+        return "<p>No canonical comparison rows were mapped for this chapter.</p>"
 
-
-def _render_chapter_html(group: Dict) -> str:
-    heading = group.get("name")
-    if not heading:
-        heading = "Other Regulatory Items"
-    narrative = (
-        f"The Commission notes the {group.get('total_items')} items under {heading}. "
-        f"Approved amounts total { _format_currency(group.get('approved')) }, actual amounts total { _format_currency(group.get('actual')) }, "
-        f"and the aggregate variance is { _format_currency(group.get('variance')) }. "
-        f"{group.get('review_count')} item(s) are routed for review." 
-    )
-    return f"""
-    <div style=\"margin-bottom:25px;\">
-        <h3 style=\"font-size:13px;font-weight:bold;border-bottom:1px solid #1F2937;padding-bottom:5px;\">{html_lib.escape(heading)}</h3>
-        <p style=\"text-align:justify;line-height:1.7;font-size:11px;\">{html_lib.escape(narrative)}</p>
-        {_render_summary_table_html(group)}
-    </div>
-    """
-
-
-def _render_findings_html(report: Dict) -> str:
-    items = ""
-    for finding in report.get("findings", []):
-        items += f"<li style=\"margin-bottom:6px;\">{html_lib.escape(finding)}</li>\n"
-    return f"""
-    <div style=\"margin-bottom:25px;\">
-        <h3 style=\"font-size:13px;font-weight:bold;border-bottom:1px solid #1F2937;padding-bottom:5px;\">Findings and Decisions</h3>
-        <ol style=\"font-size:11px;line-height:1.8;\">{items}</ol>
-    </div>
-    """
-
-
-def _render_observations_html(report: Dict) -> str:
-    items = ""
-    for observation in report.get("observations", []):
-        items += f"<p style=\"text-align:justify;line-height:1.7;font-size:11px;margin-bottom:10px;\">{html_lib.escape(observation)}</p>\n"
-    return f"""
-    <div style=\"margin-bottom:25px;\">
-        <h3 style=\"font-size:13px;font-weight:bold;border-bottom:1px solid #1F2937;padding-bottom:5px;\">Commission Observations</h3>
-        {items}
-    </div>
-    """
-
-
-def _render_objections_html(reviews: List[Dict]) -> str:
-    if not reviews:
-        return (
-            "<div style='margin-bottom:25px;'>"
-            "<h3 style='font-size:13px;font-weight:bold;border-bottom:1px solid #1F2937;padding-bottom:5px;'>Stakeholder Objections and Commission Views</h3>"
-            "<p style='text-align:justify;line-height:1.7;font-size:11px;'>"
-            "No structured stakeholder objection text was extracted from the uploaded documents in this run."
-            "</p>"
-            "</div>"
-        )
-
-    rows = ""
-    for review in reviews:
-        rows += (
-            "<tr>"
-            f"<td style='border:1px solid #D1D5DB;padding:8px;font-size:11px;'>{html_lib.escape(review.get('comparison_id', ''))}</td>"
-            f"<td style='border:1px solid #D1D5DB;padding:8px;font-size:11px;'>{html_lib.escape(review.get('action', ''))}</td>"
-            f"<td style='border:1px solid #D1D5DB;padding:8px;font-size:11px;'>{html_lib.escape(review.get('officer_comment', ''))}</td>"
+    body = []
+    for row in rows:
+        row_class = "total-row" if row.get("is_total") else ""
+        unit = row.get("unit") or "Rs. Cr."
+        body.append(
+            f"<tr class='{row_class}'>"
+            f"<td>{row['no']}</td>"
+            f"<td>{html.escape(row['display_name'])}</td>"
+            f"<td class='num'>{html.escape(_fmt_value(row.get('arr_approved_value'), unit))}</td>"
+            f"<td class='num'>{html.escape(_fmt_value(row.get('petition_actual_value'), unit))}</td>"
+            f"<td class='num'>{html.escape(_fmt_value(row.get('petition_claimed_value'), unit))}</td>"
+            f"<td class='num'>{html.escape(_fmt_value(row.get('deviation_value'), unit))}<br><span>{html.escape(_fmt_percent(row.get('deviation_percent')))}</span></td>"
+            f"<td>{html.escape(_status_label(row.get('status')))}</td>"
             "</tr>"
         )
-    return (
-        "<div style='margin-bottom:25px;'>"
-        "<h3 style='font-size:13px;font-weight:bold;border-bottom:1px solid #1F2937;padding-bottom:5px;'>Stakeholder Objections and Commission Views</h3>"
-        "<p style='text-align:justify;line-height:1.7;font-size:11px;'>The following officer review notes are presented for the Commission's consideration.</p>"
-        "<table style='width:100%;border-collapse:collapse;font-size:11px;'>"
-        "<thead><tr style='background-color:#F3F4F6;'><th style='border:1px solid #D1D5DB;padding:8px;text-align:left;'>Comparison ID</th>"
-        "<th style='border:1px solid #D1D5DB;padding:8px;text-align:left;'>Action</th>"
-        "<th style='border:1px solid #D1D5DB;padding:8px;text-align:left;'>Comment</th></tr></thead>"
-        f"<tbody>{rows}</tbody>"
-        "</table>"
-        "</div>"
-    )
+
+    return f"""
+    <p class="caption">{html.escape(caption)}</p>
+    <table>
+        <thead>
+            <tr>
+                <th style="width:6%;">No</th>
+                <th style="width:30%;">Particulars</th>
+                <th>MYT Order / ARR Approved</th>
+                <th>Actual</th>
+                <th>Sought for TU / Claimed</th>
+                <th>Deviation from Approval</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>{''.join(body)}</tbody>
+    </table>
+    """
+
+
+def _render_summary_html(summary: Dict) -> str:
+    rows = [
+        ("Approved ARR Baseline", summary.get("approved")),
+        ("Actual Petition Total", summary.get("actual")),
+        ("Claimed Petition Total", summary.get("claimed")),
+        ("Deviation from Approval", summary.get("deviation")),
+        ("Acceptable Variance Items", summary.get("acceptable")),
+        ("Review Required Items", summary.get("review_required")),
+        ("Incomplete Data Items", summary.get("incomplete")),
+    ]
+    body_parts = []
+    for label, value in rows:
+        if "Items" in label:
+            formatted = str(value or 0)
+        else:
+            formatted = _fmt_value(_as_report_float(value), "Rs. Cr.")
+        body_parts.append(
+            f"<tr><td>{html.escape(label)}</td><td class='num'>{html.escape(formatted)}</td></tr>"
+        )
+    body = "".join(body_parts)
+    return f"""
+    <p class="caption">Table 7.1: Consolidated truing-up summary</p>
+    <table class="summary-table"><tbody>{body}</tbody></table>
+    """
 
 
 def generate_order_html(
@@ -326,187 +155,281 @@ def generate_order_html(
     reviews: List[Dict],
     officer_name: str = "Demo Officer",
 ) -> str:
-    """
-    Generate HTML for a KSERC-style truing-up draft order.
-    """
-    now = datetime.utcnow()
-    order_date = now.strftime("%d.%m.%Y")
+    """Generate deterministic KSERC-style HTML from report_context."""
+    context = build_report_context(case_id, financial_year, comparisons, reviews, officer_name)
+    meta = context["case_metadata"]
+    chapters = context["chapters"]
 
-    report = _build_semantic_report(case_id, financial_year, comparisons, reviews, officer_name)
-    summary = report["summary"]
-    group_map = {g["name"]: g for g in report["groups"]}
+    toc_items = "".join(
+        f"<li>{html.escape(_chapter_heading(chapters[key]))}</li>"
+        for key in context["chapter_sequence"]
+    )
 
-    def _render_section(title: str, body_html: str) -> str:
-        return f"""
-        <div style="margin-bottom:24px;page-break-inside:avoid;">
-            <h3 style="font-size:13px;font-weight:bold;border-bottom:1px solid #1F2937;padding-bottom:6px;margin-bottom:10px;">{html_lib.escape(title)}</h3>
-            {body_html}
-        </div>
-        """
-
-    def _render_paragraph(text: str) -> str:
-        return f'<p style="text-align:justify;line-height:1.75;font-size:11px;margin:0 0 12px 0;">{html_lib.escape(text)}</p>'
-
-    def _render_caption(text: str) -> str:
-        return f'<p style="font-size:10px;font-weight:bold;margin:10px 0 4px 0;">{html_lib.escape(text)}</p>'
-
-    def _render_totals_table() -> str:
-        return f"""
-        { _render_caption('Table 5.1: Summary of Approved ARR and Petition totals') }
-        <table style="width:100%;border-collapse:collapse;font-size:11px;">
-            <tbody>
-                <tr>
-                    <td style="border:1px solid #9CA3AF;padding:8px;font-weight:bold;width:52%;">Approved ARR Baseline</td>
-                    <td style="border:1px solid #9CA3AF;padding:8px;text-align:right;">{_format_currency(summary['total_approved'])}</td>
-                </tr>
-                <tr style="background:#F3F4F6;">
-                    <td style="border:1px solid #9CA3AF;padding:8px;font-weight:bold;">Actual Petition Total</td>
-                    <td style="border:1px solid #9CA3AF;padding:8px;text-align:right;">{_format_currency(summary['total_actual'])}</td>
-                </tr>
-                <tr>
-                    <td style="border:1px solid #9CA3AF;padding:8px;font-weight:bold;">Claimed Petition Total</td>
-                    <td style="border:1px solid #9CA3AF;padding:8px;text-align:right;">{_format_currency(summary['total_claimed'])}</td>
-                </tr>
-                <tr style="background:#EFF6FF;">
-                    <td style="border:1px solid #9CA3AF;padding:8px;font-weight:bold;">Aggregate Variance</td>
-                    <td style="border:1px solid #9CA3AF;padding:8px;text-align:right;color:{_variance_color((summary['total_variance'] / summary['total_approved'] * 100) if summary['total_approved'] else None)};">{_format_currency(summary['total_variance'])}</td>
-                </tr>
-            </tbody>
-        </table>
-        """
-
-    def _render_top_issues_table(group: Dict, caption: str) -> str:
-        if not group.get('top_issues'):
-            return _render_paragraph('The Commission did not identify material variances for this category in the extracted data.')
-
-        rows = ''
-        for item in group['top_issues']:
-            rows += f"""
-            <tr>
-                <td style="border:1px solid #9CA3AF;padding:8px;font-size:11px;">{html_lib.escape(item.get('canonical_name', ''))}</td>
-                <td style="border:1px solid #9CA3AF;padding:8px;text-align:right;font-size:11px;">{_format_currency(item.get('approved_value'))}</td>
-                <td style="border:1px solid #9CA3AF;padding:8px;text-align:right;font-size:11px;">{_format_currency(item.get('actual_value'))}</td>
-                <td style="border:1px solid #9CA3AF;padding:8px;text-align:right;font-size:11px;">{_format_currency(item.get('variance'))}</td>
-                <td style="border:1px solid #9CA3AF;padding:8px;text-align:right;font-size:11px;">{_fmt_percent(item.get('variance_percent'))}</td>
-            </tr>
-            """
-
-        return f"""
-        { _render_caption(caption) }
-        <table style="width:100%;border-collapse:collapse;font-size:11px;">
-            <thead>
-                <tr style="background-color:#F3F4F6;">
-                    <th style="border:1px solid #9CA3AF;padding:8px;text-align:left;">Item</th>
-                    <th style="border:1px solid #9CA3AF;padding:8px;text-align:right;">Approved</th>
-                    <th style="border:1px solid #9CA3AF;padding:8px;text-align:right;">Actual</th>
-                    <th style="border:1px solid #9CA3AF;padding:8px;text-align:right;">Variance</th>
-                    <th style="border:1px solid #9CA3AF;padding:8px;text-align:right;">Variance %</th>
-                </tr>
-            </thead>
-            <tbody>
-                {rows}
-            </tbody>
-        </table>
-        """
-
-    def _render_sbu_html(number: str, title: str, category: str) -> str:
-        group = group_map.get(category, {
-            'name': category,
-            'total_items': 0,
-            'approved': 0.0,
-            'actual': 0.0,
-            'claimed': 0.0,
-            'variance': 0.0,
-            'top_issues': [],
-            'review_count': 0,
-        })
-        if group['total_items'] == 0:
-            paragraph = f"The Commission did not identify a material issue requiring dedicated review under {category}."
-        else:
-            paragraph = (
-                f"The Commission has reviewed {group['total_items']} item(s) classified under {category}. "
-                f"Approved values total {_format_currency(group['approved'])}, actual values total {_format_currency(group['actual'])}, and the aggregate variance is {_format_currency(group['variance'])}. "
-                f"{group['review_count']} item(s) have been routed for officer review under this category."
-            )
-        return _render_section(
-            f"{number}. {title}",
-            _render_paragraph(paragraph) + _render_top_issues_table(group, f"Table {number}.1: Key review issues for {title}")
-        )
-
-    # Build the final HTML document in a safe builder to avoid nested f-string parsing issues.
-    html_parts = [
-        '<!DOCTYPE html>',
-        '<html lang="en">',
-        '<head>',
-        '    <meta charset="UTF-8">',
-        f'    <title>KSERC Truing-Up Order — FY {html_lib.escape(financial_year)}</title>',
-        '    <style>',
-        '        body { font-family: "Times New Roman", Georgia, serif; font-size: 11pt; line-height: 1.75; color: #111827; margin: 0; }',
-        '        .page-body { margin: 0 2cm; }',
-        '        p { margin: 0 0 12px 0; }',
-        '        table { width: 100%; border-collapse: collapse; margin-top: 6px; margin-bottom: 14px; page-break-inside: auto; }',
-        '        th, td { border: 1px solid #9CA3AF; padding: 8px; vertical-align: top; }',
-        '        th { background: #F3F4F6; font-weight: bold; }',
-        '        .caption { font-size: 10px; margin-bottom: 4px; font-weight: bold; }',
-        '        .footnote { font-size: 10px; color: #4B5563; margin-top: 8px; }',
-        '        .signature-block { display: flex; justify-content: space-between; margin-top: 30px; }',
-        '        .signature-cell { width: 30%; text-align: center; }',
-        '    </style>',
-        '</head>',
-        '<body>',
-        '    <div class="page-body">',
-        '        <div style="text-align:center;margin-bottom:28px;">',
-        '            <h1 style="font-size:18px;font-weight:bold;margin-bottom:8px;letter-spacing:1px;">KERALA STATE ELECTRICITY REGULATORY COMMISSION</h1>',
-        '            <p style="font-size:11px;color:#6B7280;margin:0;">Thiruvananthapuram</p>',
-        '            <div style="border-top:2px solid #1F2937;border-bottom:1px solid #9CA3AF;margin:15px 0;padding:10px 0;">',
-        f'                <h2 style="font-size:14px;font-weight:bold;margin:0;">TRUING-UP ORDER FOR FY {html_lib.escape(financial_year)}</h2>',
-        f'                <p style="font-size:11px;color:#6B5560;margin:6px 0 0 0;">OP. No. {html_lib.escape(case_id)} | Date: {html_lib.escape(order_date)}</p>',
-        '            </div>',
-        '            <p style="color:#B91C1C;font-weight:bold;font-size:12px;margin:0;">DRAFT FOR COMMISSION REVIEW</p>',
-        '        </div>',
+    parts = [
+        "<!DOCTYPE html>",
+        "<html lang='en'>",
+        "<head>",
+        "<meta charset='UTF-8'>",
+        f"<title>KSERC Draft Truing-Up Order - FY {html.escape(financial_year)}</title>",
+        "<style>",
+        "@page { size: A4; margin: 2cm 1.7cm 2.1cm 1.7cm; }",
+        "body { font-family: 'Times New Roman', Georgia, serif; color: #111; font-size: 11pt; line-height: 1.55; }",
+        ".cover { text-align: center; min-height: 88vh; display: flex; flex-direction: column; justify-content: center; page-break-after: always; }",
+        ".commission { font-size: 16pt; font-weight: bold; letter-spacing: .3px; margin-bottom: 10px; }",
+        ".title { border-top: 1.5px solid #111; border-bottom: 1px solid #111; margin: 28px 0; padding: 16px 0; }",
+        ".draft { font-weight: bold; margin-top: 20px; }",
+        ".toc { page-break-after: always; }",
+        ".chapter { page-break-before: always; }",
+        "h1, h2, h3 { font-family: 'Times New Roman', Georgia, serif; color: #111; }",
+        "h1 { font-size: 15pt; text-align: center; }",
+        "h2 { font-size: 13pt; text-align: center; margin-top: 0; border-bottom: 1px solid #111; padding-bottom: 6px; }",
+        "p { text-align: justify; margin: 0 0 10px 0; }",
+        ".caption { font-weight: bold; font-size: 10pt; margin: 12px 0 4px 0; }",
+        "table { width: 100%; border-collapse: collapse; margin: 4px 0 14px 0; page-break-inside: auto; }",
+        "th, td { border: 1px solid #555; padding: 5px 6px; vertical-align: top; }",
+        "th { background: #f0f0f0; font-weight: bold; text-align: center; }",
+        "td.num { text-align: right; white-space: nowrap; }",
+        ".total-row td { font-weight: bold; }",
+        ".signature { margin-top: 36px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; text-align: center; }",
+        ".signature div { border-top: 1px solid #111; padding-top: 6px; }",
+        ".footer-note { font-size: 9pt; color: #444; margin-top: 24px; }",
+        "</style>",
+        "</head>",
+        "<body>",
+        "<section class='cover'>",
+        "<div class='commission'>KERALA STATE ELECTRICITY REGULATORY COMMISSION</div>",
+        "<div>Thiruvananthapuram</div>",
+        "<div class='title'>",
+        f"<h1>{html.escape(meta['order_type'].upper())}</h1>",
+        f"<h1>TRUING UP OF ACCOUNTS FOR FY {html.escape(financial_year)}</h1>",
+        f"<p style='text-align:center;'>Petitioner: {html.escape(meta['petitioner'])}</p>",
+        f"<p style='text-align:center;'>Case ID: {html.escape(case_id)} | Date: {html.escape(meta['generated_date'])}</p>",
+        "</div>",
+        "<div class='draft'>DRAFT FOR INTERNAL REVIEW</div>",
+        "</section>",
+        "<section class='toc'>",
+        "<h1>TABLE OF CONTENTS</h1>",
+        f"<ul>{toc_items}<li>FINAL ORDER</li></ul>",
+        "</section>",
     ]
 
-    html_parts.append(_render_section('1. Introduction', _render_paragraph('The Commission has examined the ARR Approval Order and the Truing-Up Petition submitted by Kerala State Electricity Board Ltd for the relevant year. This draft order records the Commission\'s review of approved ARR baselines, actual audited figures and claimed amounts extracted from the uploaded documents.')))
-    html_parts.append(_render_section('2. Statutory Provisions', _render_paragraph('This draft order is issued pursuant to the KSERC Multi-Year Tariff Regulations and relevant sections of the Electricity Act. The Commission has applied the applicable regulatory provisions in examining the Petition and the approved ARR.')))
-    html_parts.append(_render_section('3. MYT Framework References', _render_paragraph('The analysis follows the KSERC MYT framework for the control period, including normative treatment of revenue gaps, cost categories and SBU-level performance. The Commission has used the uploaded detail to align the Petition review with statutory tariff principles.')))
-    html_parts.append(_render_section('4. Petition Summary', _render_paragraph(f'The Petition filed by KSEB Ltd has been examined for consistency with the approved ARR baseline. The extracted actual audited values total {_format_currency(summary["total_actual"])}, while claimed amounts total {_format_currency(summary["total_claimed"])}. {summary["auto_items"]} line item(s) are proposed for preliminary approval and {summary["review_items"]} item(s) require detailed officer review.')))
-    html_parts.append(_render_section('5. ARR/ERC Summary Tables', _render_paragraph('The following table summarizes the approved ARR baseline, actual Petition audited values and claimed figures as extracted from the uploaded documents.') + _render_totals_table()))
-    html_parts.append(_render_section('6. Stakeholder Objections', _render_paragraph('The objections and officer comments recorded in the workbench have been reviewed by the Commission. The following section organizes extracted review notes into the formal order structure.') + _render_objections_html(reviews)))
+    intro = chapters["introduction"]
+    parts.append("<section class='chapter'>")
+    parts.append(f"<h2>{html.escape(_chapter_heading(intro))}</h2>")
+    parts.extend(_render_html_paragraph(paragraph) for paragraph in intro["paragraphs"])
+    parts.append("</section>")
 
-    commission_views = ''.join(
-        f'<p style="text-align:justify;line-height:1.75;font-size:11px;margin:0 0 12px 0;">{html_lib.escape(observation)}</p>'
-        for observation in report['observations']
-    )
-    html_parts.append(_render_section('7. Commission Views', commission_views))
-    html_parts.append(_render_sbu_html('8', 'SBU-G Analysis', 'Generation & Power Purchase'))
-    html_parts.append(_render_sbu_html('9', 'SBU-T Analysis', 'Transmission & Wheeling'))
-    html_parts.append(_render_sbu_html('10', 'SBU-D Analysis', 'Distribution & O&M'))
-    html_parts.append(_render_section('11. Consolidated Truing-Up', _render_paragraph(f'On a consolidated basis, the Commission notes an aggregate variance of {_format_currency(summary["total_variance"])} between the approved ARR and the Petition actuals. This draft order presents the truing-up position in accordance with the statutory review and recommends further officer verification where required.') + _render_totals_table()))
-    html_parts.append(_render_section('12. Final Approval / Order', _render_paragraph('The Commission hereby directs that this draft truing-up order be placed before the appropriate bench for final approval. All recommendations are subject to final confirmation by the Commission and to any further documentary verifications deemed necessary by the office of the regulatory officer.')))
+    for key in context["chapter_sequence"]:
+        if key == "introduction":
+            continue
+        chapter = chapters[key]
+        parts.append("<section class='chapter'>")
+        parts.append(f"<h2>{html.escape(_chapter_heading(chapter))}</h2>")
+        parts.append(_render_html_paragraph(chapter["opening"]))
+        if key == "consolidated":
+            parts.append(_render_summary_html(chapter["summary"]))
+        else:
+            parts.append(_render_html_table(chapter["rows"], f"Table {chapter['chapter_no'].split()[-1]}.1: {chapter['title']}"))
+        parts.extend(_render_html_paragraph(observation) for observation in chapter["observations"])
+        parts.append("</section>")
 
-    html_parts.extend([
-        '        <div class="signature-block">',
-        '            <div class="signature-cell">',
-        f'                <p style="margin:0;font-weight:bold;font-size:11px;">{html_lib.escape(officer_name)}</p>',
-        '                <p style="margin:4px 0 0 0;font-size:9px;color:#4B5563;">Prepared By</p>',
-        '            </div>',
-        '            <div class="signature-cell">',
-        '                <p style="margin:0;font-weight:bold;font-size:11px;">[Reviewing Officer]</p>',
-        '                <p style="margin:4px 0 0 0;font-size:9px;color:#4B5563;">Reviewed By</p>',
-        '            </div>',
-        '            <div class="signature-cell">',
-        '                <p style="margin:0;font-weight:bold;font-size:11px;">[Chairman, KSERC]</p>',
-        '                <p style="margin:4px 0 0 0;font-size:9px;color:#4B5563;">Approved By</p>',
-        '            </div>',
-        '        </div>',
-        f'        <p class="footnote">Case ID: {html_lib.escape(case_id)} | Generated: {html_lib.escape(now.isoformat())} | AI Decision Support System v1.0-MVP</p>',
-        '    </div>',
-        '</body>',
-        '</html>',
+    parts.extend([
+        "<section class='chapter'>",
+        "<h2>FINAL ORDER</h2>",
+        _render_html_paragraph("The draft summary above is placed for internal review and verification. Items requiring review shall be examined with source documents before final approval."),
+        _render_html_paragraph(context["final_summary"]["disclaimer"]),
+        "<div class='signature'>",
+        f"<div>{html.escape(officer_name)}<br>Prepared By</div>",
+        "<div>[Reviewing Officer]<br>Reviewed By</div>",
+        "<div>[Commission Signatory]<br>Approved By</div>",
+        "</div>",
+        f"<p class='footer-note'>Generated: {html.escape(meta['generated_at'])} | Deterministic KSERC DSS MVP</p>",
+        "</section>",
+        "</body>",
+        "</html>",
     ])
 
-    html = ''.join(html_parts)
-    return html
+    return "".join(parts)
+
+
+def _styles():
+    styles = getSampleStyleSheet()
+    return {
+        "cover_title": ParagraphStyle(
+            "CoverTitle",
+            parent=styles["Title"],
+            fontName="Times-Bold",
+            fontSize=16,
+            leading=20,
+            alignment=TA_CENTER,
+            spaceAfter=12,
+        ),
+        "cover_subtitle": ParagraphStyle(
+            "CoverSubtitle",
+            parent=styles["Normal"],
+            fontName="Times-Roman",
+            fontSize=11,
+            leading=15,
+            alignment=TA_CENTER,
+            spaceAfter=8,
+        ),
+        "chapter": ParagraphStyle(
+            "Chapter",
+            parent=styles["Heading2"],
+            fontName="Times-Bold",
+            fontSize=13,
+            leading=16,
+            alignment=TA_CENTER,
+            spaceBefore=6,
+            spaceAfter=12,
+        ),
+        "body": ParagraphStyle(
+            "Body",
+            parent=styles["BodyText"],
+            fontName="Times-Roman",
+            fontSize=9.5,
+            leading=13,
+            alignment=TA_JUSTIFY,
+            spaceAfter=8,
+        ),
+        "caption": ParagraphStyle(
+            "Caption",
+            parent=styles["BodyText"],
+            fontName="Times-Bold",
+            fontSize=8.5,
+            leading=11,
+            alignment=TA_LEFT,
+            spaceBefore=8,
+            spaceAfter=3,
+        ),
+        "small_center": ParagraphStyle(
+            "SmallCenter",
+            parent=styles["BodyText"],
+            fontName="Times-Roman",
+            fontSize=8,
+            leading=10,
+            alignment=TA_CENTER,
+        ),
+        "cell": ParagraphStyle(
+            "Cell",
+            parent=styles["BodyText"],
+            fontName="Times-Roman",
+            fontSize=7.4,
+            leading=9,
+            alignment=TA_LEFT,
+        ),
+        "cell_bold": ParagraphStyle(
+            "CellBold",
+            parent=styles["BodyText"],
+            fontName="Times-Bold",
+            fontSize=7.4,
+            leading=9,
+            alignment=TA_LEFT,
+        ),
+        "cell_right": ParagraphStyle(
+            "CellRight",
+            parent=styles["BodyText"],
+            fontName="Times-Roman",
+            fontSize=7.4,
+            leading=9,
+            alignment=TA_RIGHT,
+        ),
+    }
+
+
+def _p(text: str, style: ParagraphStyle) -> Paragraph:
+    return Paragraph(html.escape(str(text)), style)
+
+
+def _table_cell(text: str, style: ParagraphStyle) -> Paragraph:
+    return Paragraph(html.escape(str(text)), style)
+
+
+def _comparison_table(rows: List[Dict], caption: str, styles: Dict[str, ParagraphStyle]) -> List:
+    if not rows:
+        return [_p("No canonical comparison rows were mapped for this chapter.", styles["body"])]
+
+    data = [[
+        _table_cell("No", styles["cell_bold"]),
+        _table_cell("Particulars", styles["cell_bold"]),
+        _table_cell("MYT Order / ARR Approved", styles["cell_bold"]),
+        _table_cell("Actual", styles["cell_bold"]),
+        _table_cell("Sought for TU / Claimed", styles["cell_bold"]),
+        _table_cell("Deviation from Approval", styles["cell_bold"]),
+        _table_cell("Status", styles["cell_bold"]),
+    ]]
+
+    for row in rows:
+        unit = row.get("unit") or "Rs. Cr."
+        deviation = _fmt_value(row.get("deviation_value"), unit)
+        deviation_percent = _fmt_percent(row.get("deviation_percent"))
+        cell_style = styles["cell_bold"] if row.get("is_total") else styles["cell"]
+        right_style = styles["cell_right"]
+        data.append([
+            _table_cell(row["no"], cell_style),
+            _table_cell(row["display_name"], cell_style),
+            _table_cell(_fmt_value(row.get("arr_approved_value"), unit), right_style),
+            _table_cell(_fmt_value(row.get("petition_actual_value"), unit), right_style),
+            _table_cell(_fmt_value(row.get("petition_claimed_value"), unit), right_style),
+            _table_cell(f"{deviation}\n{deviation_percent}", right_style),
+            _table_cell(_status_label(row.get("status")), cell_style),
+        ])
+
+    table = Table(
+        data,
+        colWidths=[0.8 * cm, 4.0 * cm, 2.4 * cm, 2.1 * cm, 2.5 * cm, 2.5 * cm, 2.5 * cm],
+        repeatRows=1,
+    )
+    style_commands = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EDEDED")),
+        ("FONTNAME", (0, 0), (-1, 0), "Times-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.black),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]
+    for index, row in enumerate(rows, start=1):
+        if row.get("is_total"):
+            style_commands.append(("FONTNAME", (0, index), (-1, index), "Times-Bold"))
+            style_commands.append(("BACKGROUND", (0, index), (-1, index), colors.HexColor("#F7F7F7")))
+    table.setStyle(TableStyle(style_commands))
+    return [_p(caption, styles["caption"]), table, Spacer(1, 8)]
+
+
+def _summary_table(summary: Dict, styles: Dict[str, ParagraphStyle]) -> List:
+    rows = [
+        ("Approved ARR Baseline", _fmt_value(summary.get("approved"), "Rs. Cr.")),
+        ("Actual Petition Total", _fmt_value(summary.get("actual"), "Rs. Cr.")),
+        ("Claimed Petition Total", _fmt_value(summary.get("claimed"), "Rs. Cr.")),
+        ("Deviation from Approval", _fmt_value(summary.get("deviation"), "Rs. Cr.")),
+        ("Acceptable Variance Items", str(summary.get("acceptable") or 0)),
+        ("Review Required Items", str(summary.get("review_required") or 0)),
+        ("Incomplete Data Items", str(summary.get("incomplete") or 0)),
+    ]
+    data = [[_table_cell(label, styles["cell_bold"]), _table_cell(value, styles["cell_right"])] for label, value in rows]
+    table = Table(data, colWidths=[11 * cm, 4 * cm])
+    table.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.black),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F7F7F7")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    return [_p("Table 7.1: Consolidated truing-up summary", styles["caption"]), table, Spacer(1, 8)]
+
+
+def _footer(canvas, doc):
+    canvas.saveState()
+    width, _ = A4
+    canvas.setFont("Times-Roman", 8)
+    canvas.setFillColor(colors.black)
+    canvas.drawCentredString(width / 2, 1.05 * cm, f"Page {doc.page}")
+    canvas.setFont("Times-Roman", 7)
+    canvas.drawRightString(width - 1.4 * cm, 1.05 * cm, "Draft for internal review")
+    canvas.restoreState()
 
 
 def _generate_order_pdf_reportlab(
@@ -517,11 +440,12 @@ def _generate_order_pdf_reportlab(
     officer_name: str = "Demo Officer",
 ) -> Dict:
     if not REPORTLAB_AVAILABLE:
-        raise RuntimeError("PDF generation unavailable. Install playwright or reportlab.")
+        raise RuntimeError("PDF generation unavailable. Install reportlab or playwright.")
 
-    report = _build_semantic_report(case_id, financial_year, comparisons, reviews, officer_name)
-    summary = report["summary"]
-    group_map = {g["name"]: g for g in report["groups"]}
+    context = build_report_context(case_id, financial_year, comparisons, reviews, officer_name)
+    meta = context["case_metadata"]
+    chapters = context["chapters"]
+    styles = _styles()
 
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     filename = f"KSERC_TruingUp_{financial_year}_{timestamp}.pdf"
@@ -530,171 +454,106 @@ def _generate_order_pdf_reportlab(
     doc = SimpleDocTemplate(
         file_path,
         pagesize=A4,
-        rightMargin=1.4 * cm,
-        leftMargin=1.4 * cm,
-        topMargin=1.8 * cm,
-        bottomMargin=1.8 * cm,
+        rightMargin=1.35 * cm,
+        leftMargin=1.35 * cm,
+        topMargin=1.65 * cm,
+        bottomMargin=1.65 * cm,
     )
 
-    styles = getSampleStyleSheet()
-    title = ParagraphStyle(
-        "KSERCTitle",
-        parent=styles["Title"],
-        alignment=TA_CENTER,
-        fontName="Helvetica-Bold",
-        fontSize=14,
-        leading=18,
-        spaceAfter=8,
-    )
-    subtitle = ParagraphStyle(
-        "KSERCSubtitle",
-        parent=styles["Normal"],
-        alignment=TA_CENTER,
-        fontSize=9,
-        textColor=colors.HexColor("#4B5563"),
-        spaceAfter=10,
-    )
-    section = ParagraphStyle(
-        "KSERCSection",
-        parent=styles["Heading3"],
-        fontName="Helvetica-Bold",
-        fontSize=10,
-        leading=13,
-        textColor=colors.HexColor("#111827"),
-        spaceBefore=8,
-        spaceAfter=4,
-    )
-    body = ParagraphStyle(
-        "KSERCBody",
-        parent=styles["BodyText"],
-        fontSize=9,
-        leading=13,
-        alignment=TA_JUSTIFY,
-        spaceAfter=8,
-    )
-    small = ParagraphStyle(
-        "KSERCSmall",
-        parent=styles["BodyText"],
-        fontSize=8,
-        leading=10,
-        spaceAfter=6,
-    )
-
-    story = [
-        _p("KERALA STATE ELECTRICITY REGULATORY COMMISSION", title),
-        _p("Thiruvananthapuram", subtitle),
-        _p(f"TRUING-UP ORDER FOR FY {financial_year}", title),
-        _p(f"Case ID: {case_id} | Date: {datetime.utcnow().strftime('%d.%m.%Y')}", subtitle),
-        _p("DRAFT FOR COMMISSION REVIEW", ParagraphStyle(
-            "DraftNotice",
-            parent=styles["Normal"],
-            alignment=TA_CENTER,
-            fontName="Helvetica-Bold",
-            fontSize=10,
-            textColor=colors.HexColor("#B91C1C"),
-            spaceAfter=12,
-        )),
+    story: List = [
+        Spacer(1, 4.2 * cm),
+        _p("KERALA STATE ELECTRICITY REGULATORY COMMISSION", styles["cover_title"]),
+        _p("Thiruvananthapuram", styles["cover_subtitle"]),
+        Spacer(1, 1 * cm),
+        _p(meta["order_type"].upper(), styles["cover_title"]),
+        _p(f"TRUING UP OF ACCOUNTS FOR FY {financial_year}", styles["cover_title"]),
+        Spacer(1, 0.6 * cm),
+        _p(f"Petitioner: {meta['petitioner']}", styles["cover_subtitle"]),
+        _p(f"Case ID: {case_id}", styles["cover_subtitle"]),
+        _p(f"Date: {meta['generated_date']}", styles["cover_subtitle"]),
+        Spacer(1, 1.2 * cm),
+        _p("DRAFT FOR INTERNAL REVIEW", styles["cover_title"]),
+        PageBreak(),
+        _p("TABLE OF CONTENTS", styles["chapter"]),
     ]
 
-    story.append(_p("1. Introduction", section))
-    story.append(_p("The Commission has examined the ARR Approval Order and the Truing-Up Petition submitted by Kerala State Electricity Board Ltd for the relevant year. This draft order records the Commission's review of approved ARR baselines, actual audited figures and claimed amounts extracted from the uploaded documents.", body))
-
-    story.append(_p("2. Statutory Provisions", section))
-    story.append(_p("This draft order is issued pursuant to the KSERC Multi-Year Tariff Regulations and the Electricity Act. The Commission has applied applicable regulatory provisions in examining the Petition and the approved ARR.", body))
-
-    story.append(_p("3. MYT Framework References", section))
-    story.append(_p("The analysis follows the KSERC MYT framework for the control period, including normative treatment of revenue gaps, cost categories and SBU-level performance.", body))
-
-    story.append(_p("4. Petition Summary", section))
-    story.append(_p(f"The Petition filed by KSEB Ltd has been examined for consistency with the approved ARR baseline. The extracted actual audited values total {_format_currency(summary['total_actual'])}, while claimed amounts total {_format_currency(summary['total_claimed'])}. {summary['auto_items']} line item(s) are proposed for preliminary approval and {summary['review_items']} item(s) require detailed officer review.", body))
-
-    summary_table_data = [
-        ["Summary", "Amount"],
-        ["Approved ARR Baseline", _format_currency(summary['total_approved'])],
-        ["Actual Petition Total", _format_currency(summary['total_actual'])],
-        ["Claimed Petition Total", _format_currency(summary['total_claimed'])],
-        ["Aggregate Variance", _format_currency(summary['total_variance'])],
-    ]
-    summary_table = Table(summary_table_data, colWidths=[10.5 * cm, 4.5 * cm])
-    summary_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F3F4F6")),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#9CA3AF")),
-        ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 5),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+    toc_data = []
+    for key in context["chapter_sequence"]:
+        chapter = chapters[key]
+        toc_data.append([chapter["chapter_no"], chapter["title"]])
+    toc_data.append(["", "FINAL ORDER"])
+    toc_table = Table(toc_data, colWidths=[2.6 * cm, 12.4 * cm])
+    toc_table.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.white),
+        ("FONTNAME", (0, 0), (-1, -1), "Times-Roman"),
+        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
-    story.append(summary_table)
+    story.extend([toc_table, PageBreak()])
 
-    def _add_sbu_section(title: str, category: str):
-        group = group_map.get(category, None)
-        story.append(_p(title, section))
-        if not group or group['total_items'] == 0:
-            story.append(_p(f"The Commission did not identify a material issue requiring dedicated review under {category}.", body))
-            return
-        story.append(_p(f"The Commission reviewed {group['total_items']} item(s) classified under {category}. Approved values total {_format_currency(group['approved'])}, actual values total {_format_currency(group['actual'])}, and the aggregate variance is {_format_currency(group['variance'])}.", body))
-        story.append(_p("The key items requiring officer attention are listed below.", body))
-        top_data = [["Item", "Approved", "Actual", "Variance", "Variance %"]]
-        for item in group['top_issues']:
-            top_data.append([
-                item.get('canonical_name', ''),
-                _format_currency(item.get('approved_value')),
-                _format_currency(item.get('actual_value')),
-                _format_currency(item.get('variance')),
-                _fmt_percent(item.get('variance_percent')),
-            ])
-        story.append(Table(top_data, colWidths=[6.0 * cm, 2.2 * cm, 2.2 * cm, 2.2 * cm, 2.2 * cm], repeatRows=1))
+    intro = chapters["introduction"]
+    story.append(_p(_chapter_heading(intro), styles["chapter"]))
+    for paragraph in intro["paragraphs"]:
+        story.append(_p(paragraph, styles["body"]))
 
-    _add_sbu_section("8. SBU-G Analysis", "Generation & Power Purchase")
-    _add_sbu_section("9. SBU-T Analysis", "Transmission & Wheeling")
-    _add_sbu_section("10. SBU-D Analysis", "Distribution & O&M")
+    for key in context["chapter_sequence"]:
+        if key == "introduction":
+            continue
+        chapter = chapters[key]
+        story.append(PageBreak())
+        story.append(_p(_chapter_heading(chapter), styles["chapter"]))
+        story.append(_p(chapter["opening"], styles["body"]))
+        if key == "consolidated":
+            story.extend(_summary_table(chapter["summary"], styles))
+        else:
+            chapter_no = chapter["chapter_no"].split()[-1]
+            story.extend(_comparison_table(
+                chapter["rows"],
+                f"Table {chapter_no}.1: {chapter['title']}",
+                styles,
+            ))
+        for observation in chapter["observations"]:
+            story.append(_p(observation, styles["body"]))
 
-    story.append(_p("11. Consolidated Truing-Up", section))
-    story.append(_p(f"On a consolidated basis, the Commission notes an aggregate variance of {_format_currency(summary['total_variance'])} between the approved ARR and the Petition actuals. The draft order proposes further officer verification on items that are routed for review.", body))
+    story.extend([
+        PageBreak(),
+        _p("FINAL ORDER", styles["chapter"]),
+        _p("The draft summary above is placed for internal review and verification. Items requiring review shall be examined with source documents before final approval.", styles["body"]),
+        _p(context["final_summary"]["disclaimer"], styles["body"]),
+        Spacer(1, 1.4 * cm),
+    ])
 
-    story.append(_p("12. Final Approval / Order", section))
-    story.append(_p(f"The Commission hereby directs that this draft order be placed before the appropriate bench for final approval. All recommendations in this draft are evidence-based and subject to final confirmation by the Commission.", body))
+    signature = Table(
+        [
+            ["", "", ""],
+            [officer_name, "[Reviewing Officer]", "[Commission Signatory]"],
+            ["Prepared By", "Reviewed By", "Approved By"],
+        ],
+        colWidths=[5 * cm, 5 * cm, 5 * cm],
+    )
+    signature.setStyle(TableStyle([
+        ("LINEABOVE", (0, 1), (-1, 1), 0.5, colors.black),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("FONTNAME", (0, 1), (-1, 1), "Times-Bold"),
+        ("FONTNAME", (0, 2), (-1, 2), "Times-Roman"),
+        ("FONTSIZE", (0, 1), (-1, -1), 9),
+        ("TOPPADDING", (0, 1), (-1, 1), 6),
+    ]))
+    story.append(signature)
+    story.append(Spacer(1, 0.8 * cm))
+    story.append(_p(f"Generated: {meta['generated_at']} | Deterministic KSERC DSS MVP", styles["small_center"]))
 
-    story.append(_p(officer_name, section))
-    story.append(_p("Prepared By", small))
-    story.append(_p("[Reviewing Officer]", section))
-    story.append(_p("Reviewed By", small))
-    story.append(_p("[Chairman, KSERC]", section))
-    story.append(_p("Approved By", small))
+    doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
 
-    doc.build(story, onFirstPage=_reportlab_watermark, onLaterPages=_reportlab_watermark)
-
-    with open(file_path, "rb") as f:
-        file_hash = hashlib.sha256(f.read()).hexdigest()
-    file_size = os.path.getsize(file_path)
+    with open(file_path, "rb") as pdf_file:
+        file_hash = hashlib.sha256(pdf_file.read()).hexdigest()
 
     return {
         "file_path": file_path,
         "filename": filename,
         "file_hash": file_hash,
-        "file_size": file_size,
+        "file_size": os.path.getsize(file_path),
     }
-def _reportlab_watermark(canvas, doc):
-    """Draw draft watermark and footer on each generated page."""
-    canvas.saveState()
-    width, height = A4
-    canvas.setFont("Helvetica-Bold", 28)
-    canvas.setFillColor(colors.Color(0.8, 0.1, 0.1, alpha=0.12))
-    canvas.translate(width / 2, height / 2)
-    canvas.rotate(35)
-    canvas.drawCentredString(0, 0, "DRAFT GENERATED FOR REVIEW")
-    canvas.restoreState()
-
-    canvas.saveState()
-    canvas.setFont("Helvetica", 8)
-    canvas.setFillColor(colors.grey)
-    canvas.drawCentredString(width / 2, 1.1 * cm, f"Page {doc.page}")
-    canvas.restoreState()
-
-
-def _p(text: str, style: ParagraphStyle) -> Paragraph:
-    return Paragraph(html_lib.escape(str(text)), style)
 
 
 async def generate_order_pdf(
@@ -704,52 +563,18 @@ async def generate_order_pdf(
     reviews: List[Dict],
     officer_name: str = "Demo Officer",
 ) -> Dict:
-    """
-    Generate a KSERC-style PDF order using Playwright.
-    
-    Returns dict with file_path, file_hash, file_size.
-    """
+    """Generate a deterministic KSERC-style draft order PDF."""
     if settings.pdf_engine == "reportlab" or not PLAYWRIGHT_AVAILABLE:
-        return _generate_order_pdf_reportlab(
-            case_id, financial_year, comparisons, reviews, officer_name
-        )
-    
-    from playwright.async_api import async_playwright
-    
-    html_content = generate_order_html(
-        case_id, financial_year, comparisons, reviews, officer_name
-    )
-    
-    # CSS for PDF styling
-    css_content = """
-        <style>
-        body {
-            font-family: "Times New Roman", Georgia, serif;
-            font-size: 11pt;
-            line-height: 1.6;
-            color: #1F2937;
-        }
-        table {
-            page-break-inside: auto;
-        }
-        tr {
-            page-break-inside: avoid;
-            page-break-after: auto;
-        }
-        </style>
-    """
-    html_content = html_content.replace('</head>', f'{css_content}\\n</head>')
-    
-    # Generate filename
+        return _generate_order_pdf_reportlab(case_id, financial_year, comparisons, reviews, officer_name)
+
+    html_content = generate_order_html(case_id, financial_year, comparisons, reviews, officer_name)
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     filename = f"KSERC_TruingUp_{financial_year}_{timestamp}.pdf"
     file_path = os.path.join(OUTPUT_DIR, filename)
-    
-    # Generate PDF using headless chromium. If the browser binary is absent,
-    # fall back to ReportLab so demo PDF generation still succeeds.
+
     try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch(headless=True)
             page = await browser.new_page()
             await page.set_content(html_content, wait_until="networkidle")
             await page.pdf(
@@ -757,24 +582,20 @@ async def generate_order_pdf(
                 format="A4",
                 print_background=True,
                 display_header_footer=True,
-                header_template="""<div style='font-size: 16pt; color: rgba(220, 38, 38, 0.12); font-weight: bold; text-align: center; width: 100%;'>DRAFT GENERATED FOR REVIEW</div>""",
-                footer_template="""<div style='font-size: 9pt; color: #9CA3AF; text-align: center; width: 100%;'>Page <span class='pageNumber'></span> of <span class='totalPages'></span></div>""",
-                margin={"top": "2.5cm", "bottom": "2.5cm", "left": "2cm", "right": "2cm"}
+                header_template="<div></div>",
+                footer_template="<div style='font-size:8pt;text-align:center;width:100%;'>Page <span class='pageNumber'></span> of <span class='totalPages'></span></div>",
+                margin={"top": "2cm", "bottom": "2cm", "left": "1.7cm", "right": "1.7cm"},
             )
             await browser.close()
     except Exception:
-        return _generate_order_pdf_reportlab(
-            case_id, financial_year, comparisons, reviews, officer_name
-        )
-    
-    # Calculate hash and size
-    with open(file_path, "rb") as f:
-        file_hash = hashlib.sha256(f.read()).hexdigest()
-    file_size = os.path.getsize(file_path)
-    
+        return _generate_order_pdf_reportlab(case_id, financial_year, comparisons, reviews, officer_name)
+
+    with open(file_path, "rb") as pdf_file:
+        file_hash = hashlib.sha256(pdf_file.read()).hexdigest()
+
     return {
         "file_path": file_path,
         "filename": filename,
         "file_hash": file_hash,
-        "file_size": file_size,
+        "file_size": os.path.getsize(file_path),
     }

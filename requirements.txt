@@ -19,8 +19,5 @@ pdfminer.six==20231228
 reportlab==4.2.5
 playwright>=1.40.0
 
-# ─── AI (Optional) ───
-openai>=1.0.0
-
 # ─── Utilities ───
 python-dotenv==1.0.1

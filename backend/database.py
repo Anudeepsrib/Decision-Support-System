@@ -66,6 +66,11 @@ def _ensure_sqlite_schema():
             ("value_type", "VARCHAR(20)"),
         ],
         "comparisons": [
+            ("canonical_id", "VARCHAR(100)"),
+            ("display_name", "VARCHAR(200)"),
+            ("sbu", "VARCHAR(20)"),
+            ("unit", "VARCHAR(20) DEFAULT 'Rs. Cr.'"),
+            ("section", "VARCHAR(50)"),
             ("approved_source_document_id", "VARCHAR(36)"),
             ("actual_source_document_id", "VARCHAR(36)"),
             ("claimed_source_document_id", "VARCHAR(36)"),

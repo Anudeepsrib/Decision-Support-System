@@ -2,8 +2,6 @@
 """
 Demo Readiness Assessment
 """
-import requests
-import os
 
 API_BASE = "http://localhost:8000/api"
 
@@ -17,7 +15,7 @@ def assess_demo_readiness():
         "Architecture & Design": {"weight": 0.15, "score": 0},
         "Data Processing Quality": {"weight": 0.20, "score": 0},
         "User Experience": {"weight": 0.15, "score": 0},
-        "AI Integration": {"weight": 0.10, "score": 0},
+        "Deterministic Reporting": {"weight": 0.10, "score": 0},
         "PDF Generation": {"weight": 0.10, "score": 0},
         "Security & Stability": {"weight": 0.15, "score": 0},
         "Enterprise Readiness": {"weight": 0.15, "score": 0}
@@ -75,21 +73,21 @@ def assess_demo_readiness():
     print(f"  Score: {ux_score:.0f}%")
     print()
     
-    print("4. AI INTEGRATION (10%)")
-    ai_criteria = [
+    print("4. DETERMINISTIC REPORTING (10%)")
+    reporting_criteria = [
         ("✓ Template-based explanations", True),
-        ("✓ OpenAI integration available", True),
-        ("✗ Number fabrication risk detected", False),
+        ("✓ No external model dependency in Phase 1", True),
+        ("✓ Number fabrication risk constrained by extracted values", True),
         ("✓ Safety constraints in place", True),
         ("✓ Fallback mechanisms", True),
     ]
     
-    ai_score = sum(1 for _, passed in ai_criteria if passed) / len(ai_criteria) * 100
-    categories["AI Integration"]["score"] = ai_score
+    reporting_score = sum(1 for _, passed in reporting_criteria if passed) / len(reporting_criteria) * 100
+    categories["Deterministic Reporting"]["score"] = reporting_score
     
-    for criterion, passed in ai_criteria:
+    for criterion, passed in reporting_criteria:
         print(f"  {criterion}")
-    print(f"  Score: {ai_score:.0f}%")
+    print(f"  Score: {reporting_score:.0f}%")
     print()
     
     print("5. PDF GENERATION (10%)")
@@ -195,7 +193,7 @@ def identify_demo_risks():
             "mitigation": "Implement proper PDF file validation"
         },
         {
-            "risk": "AI number fabrication potential",
+            "risk": "Phase 2 LLM narrative must not fabricate numbers",
             "impact": "High",
             "probability": "Low",
             "mitigation": "Strict input validation and template-only approach"
@@ -223,7 +221,7 @@ DEMO SCRIPT FOR KSERC DSS MVP
 
 1. INTRODUCTION (2 minutes)
    - Welcome to KSERC Decision Support System
-   - Explain AI-assisted truing-up order generation
+   - Explain deterministic truing-up order generation
    - Highlight key benefits: efficiency, accuracy, auditability
 
 2. SYSTEM OVERVIEW (3 minutes)
@@ -249,7 +247,7 @@ DEMO SCRIPT FOR KSERC DSS MVP
 6. HUMAN REVIEW (3 minutes)
    - Show review interface for flagged items
    - Demonstrate officer comment functionality
-   - Show AI-generated explanations
+   - Show deterministic variance explanations
 
 7. PDF GENERATION (2 minutes)
    - Generate KSERC-style draft order

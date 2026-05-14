@@ -41,14 +41,20 @@ class DocumentListItem(BaseModel):
 
 class ExtractedRowResponse(BaseModel):
     id: str
+    document_id: str
     page_number: int
     table_index: Optional[int] = None
     table_name: Optional[str] = None
+    raw_label: str
     row_label: str
     normalized_label: Optional[str] = None
     value: Optional[float] = None
     value_type: str = "value"
     document_type: str
+    contract_document_type: Optional[str] = None
+    financial_year: Optional[str] = None
+    sbu: Optional[str] = None
+    category: Optional[str] = None
     unit: str = "Rs. Cr."
     confidence: float
     extraction_method: str
@@ -102,6 +108,11 @@ class NormalizedItemResponse(BaseModel):
 
 class ComparisonItemResponse(BaseModel):
     id: str
+    canonical_id: Optional[str] = None
+    display_name: Optional[str] = None
+    sbu: Optional[str] = None
+    unit: Optional[str] = "Rs. Cr."
+    section: Optional[str] = None
     canonical_name: str
     cost_head: Optional[str] = None
     approved_value: Optional[float] = None

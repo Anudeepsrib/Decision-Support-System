@@ -5,7 +5,6 @@ Test security and stability aspects
 import requests
 import os
 import tempfile
-import sys
 
 API_BASE = "http://localhost:8000/api"
 

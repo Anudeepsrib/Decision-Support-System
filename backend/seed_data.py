@@ -35,21 +35,16 @@ except ImportError:  # Support direct imports from the backend directory.
 CASE_ID = "kserc-2024-25"
 
 SEED_ARR_DATA = [
-    {"canonical": "Power Purchase Cost", "cost_head": "Power_Purchase", "approved": 12456.78, "actual": 14123.45},
-    {"canonical": "Employee Cost", "cost_head": "O&M", "approved": 4567.12, "actual": 4890.34},
-    {"canonical": "Repair & Maintenance", "cost_head": "O&M", "approved": 892.45, "actual": 945.67},
-    {"canonical": "A&G Expenses", "cost_head": "O&M", "approved": 234.56, "actual": 256.78},
-    {"canonical": "Depreciation", "cost_head": "Depreciation", "approved": 1234.56, "actual": 1289.01},
-    {"canonical": "Interest & Finance Charges", "cost_head": "Interest", "approved": 2345.67, "actual": 2567.89},
-    {"canonical": "Return on Equity", "cost_head": "ROE", "approved": 1567.89, "actual": 1567.89},
-    {"canonical": "Transmission Charges", "cost_head": "Other", "approved": 789.12, "actual": 834.56},
-    {"canonical": "Terminal Benefits", "cost_head": "O&M", "approved": 345.67, "actual": 412.34},
-    {"canonical": "Provision for Bad Debts", "cost_head": "Other", "approved": 123.45, "actual": 145.67},
-    {"canonical": "Total ARR", "cost_head": "Total", "approved": 24557.27, "actual": 27033.60},
-    {"canonical": "Revenue from Tariff", "cost_head": "Revenue", "approved": 18234.56, "actual": 17890.12},
-    {"canonical": "Non-Tariff Income", "cost_head": "Revenue", "approved": 1234.56, "actual": 1345.78},
-    {"canonical": "Expected Revenue (ERC)", "cost_head": "Revenue", "approved": 19469.12, "actual": 19235.90},
-    {"canonical": "Revenue Gap / (Surplus)", "cost_head": "Gap", "approved": 5088.15, "actual": 7797.70},
+    {"canonical_id": "PURCHASE_OF_POWER", "canonical": "Purchase of Power", "cost_head": "SBU-D", "section": "sbu_d", "approved": 12456.78, "actual": 14123.45},
+    {"canonical_id": "OM_COST", "canonical": "O&M Cost", "cost_head": "SBU-D", "section": "sbu_d", "approved": 5694.13, "actual": 6092.79},
+    {"canonical_id": "DEPRECIATION", "canonical": "Depreciation", "cost_head": "SBU-D", "section": "sbu_d", "approved": 1234.56, "actual": 1289.01},
+    {"canonical_id": "INTEREST_FINANCE_CHARGES", "canonical": "Interest and Finance Charges", "cost_head": "SBU-D", "section": "sbu_d", "approved": 2345.67, "actual": 2567.89},
+    {"canonical_id": "ROE", "canonical": "Return on Equity", "cost_head": "SBU-D", "section": "sbu_d", "approved": 1567.89, "actual": 1567.89},
+    {"canonical_id": "NET_EXPENDITURE", "canonical": "Net Expenditure", "cost_head": "SBU-D", "section": "sbu_d", "approved": 24557.27, "actual": 27033.60},
+    {"canonical_id": "REVENUE_FROM_TARIFF_EXTERNAL_SALE", "canonical": "Revenue from Tariff and External Sale", "cost_head": "SBU-D", "section": "sbu_d", "approved": 18234.56, "actual": 17890.12},
+    {"canonical_id": "NON_TARIFF_INCOME", "canonical": "Non-Tariff Income", "cost_head": "SBU-D", "section": "sbu_d", "approved": 1234.56, "actual": 1345.78},
+    {"canonical_id": "TOTAL_INCOME", "canonical": "Total Income", "cost_head": "SBU-D", "section": "sbu_d", "approved": 19469.12, "actual": 19235.90},
+    {"canonical_id": "REVENUE_SURPLUS_GAP", "canonical": "Revenue Surplus / Gap", "cost_head": "SBU-D", "section": "sbu_d", "approved": 5088.15, "actual": 7797.70},
 ]
 
 
@@ -179,7 +174,7 @@ def seed_demo_data(clear: bool = False) -> str:
             variance = round(actual - approved, 2)
             variance_pct = round((actual - approved) / abs(approved) * 100, 2) if approved else 0.0
             if abs(variance_pct) < 15:
-                decision_class = "AI_AUTO"
+                decision_class = "ACCEPTABLE_VARIANCE"
                 flag_reason = None
             else:
                 decision_class = "REVIEW_REQUIRED"
@@ -192,7 +187,12 @@ def seed_demo_data(clear: bool = False) -> str:
                 id=comp_id,
                 case_id=CASE_ID,
                 financial_year="2024-25",
+                canonical_id=item["canonical_id"],
                 canonical_name=item["canonical"],
+                display_name=item["canonical"],
+                sbu=item["cost_head"],
+                unit="Rs. Cr.",
+                section=item["section"],
                 cost_head=item["cost_head"],
                 approved_value=approved,
                 actual_value=actual,
@@ -216,14 +216,14 @@ def seed_demo_data(clear: bool = False) -> str:
             ))
 
         for comp_id, canonical in comparison_ids:
-            if canonical == "Power Purchase Cost":
+            if canonical == "Purchase of Power":
                 db.add(Review(
                     id=str(uuid.uuid4()),
                     comparison_id=comp_id,
                     action="approve",
                     officer_name="Demo Officer",
                     officer_comment="Increase noted for demo review of power purchase cost.",
-                    ai_explanation="The increase may be reviewed against changes in generation mix and purchase volume.",
+                    ai_explanation="The item is marked for deterministic officer review based on variance from approved values.",
                 ))
 
         db.commit()

@@ -18,7 +18,7 @@ Endpoints:
 import os
 import uuid
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Query, BackgroundTasks
 from fastapi.responses import FileResponse
@@ -41,6 +41,12 @@ try:
     from .extractor import extract_tables_from_pdf_path
     from .normalizer import normalize_row_label
     from .comparison import calculate_variance, classify_decision
+    from .canonical_registry import (
+        REGISTRY_BY_ID,
+        canonicalize_records,
+        contract_document_type,
+        map_record_to_canonical,
+    )
     from .prompts import generate_variance_explanation
 except ImportError:  # Support direct imports from the backend directory.
     from config import get_settings
@@ -59,6 +65,12 @@ except ImportError:  # Support direct imports from the backend directory.
     from extractor import extract_tables_from_pdf_path
     from normalizer import normalize_row_label
     from comparison import calculate_variance, classify_decision
+    from canonical_registry import (
+        REGISTRY_BY_ID,
+        canonicalize_records,
+        contract_document_type,
+        map_record_to_canonical,
+    )
     from prompts import generate_variance_explanation
 
 router = APIRouter(prefix="/api", tags=["MVP API"])
@@ -78,6 +90,12 @@ def _case_id_for_year(financial_year: str) -> str:
 def _validate_pdf_upload(file: UploadFile):
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
+    
+    # Check magic header
+    header = file.file.read(4)
+    file.file.seek(0)  # Reset file pointer
+    if header != b"%PDF":
+        raise HTTPException(status_code=400, detail="Invalid PDF file format.")
 
 
 async def _save_upload_file(file: UploadFile, file_path: str) -> int:
@@ -389,16 +407,28 @@ def _store_extraction(
 
 def _row_response(row: ExtractedRow, doc: Document) -> ExtractedRowResponse:
     norm = normalize_row_label(row.row_label)
+    canonical_item = map_record_to_canonical({
+        "raw_label": row.row_label,
+        "normalized_label": norm.canonical_name,
+        "table_name": row.table_name,
+        "raw_text": row.raw_text,
+    })
     return ExtractedRowResponse(
         id=row.id,
+        document_id=doc.id,
         page_number=row.page_number,
         table_index=row.table_index,
         table_name=row.table_name,
+        raw_label=row.row_label,
         row_label=row.row_label,
         normalized_label=norm.canonical_name,
         value=row.value,
         value_type=row.value_type or "value",
         document_type=doc.doc_type,
+        contract_document_type=contract_document_type(doc.doc_type),
+        financial_year=doc.financial_year,
+        sbu=canonical_item.sbu if canonical_item else None,
+        category=canonical_item.section if canonical_item else norm.category,
         unit=row.unit or "Rs. Cr.",
         confidence=row.confidence,
         extraction_method=row.extraction_method or "pdfplumber",
@@ -441,38 +471,67 @@ def _load_normalized_records(
         )
         records.append({
             "canonical_name": item.canonical_name,
+            "normalized_label": item.canonical_name,
             "cost_head": item.cost_head,
             "value": item.value,
             "value_type": item.value_type,
             "mapping_confidence": confidence,
+            "raw_label": row.row_label,
             "source_page": row.page_number,
             "source_table": row.table_name,
             "source_document_id": doc.id,
+            "raw_text": row.raw_text,
+            "document_id": doc.id,
+            "document_type": contract_document_type(doc.doc_type),
+            "financial_year": doc.financial_year,
+            "unit": row.unit or item.unit or "Rs. Cr.",
         })
     return records
 
 
-def _best_by_name(records: List[Dict]) -> Dict[str, Dict]:
-    best: Dict[str, Dict] = {}
+def _best_by_canonical_id(records: List[Dict]) -> Dict[str, Dict]:
+    grouped: Dict[str, List[Dict]] = {}
     for record in records:
-        name = record.get("canonical_name")
+        name = record.get("canonical_id") or record.get("canonical_name")
         if not name:
             continue
-        current = best.get(name)
-        if current is None:
-            best[name] = record
-            continue
+        grouped.setdefault(name, []).append(record)
 
-        current_score = (
-            current.get("mapping_confidence") or 0,
-            1 if current.get("value") is not None else 0,
-        )
-        new_score = (
-            record.get("mapping_confidence") or 0,
-            1 if record.get("value") is not None else 0,
-        )
-        if new_score > current_score:
-            best[name] = record
+    best: Dict[str, Dict] = {}
+    for name, group in grouped.items():
+        if name == "OM_COST":
+            total_like = [
+                record for record in group
+                if record.get("raw_label")
+                and record.get("value") is not None
+                and any(token in record["raw_label"].lower() for token in ("o&m", "o & m", "operation and maintenance", "total o"))
+            ]
+            if not total_like:
+                valued = [record for record in group if record.get("value") is not None]
+                if valued:
+                    aggregate = dict(valued[0])
+                    aggregate["value"] = round(sum(record.get("value") or 0.0 for record in valued), 2)
+                    aggregate["mapping_confidence"] = min(record.get("mapping_confidence") or 1.0 for record in valued)
+                    aggregate["raw_label"] = "Aggregated O&M Cost"
+                    aggregate["source_page"] = min(record.get("source_page") or 0 for record in valued) or None
+                    aggregate["source_table"] = "Aggregated from mapped O&M component rows"
+                    best[name] = aggregate
+                    continue
+            group = total_like or group
+
+        selected = group[0]
+        for record in group[1:]:
+            current_score = (
+                selected.get("mapping_confidence") or 0,
+                1 if selected.get("value") is not None else 0,
+            )
+            new_score = (
+                record.get("mapping_confidence") or 0,
+                1 if record.get("value") is not None else 0,
+            )
+            if new_score > current_score:
+                selected = record
+        best[name] = selected
     return best
 
 
@@ -494,6 +553,11 @@ def _comparison_item_response(
 ) -> ComparisonItemResponse:
     return ComparisonItemResponse(
         id=comparison.id,
+        canonical_id=comparison.canonical_id or comparison.canonical_name,
+        display_name=comparison.display_name or comparison.canonical_name,
+        sbu=comparison.sbu,
+        unit=comparison.unit or "Rs. Cr.",
+        section=comparison.section,
         canonical_name=comparison.canonical_name,
         cost_head=comparison.cost_head,
         approved_value=comparison.approved_value,
@@ -525,16 +589,21 @@ def _comparison_response(db: Session, case_id: str) -> ComparisonResponse:
     comparisons = (
         db.query(Comparison)
         .filter(Comparison.case_id == case_id)
-        .order_by(Comparison.cost_head, Comparison.canonical_name)
+        .order_by(Comparison.section, Comparison.sbu, Comparison.canonical_name)
         .all()
     )
     if not comparisons:
         raise HTTPException(status_code=404, detail="Case not found.")
 
     latest_reviews = _latest_reviews_by_comparison(db, [c.id for c in comparisons])
-    auto_count = sum(1 for c in comparisons if c.decision_class == "AI_AUTO")
+    auto_count = sum(1 for c in comparisons if c.decision_class == "ACCEPTABLE_VARIANCE")
     review_count = len(comparisons) - auto_count
-    total_var = sum(c.variance or 0 for c in comparisons)
+    non_total = [
+        c for c in comparisons
+        if not (REGISTRY_BY_ID.get(c.canonical_id or "") and REGISTRY_BY_ID[c.canonical_id].is_total)
+    ]
+    variance_rows = non_total or comparisons
+    total_var = sum(c.variance or 0 for c in variance_rows)
 
     return ComparisonResponse(
         case_id=case_id,
@@ -568,16 +637,18 @@ def _run_comparison_for_financial_year(
             detail="No extracted Petition data found. Please upload Petition first.",
         )
 
-    arr_lookup = _best_by_name(_load_normalized_records(db, arr_doc, "approved"))
-    actual_lookup = _best_by_name(_load_normalized_records(db, petition_doc, "actual"))
-    claimed_lookup = _best_by_name(_load_normalized_records(db, petition_doc, "claimed"))
+    arr_records = canonicalize_records(_load_normalized_records(db, arr_doc, "approved"))
+    actual_records = canonicalize_records(_load_normalized_records(db, petition_doc, "actual"))
+    claimed_records = canonicalize_records(_load_normalized_records(db, petition_doc, "claimed"))
+
+    arr_lookup = _best_by_canonical_id(arr_records)
+    actual_lookup = _best_by_canonical_id(actual_records)
+    claimed_lookup = _best_by_canonical_id(claimed_records)
 
     if not arr_lookup:
-        raise HTTPException(status_code=404, detail="No normalized ARR approved rows found.")
+        raise HTTPException(status_code=404, detail="No canonical ARR approved rows found after filtering.")
     if not actual_lookup:
-        raise HTTPException(status_code=404, detail="No normalized Petition actual rows found.")
-    if not claimed_lookup:
-        claimed_lookup = actual_lookup
+        raise HTTPException(status_code=404, detail="No canonical Petition actual rows found after filtering.")
 
     case_id = _case_id_for_year(financial_year)
     old_comp_ids = [
@@ -600,11 +671,13 @@ def _run_comparison_for_financial_year(
         arr_item = arr_lookup.get(name)
         actual_item = actual_lookup.get(name)
         claimed_item = claimed_lookup.get(name)
+        metadata_item = arr_item or actual_item or claimed_item or {}
 
         approved_val = arr_item.get("value") if arr_item else None
         actual_val = actual_item.get("value") if actual_item else None
         claimed_val = claimed_item.get("value") if claimed_item else None
-        variance, variance_pct = calculate_variance(approved_val, actual_val)
+        comparison_val = claimed_val if claimed_val is not None else actual_val
+        variance, variance_pct = calculate_variance(approved_val, comparison_val)
 
         confidences = [
             item.get("mapping_confidence")
@@ -612,20 +685,29 @@ def _run_comparison_for_financial_year(
             if item and item.get("mapping_confidence") is not None
         ]
         confidence = min(confidences) if confidences else 1.0
-        decision_class, flag_reason = classify_decision(variance_pct, confidence)
+        decision_class, flag_reason = classify_decision(
+            variance_pct,
+            confidence,
+            missing_values=approved_val is None or comparison_val is None,
+        )
 
         cost_head = (
-            (arr_item or {}).get("cost_head")
-            or (actual_item or {}).get("cost_head")
-            or (claimed_item or {}).get("cost_head")
+            metadata_item.get("sbu")
+            or metadata_item.get("cost_head")
             or "Other"
         )
+        display_name = metadata_item.get("display_name") or metadata_item.get("canonical_name") or name
 
         db.add(Comparison(
             id=str(uuid.uuid4()),
             case_id=case_id,
             financial_year=financial_year,
-            canonical_name=name,
+            canonical_id=name,
+            canonical_name=display_name,
+            display_name=display_name,
+            sbu=metadata_item.get("sbu"),
+            unit=metadata_item.get("unit") or "Rs. Cr.",
+            section=metadata_item.get("section"),
             cost_head=cost_head,
             approved_value=approved_val,
             actual_value=actual_val,
@@ -863,7 +945,7 @@ async def submit_review(
     if review_req.action not in ("approve", "reject", "edit"):
         raise HTTPException(status_code=400, detail="Action must be: approve, reject, or edit.")
     
-    # Generate AI explanation if needed
+    # Generate deterministic explanation if needed.
     ai_explanation = None
     if comp.approved_value and comp.actual_value and comp.variance_percent:
         ai_explanation = generate_variance_explanation(
@@ -888,7 +970,7 @@ async def submit_review(
     
     # Update comparison status
     if review_req.action == "approve":
-        comp.decision_class = "AI_AUTO"
+        comp.decision_class = "ACCEPTABLE_VARIANCE"
         comp.flag_reason = "Approved by officer"
     elif review_req.action == "reject":
         comp.decision_class = "REVIEW_REQUIRED"
@@ -908,6 +990,7 @@ async def submit_review(
         comp.decision_class, comp.flag_reason = classify_decision(
             comp.variance_percent,
             confidence,
+            missing_values=comp.approved_value is None or review_req.edited_value is None,
         )
         if comp.flag_reason is None:
             comp.flag_reason = "Edited by officer and variance is within threshold"
@@ -978,6 +1061,11 @@ async def generate_order(
     comp_dicts = [
         {
             "id": c.id,
+            "canonical_id": c.canonical_id or c.canonical_name,
+            "display_name": c.display_name or c.canonical_name,
+            "sbu": c.sbu,
+            "unit": c.unit or "Rs. Cr.",
+            "section": c.section,
             "canonical_name": c.canonical_name,
             "cost_head": c.cost_head,
             "approved_value": c.approved_value,
@@ -1024,7 +1112,7 @@ async def generate_order(
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
     
     # Save order record
-    auto_count = sum(1 for c in comparisons if c.decision_class == "AI_AUTO")
+    auto_count = sum(1 for c in comparisons if c.decision_class == "ACCEPTABLE_VARIANCE")
     review_count = len(comparisons) - auto_count
     
     order = GeneratedOrder(

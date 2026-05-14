@@ -37,7 +37,7 @@ def test_database_traceability():
         LIMIT 10
     """)
     norm_rows = cursor.fetchall()
-    print(f"\n  Sample normalization mapping (first 10):")
+    print("\n  Sample normalization mapping (first 10):")
     for row_label, count in norm_rows:
         print(f"    '{row_label}' -> {count} normalized items")
     
@@ -220,7 +220,7 @@ def test_end_to_end_traceability():
                     action, officer, reviewed_at = review
                     print(f"          Reviewed: {action} by {officer} at {reviewed_at}")
                 else:
-                    print(f"          Not yet reviewed")
+                    print("          Not yet reviewed")
     
     conn.close()
 

@@ -17,7 +17,7 @@ def test_variance_calculations():
         (100.0, 85.0, -15.0, -15.0),   # 15% decrease
         (100.0, 100.0, 0.0, 0.0),      # No variance
         (0.0, 0.0, 0.0, 0.0),          # Both zero
-        (0.0, 50.0, 50.0, 100.0),       # Approved zero, actual non-zero
+        (0.0, 50.0, 50.0, None),        # Approved zero, actual non-zero
         (100.0, None, None, None),       # Missing actual
         (None, 100.0, None, None),       # Missing approved
     ]
@@ -33,7 +33,7 @@ def test_variance_calculations():
             assert abs(variance - exp_var) < 0.01, f"Variance mismatch: {variance} != {exp_var}"
         if variance_pct is not None and exp_pct is not None:
             assert abs(variance_pct - exp_pct) < 0.01, f"Percentage mismatch: {variance_pct} != {exp_pct}"
-        print("  ✓ PASS")
+        print("  PASS")
         print()
 
 def test_decision_classification():
@@ -44,13 +44,13 @@ def test_decision_classification():
     
     test_cases = [
         # (variance_pct, confidence, expected_decision, expected_reason)
-        (10.0, 0.8, "AI_AUTO", None),
-        (14.9, 0.9, "AI_AUTO", None),
-        (15.0, 0.9, "REVIEW_REQUIRED", "Variance of +15.0% (increase) exceeds 15.0% threshold"),
-        (20.0, 0.9, "REVIEW_REQUIRED", "Variance of +20.0% (increase) exceeds 15.0% threshold"),
-        (-15.0, 0.9, "REVIEW_REQUIRED", "Variance of -15.0% (decrease) exceeds 15.0% threshold"),
+        (10.0, 0.8, "ACCEPTABLE_VARIANCE", None),
+        (14.9, 0.9, "ACCEPTABLE_VARIANCE", None),
+        (15.0, 0.9, "REVIEW_REQUIRED", "Deviation of +15.0% (increase) exceeds 15.0% threshold"),
+        (20.0, 0.9, "REVIEW_REQUIRED", "Deviation of +20.0% (increase) exceeds 15.0% threshold"),
+        (-15.0, 0.9, "REVIEW_REQUIRED", "Deviation of -15.0% (decrease) exceeds 15.0% threshold"),
         (5.0, 0.5, "REVIEW_REQUIRED", "Low extraction confidence (50%)"),
-        (None, 0.9, "REVIEW_REQUIRED", "Missing value — cannot compute variance"),
+        (None, 0.9, "REVIEW_REQUIRED", "Approved value is zero; percentage deviation is not applicable"),
     ]
     
     for i, (variance_pct, confidence, expected_decision, expected_reason) in enumerate(test_cases):
@@ -62,7 +62,7 @@ def test_decision_classification():
         assert decision == expected_decision, f"Decision mismatch: {decision} != {expected_decision}"
         if expected_reason:
             assert expected_reason in reason, f"Reason mismatch: {reason} doesn't contain {expected_reason}"
-        print("  ✓ PASS")
+        print("  PASS")
         print()
 
 def test_edge_cases():
@@ -72,19 +72,24 @@ def test_edge_cases():
     variance, variance_pct = calculate_variance(0.0, 100.0)
     print(f"Approved=0, Actual=100 -> variance={variance}, pct={variance_pct}")
     assert variance == 100.0, "Variance should be 100"
-    assert variance_pct == 100.0, "Percentage should be 100%"
-    print("✓ Division by zero handled correctly")
+    assert variance_pct is None, "Percentage should be NA/None"
+    print("PASS Division by zero handled correctly")
+
+    decision, reason = classify_decision(None, 0.9, missing_values=True)
+    assert decision == "INCOMPLETE_DATA"
+    assert "Missing approved" in reason
+    print("PASS Missing values classified as incomplete data")
     
     # Test rounding
     variance, variance_pct = calculate_variance(100.0, 115.555555)
     print(f"Rounding test: variance={variance}, pct={variance_pct}")
     assert variance == 15.56, "Variance should be rounded to 2 decimals"
     assert variance_pct == 15.56, "Percentage should be rounded to 2 decimals"
-    print("✓ Rounding works correctly")
+    print("PASS Rounding works correctly")
     print()
 
 if __name__ == "__main__":
     test_variance_calculations()
     test_decision_classification()
     test_edge_cases()
-    print("All variance engine tests passed! ✓")
+    print("All variance engine tests passed!")

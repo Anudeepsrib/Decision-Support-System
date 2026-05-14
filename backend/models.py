@@ -14,7 +14,7 @@ Tables:
 import uuid
 from datetime import datetime
 from sqlalchemy import (
-    Column, String, Float, Integer, Boolean, DateTime, Text, JSON,
+    Column, String, Float, Integer, Boolean, DateTime, Text,
     ForeignKey, Index
 )
 from sqlalchemy.orm import relationship
@@ -163,7 +163,12 @@ class Comparison(Base):
     financial_year = Column(String(10), nullable=False, default="2024-25")
     
     # Line item
+    canonical_id = Column(String(100), nullable=True)
     canonical_name = Column(String(200), nullable=False)
+    display_name = Column(String(200), nullable=True)
+    sbu = Column(String(20), nullable=True)
+    unit = Column(String(20), default="Rs. Cr.")
+    section = Column(String(50), nullable=True)
     cost_head = Column(String(50), nullable=True)
     
     # Three-way values
@@ -176,7 +181,7 @@ class Comparison(Base):
     variance_percent = Column(Float, nullable=True)   # (actual - approved) / approved * 100
     
     # Classification
-    decision_class = Column(String(30), default="PENDING")  # AI_AUTO | REVIEW_REQUIRED | PENDING
+    decision_class = Column(String(30), default="PENDING")  # ACCEPTABLE_VARIANCE | REVIEW_REQUIRED | INCOMPLETE_DATA
     flag_reason = Column(String(200), nullable=True)
     
     # Provenance
@@ -217,7 +222,7 @@ class Review(Base):
     # Edited values (if action == "edit")
     edited_value = Column(Float, nullable=True)
     
-    # AI draft note
+    # Deterministic draft note; column name retained for compatibility.
     ai_explanation = Column(Text, nullable=True)
     
     reviewed_at = Column(DateTime, default=datetime.utcnow)

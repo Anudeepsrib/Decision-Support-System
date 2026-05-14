@@ -44,7 +44,7 @@ def test_extraction():
         med_conf = sum(1 for r in extracted if 0.6 <= r.confidence < 0.8)
         low_conf = sum(1 for r in extracted if r.confidence < 0.6)
         
-        print(f"\nConfidence distribution:")
+        print("\nConfidence distribution:")
         print(f"  High (>=0.8): {high_conf}")
         print(f"  Medium (0.6-0.8): {med_conf}")
         print(f"  Low (<0.6): {low_conf}")
