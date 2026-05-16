@@ -101,6 +101,11 @@ h3 {
     margin: 0;
 }
 
+.section-page-break {
+    break-before: page;
+    page-break-before: always;
+}
+
 table {
     border-collapse: collapse;
     width: 100%;

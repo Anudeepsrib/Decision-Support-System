@@ -34,7 +34,7 @@ except ImportError:  # Support direct imports from the backend directory.
 
 
 ARR_ORDER_DATE = "25.06.2022"
-FULL_ORDER_TARGET_PAGES = 237
+MAX_MVP_REPORT_PAGES = 60
 
 _REGISTRY_ORDER = {item.canonical_id: index for index, item in enumerate(REGISTRY_BY_ID.values(), 1)}
 
@@ -52,6 +52,11 @@ _BANNED_REPORT_PATTERNS = (
     r"\bsource_page\b",
     r"\bconfidence\b",
     r"\bdocument_type\b",
+    r"\bDocuments\s+considered\s+-\s+Part\b",
+    r"\bViews\s+of\s+the\s+Commission\s+-\s+Part\b",
+    r"\bChapter\s+decision\s+-\s+Part\b",
+    r"\bStakeholder\s+comments\s+-\s+Part\b",
+    r"\bProvisions\s+in\s+regulations\s+-\s+Part\b",
 )
 
 _SECTION_TOC_TITLES = {
@@ -78,8 +83,11 @@ SECTION_OWNERSHIP = {
         "DEPRECIATION_GENERATION",
         "ROE_GENERATION",
         "NON_TARIFF_INCOME_GENERATION",
+        "ARR_GENERATION",
         "NET_ARR_GENERATION",
+        "NET_ARR_GENERATION_TRANSFER_FALLBACK",
         "MASTER_TRUST_GENERATION",
+        "ADDITIONAL_CONTRIBUTION_MASTER_TRUST_GENERATION",
         "AMORTIZATION_GENERATION",
     },
     SECTION_SBU_T: {
@@ -92,8 +100,11 @@ SECTION_OWNERSHIP = {
         "DEPRECIATION_TRANSMISSION",
         "ROE_TRANSMISSION",
         "NON_TARIFF_INCOME_TRANSMISSION",
+        "ARR_TRANSMISSION",
         "NET_ARR_TRANSMISSION",
+        "NET_ARR_TRANSMISSION_TRANSFER_FALLBACK",
         "TRANSMISSION_AVAILABILITY",
+        "TRANSMISSION_AVAILABILITY_INCENTIVE",
         "TRANSMISSION_COMPENSATION",
         "MASTER_TRUST_TRANSMISSION",
         "AMORTIZATION_TRANSMISSION",
@@ -149,14 +160,35 @@ PRIMARY_SECTION_BY_CANONICAL_ID = {
     for canonical_id in canonical_ids
 }
 
-CHAPTER_PAGE_RANGES = {
-    "introduction": (3, 18),
-    SECTION_SBU_G: (19, 36),
-    SECTION_SBU_T: (37, 58),
-    SECTION_ENERGY: (59, 71),
-    SECTION_SBU_D: (72, 147),
-    SECTION_COMMON: (148, 196),
-    SECTION_CONSOLIDATED: (197, 200),
+CHAPTER_LENGTH_RULES = {
+    "introduction": {"min_pages": 3, "max_pages": 6},
+    SECTION_SBU_G: {"mapped_pages": (4, 8), "empty_pages": (1, 2)},
+    SECTION_SBU_T: {"mapped_pages": (4, 8), "empty_pages": (1, 2)},
+    SECTION_ENERGY: {"mapped_pages": (3, 6), "empty_pages": (1, 1)},
+    SECTION_SBU_D: {"mapped_pages": (8, 15), "empty_pages": (1, 2)},
+    SECTION_COMMON: {"mapped_pages": (3, 5), "empty_pages": (1, 1)},
+    SECTION_CONSOLIDATED: {"min_pages": 3, "max_pages": 6},
+}
+
+FALLBACK_CANONICAL_IDS = {
+    "NET_ARR_GENERATION_TRANSFER_FALLBACK",
+    "NET_ARR_TRANSMISSION_TRANSFER_FALLBACK",
+}
+
+CHAPTER_TARGET_IDS = {
+    SECTION_SBU_G: ("SBU_G_TRANSFER_COST", "SBU_G_GENERATION_SUMMARY"),
+    SECTION_SBU_T: ("SBU_T_TRANSFER_COST", "SBU_T_ARR_SUMMARY"),
+    SECTION_ENERGY: ("ENERGY_TD_LOSS_SUMMARY",),
+    SECTION_SBU_D: ("SBU_D_ARR_SUMMARY",),
+    SECTION_COMMON: (),
+}
+
+EXPECTED_COVERAGE_COUNTS = {
+    SECTION_SBU_G: 7,
+    SECTION_SBU_T: 6,
+    SECTION_ENERGY: 4,
+    SECTION_SBU_D: 6,
+    SECTION_COMMON: 3,
 }
 
 
@@ -222,6 +254,17 @@ def _row_from_comparison(index: int, comparison: Dict) -> Optional[Dict]:
         "deviation_percent": _as_float(comparison.get("variance_percent")),
         "status": comparison.get("decision_class") or "INCOMPLETE_DATA",
         "is_total": bool(comparison.get("is_total") or registry_item.is_total),
+        "source_type": (
+            "fallback_from_sbu_d_summary"
+            if canonical_id in FALLBACK_CANONICAL_IDS
+            else "chapter_table"
+        ),
+        "approved_source_page": comparison.get("approved_source_page"),
+        "actual_source_page": comparison.get("actual_source_page"),
+        "claimed_source_page": comparison.get("claimed_source_page"),
+        "approved_source_table": comparison.get("approved_source_table"),
+        "actual_source_table": comparison.get("actual_source_table"),
+        "claimed_source_table": comparison.get("claimed_source_table"),
     }
 
 
@@ -276,6 +319,62 @@ def _sort_rows(rows: List[Dict]) -> None:
         row["no"] = index
 
 
+def _chapter_mode(rows: List[Dict]) -> str:
+    if not rows:
+        return "missing"
+    if any(row.get("canonical_id") not in FALLBACK_CANONICAL_IDS for row in rows):
+        return "full"
+    return "fallback"
+
+
+def _report_rows_for_section(section_rows: List[Dict]) -> List[Dict]:
+    full_rows = [row for row in section_rows if row.get("canonical_id") not in FALLBACK_CANONICAL_IDS]
+    selected = full_rows or section_rows
+    _sort_rows(selected)
+    return selected
+
+
+def _source_pages_for_rows(rows: List[Dict]) -> List[int]:
+    pages = set()
+    for row in rows:
+        for key in ("approved_source_page", "actual_source_page", "claimed_source_page"):
+            value = row.get(key)
+            if isinstance(value, int):
+                pages.add(value)
+    return sorted(pages)
+
+
+def _coverage_entry(section: str, label: str, rows: List[Dict]) -> Dict:
+    mode = _chapter_mode(rows)
+    full_rows = [row for row in rows if row.get("canonical_id") not in FALLBACK_CANONICAL_IDS]
+    fallback_rows = [row for row in rows if row.get("canonical_id") in FALLBACK_CANONICAL_IDS]
+    mapped_rows = full_rows if full_rows else fallback_rows
+    expected_count = EXPECTED_COVERAGE_COUNTS.get(section, 1)
+    pages = _source_pages_for_rows(mapped_rows)
+    return {
+        "chapter": label,
+        "section": section,
+        "status": {"full": "Full", "fallback": "Fallback", "missing": "Missing"}[mode],
+        "source": {
+            "full": "chapter_table",
+            "fallback": "fallback_from_sbu_d_summary",
+            "missing": "missing",
+        }[mode],
+        "target_table_found": bool(full_rows),
+        "source_page": pages[0] if pages else None,
+        "source_pages": pages,
+        "rows_mapped": len(mapped_rows),
+        "unmapped_rows": max(expected_count - len(mapped_rows), 0),
+        "fallback_used": bool(fallback_rows and not full_rows),
+        "attempted_targets": list(CHAPTER_TARGET_IDS.get(section, ())),
+        "failed_extraction_reason": (
+            None
+            if full_rows
+            else "No mapped chapter target table rows were available in the comparison dataset."
+        ),
+    }
+
+
 def _find_row(rows: List[Dict], canonical_ids: Iterable[str]) -> Optional[Dict]:
     wanted = set(canonical_ids)
     return next((row for row in rows if row.get("canonical_id") in wanted), None)
@@ -284,9 +383,9 @@ def _find_row(rows: List[Dict], canonical_ids: Iterable[str]) -> Optional[Dict]:
 def _line_item_text(row: Optional[Dict], heading: str) -> str:
     if row is None:
         return (
-            f"The Commission records that no mapped canonical value is available under {heading} "
-            "in the current extraction set. The item may be examined separately if supporting "
-            "details are placed on record."
+            f"The current extracted canonical dataset does not contain a mapped financial value "
+            f"under {heading}. The item may be examined separately if supporting details are "
+            "placed on record."
         )
 
     return (
@@ -493,7 +592,7 @@ def _make_issue_block(
         )
     else:
         petition_claim = (
-            "No mapped canonical value is available for this issue in the extracted canonical set."
+            "The current extracted canonical dataset does not contain a mapped value for this issue."
         )
         approved_position = (
             "The item has therefore not been populated with an approved or actual value in this draft."
@@ -594,7 +693,7 @@ def _make_order_chapter(
                 "title": "Data not available in extracted canonical set",
                 "chapter": base_chapter["sbu_name"],
                 "items": [],
-                "petition_claim": "No mapped canonical row is available for this chapter.",
+                "petition_claim": "The current extracted canonical dataset has no mapped financial row for this chapter.",
                 "approved_position": "The approved and actual values are therefore not populated in this draft.",
                 "deviation_summary": "The chapter is retained to preserve the order structure.",
                 "analysis": "The item may be populated when the relevant values are mapped from uploaded documents.",
@@ -602,14 +701,13 @@ def _make_order_chapter(
                 "paragraphs": [
                     _numbered(
                         f"{paragraph_prefix}.3",
-                        "No mapped canonical row is available for this chapter in the current extraction set.",
+                        "The current extracted canonical dataset has no mapped financial row for this chapter.",
                     )
                 ],
                 "table_rows": [],
             },
         )
 
-    start_page, end_page = CHAPTER_PAGE_RANGES[key]
     return {
         "key": key,
         "chapter_no": base_chapter["chapter_no"],
@@ -631,12 +729,11 @@ def _make_order_chapter(
             "values. Final approval, disallowance or modification shall be subject to verification "
             "of records and decision by authorized officers."
         ),
-        "page_range": {"start": start_page, "end": end_page},
+        "page_range": None,
     }
 
 
 def _make_introduction_order_chapter(base_chapter: Dict, summary_rows: List[Dict], financial_year: str) -> Dict:
-    start_page, end_page = CHAPTER_PAGE_RANGES["introduction"]
     return {
         "key": "introduction",
         "chapter_no": base_chapter["chapter_no"],
@@ -688,7 +785,7 @@ def _make_introduction_order_chapter(base_chapter: Dict, summary_rows: List[Dict
         "chapter_decision": (
             "The Commission after examining the petition and available details has arranged the truing up of accounts in the ensuing chapters."
         ),
-        "page_range": {"start": start_page, "end": end_page},
+        "page_range": None,
     }
 
 def _make_intro_chapter(financial_year: str, petition_rows: List[Dict], summary_rows: List[Dict]) -> Dict:
@@ -702,6 +799,7 @@ def _make_intro_chapter(financial_year: str, petition_rows: List[Dict], summary_
         "rows": petition_rows,
         "summary_rows": summary_rows,
         "unit_label": "Rs. Cr.",
+        "page_estimate": 4,
         "sections": [
             _make_section(
                 "Background",
@@ -717,13 +815,21 @@ def _make_intro_chapter(financial_year: str, petition_rows: List[Dict], summary_
                             "applicable tariff framework."
                         ),
                     ),
+                    _numbered(
+                        "1.2",
+                        (
+                            "The petition has been examined with reference to the uploaded ARR "
+                            "Order, the uploaded Truing-Up Petition and the canonical comparison "
+                            "dataset prepared by the deterministic extraction and mapping pipeline."
+                        ),
+                    ),
                 ],
             ),
             _make_section(
                 "Statutory provisions",
                 [
                     _numbered(
-                        "1.2",
+                        "1.3",
                         (
                             "Section 61 of the Electricity Act, 2003 confers power on the "
                             "Electricity Regulatory Commissions to specify the terms and "
@@ -732,74 +838,70 @@ def _make_intro_chapter(financial_year: str, petition_rows: List[Dict], summary_
                             "determination of tariff."
                         ),
                     ),
-                ],
-            ),
-            _make_section(
-                "MYT framework provisions",
-                [
-                    _numbered(
-                        "1.3",
-                        (
-                            "The Commission has notified the KSERC (Terms and Conditions for "
-                            "Determination of Tariff) Regulations, 2021 for the MYT control "
-                            "period from 2022-23 to 2026-27. The truing up is examined vis-a-vis "
-                            "the audited accounts, the ARR&ERC Order dated 25.06.2022 and the "
-                            "relevant provisions of the Regulations."
-                        ),
-                    ),
                     _numbered(
                         "1.4",
                         (
-                            "As per the Second Transfer Scheme, the activities of KSEB Ltd are "
-                            "carried out through Strategic Business Units for generation, "
-                            "transmission and distribution. The SBU-wise details extracted from "
-                            "the uploaded documents have therefore been grouped chapter-wise."
-                        ),
-                    ),
-                    _numbered(
-                        "1.5",
-                        (
-                            "The documents considered for this draft comprise the uploaded ARR "
-                            "Order and the uploaded Truing-Up Petition. The comparison is "
-                            "restricted to canonical financial line items mapped by the "
-                            "deterministic registry."
+                            "The KSERC (Terms and Conditions for Determination of Tariff) "
+                            "Regulations, 2021 provide the regulatory basis for examining ARR, "
+                            "ERC, controllable and uncontrollable factors and truing up for the "
+                            "MYT control period."
                         ),
                     ),
                 ],
             ),
             _make_section(
-                "Summary of petition",
+                "MYT framework",
+                [
+                    _numbered(
+                        "1.5",
+                        (
+                            "The MYT framework provides for truing up of approved values with "
+                            "reference to audited or submitted actuals, prudence check, applicable "
+                            "regulatory norms and the ARR&ERC Order dated 25.06.2022."
+                        ),
+                    ),
+                ],
+            ),
+            _make_section(
+                "Documents considered",
                 [
                     _numbered(
                         "1.6",
                         (
-                            f"The summary of ARR, ERC and Revenue gap claimed by KSEB Ltd for "
-                            f"True up for the year {financial_year} is given below."
+                            "The draft has considered the uploaded ARR Order, the uploaded "
+                            "Truing-Up Petition and the canonical comparison dataset generated "
+                            "from mapped financial line items. Extraction metadata, raw row labels "
+                            "and tariff-slab records are not reproduced in this report."
                         ),
                     ),
                 ],
-                table="primary",
             ),
             _make_section(
-                "Public hearing and documents considered",
+                "Scope of draft",
                 [
                     _numbered(
                         "1.7",
                         (
-                            "Public hearing details, stakeholder submissions and additional "
-                            "information furnished by KSEB Ltd may be incorporated after "
-                            "verification of the records available with the Commission."
-                        ),
-                    ),
-                    _numbered(
-                        "1.8",
-                        (
-                            "The Commission after examining the petition and the available "
-                            "details has arranged the truing up of accounts in the ensuing "
-                            "chapters for internal review."
+                            "This draft is generated for internal review as decision-support "
+                            "material. It records deterministic comparison outputs and chapter-wise "
+                            "observations without substituting the statutory review to be carried "
+                            "out by authorized officers."
                         ),
                     ),
                 ],
+            ),
+            _make_section(
+                "Summary table",
+                [
+                    _numbered(
+                        "1.8",
+                        (
+                            f"The summary of mapped ARR, ERC and revenue-gap positions available "
+                            f"for True up for the year {financial_year} is given below."
+                        ),
+                    ),
+                ],
+                table="primary",
             ),
         ],
     }
@@ -817,6 +919,158 @@ def _make_sbu_chapter(
     line_items: List[tuple[str, tuple[str, ...]]],
 ) -> Dict:
     prefix = str(chapter_index)
+    source_mode = _chapter_mode(rows)
+    section_key = {
+        "SBU-G": SECTION_SBU_G,
+        "SBU-T": SECTION_SBU_T,
+        "Energy sales and T&D loss": SECTION_ENERGY,
+        "SBU-D": SECTION_SBU_D,
+        "Common expenses": SECTION_COMMON,
+    }.get(sbu_name)
+    attempted_targets = ", ".join(CHAPTER_TARGET_IDS.get(section_key or "", ()))
+
+    if source_mode == "fallback":
+        sections = [
+            _make_section(
+                "Introduction",
+                [
+                    _numbered(
+                        f"{prefix}.1",
+                        (
+                            f"The Commission has examined the available transfer-cost linkage for "
+                            f"{sbu_name}. A detailed chapter table was not available in the mapped "
+                            "extraction set."
+                        ),
+                    ),
+                    _numbered(
+                        f"{prefix}.2",
+                        (
+                            f"The value shown below is a deterministic fallback from the SBU-D "
+                            "ARR summary row and is used only to avoid leaving the transfer-cost "
+                            "position blank in this draft."
+                        ),
+                    ),
+                ],
+                table="primary",
+            ),
+            _make_section(
+                "Officer review note",
+                [
+                    _numbered(
+                        f"{prefix}.3",
+                        (
+                            f"Detailed {sbu_name} table extraction should be verified against the "
+                            "petition or ARR order before any final regulatory decision is recorded."
+                        ),
+                    ),
+                    _numbered(
+                        f"{prefix}.4",
+                        (
+                            "The fallback row is marked as source type fallback_from_sbu_d_summary "
+                            "and should be replaced by a chapter table row when the corresponding "
+                            "target table is available."
+                        ),
+                    ),
+                ],
+            ),
+        ]
+        return {
+            "chapter_no": chapter_no,
+            "chapter_index": chapter_index,
+            "title": title,
+            "toc_title": toc_title,
+            "sbu_name": sbu_name,
+            "table_no": table_no,
+            "table_caption": f"Fallback transfer-cost value for {sbu_name}",
+            "rows": rows,
+            "status_rows": [],
+            "summary": _section_summary(rows),
+            "unit_label": "Rs. Cr." if sbu_name != "Energy sales and T&D loss" else "MU / %",
+            "sections": sections,
+            "is_empty_chapter": False,
+            "source": "fallback_from_sbu_d_summary",
+            "coverage_mode": "fallback",
+            "attempted_targets": list(CHAPTER_TARGET_IDS.get(section_key or rows[0].get("section"), ())),
+            "failed_extraction_reason": "Detailed chapter target table rows were not present in the mapped comparison dataset.",
+            "page_estimate": 2,
+        }
+
+    if not rows:
+        chapter_kind = {
+            "SBU-G": "generation business of KSEB Ltd",
+            "SBU-T": "transmission business of KSEB Ltd",
+            "Energy sales and T&D loss": "energy sales and T&D loss parameters",
+            "Common expenses": "common expenses of KSEB Ltd",
+        }.get(sbu_name, sbu_name)
+        review_heads = {
+            "SBU-G": (
+                "own generation, auxiliary consumption, fuel cost, O&M expenses, "
+                "depreciation, interest and finance charges, return on equity and "
+                "non-tariff income"
+            ),
+            "SBU-T": (
+                "transmission O&M expenses, depreciation, interest and finance charges, "
+                "return on equity, transmission availability and non-tariff income"
+            ),
+            "Energy sales and T&D loss": (
+                "energy sales, input energy, transmission loss, distribution loss and "
+                "overall T&D loss"
+            ),
+            "Common expenses": (
+                "employee cost, administration and general expenses, repair and "
+                "maintenance expenses, interest, depreciation and non-tariff income"
+            ),
+        }.get(sbu_name, "mapped financial line items")
+        status_rows = [
+            {
+                "no": 1,
+                "particulars": f"{sbu_name} financial values",
+                "status": "Missing – target tables searched; no mapped financial rows available in current extraction",
+            },
+            {
+                "no": 2,
+                "particulars": "Attempted target tables",
+                "status": attempted_targets or "Target tables for this chapter were searched; values pending further extraction/mapping.",
+            }
+        ]
+        sections = [
+            _make_section(
+                "Mapped value status",
+                [
+                    _numbered(
+                        f"{prefix}.1",
+                        (
+                            f"The target tables for this chapter were searched in the uploaded documents. "
+                            f"No mapped canonical financial rows were available in the current extraction set. "
+                            f"The chapter is retained in this draft to preserve the standard KSERC truing-up order structure. "
+                            f"Values may be populated after expanding target table extraction and officer review."
+                        ),
+                    ),
+                ],
+                table="status",
+            ),
+        ]
+        return {
+            "chapter_no": chapter_no,
+            "chapter_index": chapter_index,
+            "title": title,
+            "toc_title": toc_title,
+            "sbu_name": sbu_name,
+            "table_no": table_no,
+            "table_caption": f"Status of mapped values for {sbu_name}",
+            "rows": [],
+            "status_rows": status_rows,
+            "summary": _section_summary(rows),
+            "unit_label": "Rs. Cr." if sbu_name != "Energy sales and T&D loss" else "MU / %",
+            "sections": sections,
+            "is_empty_chapter": True,
+            "source": "missing",
+            "coverage_mode": "missing",
+            "attempted_targets": list(CHAPTER_TARGET_IDS.get(section_key or "", ())),
+            "failed_extraction_reason": "No mapped chapter target table rows were available in the comparison dataset.",
+            "page_estimate": 1,
+        }
+
     sections = [
         _make_section(
             "Introduction",
@@ -825,57 +1079,83 @@ def _make_sbu_chapter(
                     f"{prefix}.1",
                     (
                         f"The Commission has examined the ARR of {sbu_name} claimed by KSEB Ltd "
-                        "vis-a-vis the audited accounts, ARR&ERC Order dated 25.06.2022, KSERC "
-                        "Tariff Regulations, 2021, and other relevant details."
+                        "with reference to the ARR&ERC Order dated 25.06.2022, the uploaded "
+                        "Truing-Up Petition and the mapped canonical comparison rows."
                     ),
                 ),
                 _numbered(
                     f"{prefix}.2",
                     (
-                        f"The summary of ARR and ERC of {sbu_name} for the year under truing up "
-                        "as claimed by KSEB Ltd is given below."
+                        f"The mapped summary of {sbu_name} for the year under truing up is given "
+                        "below. The table excludes extraction audit fields and consumer tariff "
+                        "slab records."
                     ),
                 ),
             ],
             table="primary",
         ),
-        _make_section(
-            f"Expenses of {sbu_name}",
-            [
-                _numbered(
-                    f"{prefix}.3",
-                    (
-                        f"The expenses of {sbu_name} have been grouped under the principal heads "
-                        "available in the canonical comparison. The analysis below is limited to "
-                        "mapped values extracted from the uploaded documents."
-                    ),
-                ),
-            ],
-        ),
-        _make_section(
-            "Analysis and decision of the Commission",
-            [
-                _numbered(
-                    f"{prefix}.4",
-                    (
-                        "The Commission has examined the claim under these heads. For the purpose "
-                        "of this draft report, each item is placed under the stated review "
-                        "category based on extracted values and the variance threshold."
-                    ),
-                ),
-            ],
-        ),
     ]
 
-    paragraph_no = 5
+    paragraph_no = 3
     for heading, canonical_ids in line_items:
+        issue_rows = _rows_for_ids(rows, canonical_ids)
+        if not issue_rows:
+            continue
+        summary = _issue_value_summary(issue_rows)
+        primary = issue_rows[0]
+        unit = primary.get("unit") or ("MU / %" if sbu_name == "Energy sales and T&D loss" else "Rs. Cr.")
+        status = _status_phrase(primary.get("status"))
         sections.append(
             _make_section(
                 heading,
-                [_numbered(f"{prefix}.{paragraph_no}", _line_item_text(_find_row(rows, canonical_ids), heading))],
+                [
+                    _numbered(
+                        f"{prefix}.{paragraph_no}",
+                        (
+                            f"KSEB Ltd has placed {_fmt_amount(summary['claimed'], unit)} under "
+                            f"{heading} for {sbu_name}, against the approved amount of "
+                            f"{_fmt_amount(summary['approved'], unit)} in the MYT Order dated "
+                            f"{ARR_ORDER_DATE}."
+                        ),
+                    ),
+                    _numbered(
+                        f"{prefix}.{paragraph_no + 1}",
+                        (
+                            f"The actual value available in the extracted petition dataset is "
+                            f"{_fmt_amount(summary['actual'], unit)}. The deviation from approval "
+                            f"works out to {_fmt_amount(summary['deviation'], unit)} and the "
+                            f"{heading} item is classified as {status} in this draft."
+                        ),
+                    ),
+                    _numbered(
+                        f"{prefix}.{paragraph_no + 2}",
+                        (
+                            f"The mapped {heading} value for {sbu_name} is retained for officer "
+                            "review and may be verified with the supporting schedules, audited "
+                            "accounts and applicable provisions of the KSERC Tariff Regulations, "
+                            "2021."
+                        ),
+                    ),
+                ],
             )
         )
-        paragraph_no += 1
+        paragraph_no += 3
+
+    sections.append(
+        _make_section(
+            "Chapter observations",
+            [
+                _numbered(
+                    f"{prefix}.{paragraph_no}",
+                    (
+                        f"The chapter records only those {sbu_name} heads for which mapped "
+                        "canonical comparison rows are available. Any additional claim may be "
+                        "taken up after expanding the deterministic mapping coverage."
+                    ),
+                ),
+            ],
+        )
+    )
 
     return {
         "chapter_no": chapter_no,
@@ -889,25 +1169,254 @@ def _make_sbu_chapter(
         "summary": _section_summary(rows),
         "unit_label": "Rs. Cr." if sbu_name != "Energy sales and T&D loss" else "MU / %",
         "sections": sections,
+        "is_empty_chapter": False,
+        "source": "chapter_table",
+        "coverage_mode": "full",
+        "attempted_targets": list(CHAPTER_TARGET_IDS.get(section_key or rows[0].get("section"), ())),
+        "failed_extraction_reason": None,
+        "page_estimate": min(8, max(2, 1 + len(sections) // 2)),
+    }
+
+
+def _issue_status(issue_rows: List[Dict]) -> str:
+    statuses = {row.get("status") for row in issue_rows}
+    if "REVIEW_REQUIRED" in statuses:
+        return "review required"
+    if "INCOMPLETE_DATA" in statuses:
+        return "incomplete data"
+    if "ACCEPTABLE_VARIANCE" in statuses:
+        return "acceptable variance"
+    return _status_phrase(issue_rows[0].get("status")) if issue_rows else "data not available"
+
+
+def _make_sbu_d_issue_section(
+    heading: str,
+    canonical_ids: tuple[str, ...],
+    rows: List[Dict],
+    financial_year: str,
+    paragraph_prefix: str,
+    paragraph_no: int,
+    verification_note: str,
+) -> Optional[Dict]:
+    issue_rows = _rows_for_ids(rows, canonical_ids)
+    if not issue_rows:
+        return None
+
+    summary = _issue_value_summary(issue_rows)
+    unit = issue_rows[0].get("unit") or "Rs. Cr."
+    status = _issue_status(issue_rows)
+    paragraphs = [
+        _numbered(
+            f"{paragraph_prefix}.{paragraph_no}",
+            (
+                f"KSEB Ltd has sought {_fmt_amount(summary['claimed'], unit)} towards {heading} "
+                f"for FY {financial_year}, against the approved amount of "
+                f"{_fmt_amount(summary['approved'], unit)} in the ARR&ERC Order dated "
+                f"{ARR_ORDER_DATE}. The actual value extracted from the petition is "
+                f"{_fmt_amount(summary['actual'], unit)}."
+            ),
+        ),
+        _numbered(
+            f"{paragraph_prefix}.{paragraph_no + 1}",
+            (
+                f"The deviation from approval works out to {_fmt_amount(summary['deviation'], unit)}. "
+                f"The {heading} item has been classified as {status} by the draft comparison "
+                "engine based on the configured variance threshold and available mapped values."
+            ),
+        ),
+        _numbered(
+            f"{paragraph_prefix}.{paragraph_no + 2}",
+            verification_note,
+        ),
+        _numbered(
+            f"{paragraph_prefix}.{paragraph_no + 3}",
+            (
+                f"For this deterministic draft, {heading} is retained for officer review under "
+                "the relevant provisions of the KSERC Tariff Regulations, 2021."
+            ),
+        ),
+    ]
+    section = _make_section(heading, paragraphs)
+    section["page_break_before"] = True
+    return section
+
+
+def _make_sbu_d_chapter(
+    financial_year: str,
+    rows: List[Dict],
+) -> Dict:
+    if not rows:
+        return _make_sbu_chapter(
+            5,
+            "CHAPTER-5",
+            "TRUING UP OF ACCOUNTS OF STRATEGIC BUSINESS UNIT DISTRIBUTION (SBU-D)",
+            _SECTION_TOC_TITLES[SECTION_SBU_D],
+            "SBU-D",
+            "Table 5.1",
+            "Status of mapped values for SBU-D",
+            rows,
+            [],
+        )
+
+    prefix = "5"
+    sections = [
+        _make_section(
+            "Introduction",
+            [
+                _numbered(
+                    "5.1",
+                    (
+                        "The distribution business of KSEB Ltd includes retail supply, power "
+                        "purchase, distribution operation, revenue realization and related "
+                        "financial claims. The SBU-D chapter is therefore treated as the primary "
+                        "substantive chapter in this deterministic draft where mapped values are "
+                        "available."
+                    ),
+                ),
+                _numbered(
+                    "5.2",
+                    (
+                        "The summary of mapped SBU-D values, including approved amount, actual "
+                        "amount, amount sought for truing up and deviation from approval, is "
+                        "given below."
+                    ),
+                ),
+            ],
+            table="primary",
+        )
+    ]
+
+    issue_specs = [
+        (
+            "Power Purchase Cost",
+            ("PURCHASE_OF_POWER",),
+            "Since power purchase cost is a material component of the distribution business, the claim may require verification with purchase schedules, audited accounts, source-wise power purchase statements and reconciliation submitted by KSEB Ltd.",
+        ),
+        (
+            "O&M Cost",
+            ("DISTRIBUTION_OM_COST", "OM_COST", "DISTRIBUTION_EMPLOYEE_COST", "DISTRIBUTION_A_G_EXPENSES", "DISTRIBUTION_R_M_EXPENSES"),
+            "The O&M claim may be checked with employee cost statements, repair and maintenance schedules, administration and general expense records and the allocation adopted in the petition.",
+        ),
+        (
+            "Interest and Finance Charges",
+            ("INTEREST_FINANCE_CHARGES",),
+            "The interest and finance charges may be verified with loan-wise schedules, capitalization details, finance cost ledgers and prudence norms applicable for the year.",
+        ),
+        (
+            "Depreciation",
+            ("DEPRECIATION",),
+            "The depreciation claim may be reconciled with the fixed asset register, capitalization during the year, depreciation rates and asset-wise schedules submitted by KSEB Ltd.",
+        ),
+        (
+            "Return on Equity",
+            ("ROE",),
+            "The return on equity may be examined with reference to admitted equity, regulatory treatment of equity base and the applicable return specified under the Tariff Regulations.",
+        ),
+        (
+            "Net Expenditure",
+            ("NET_EXPENDITURE", "TOTAL_INCOME"),
+            "The net expenditure position may be cross-checked with the SBU-D revenue requirement statement and the treatment of income, expenses and prior-period items.",
+        ),
+        (
+            "Revenue Gap / Surplus",
+            ("REVENUE_SURPLUS_GAP",),
+            "The revenue gap or surplus may be verified after reconciling revenue from tariff, non-tariff income, expenditure admitted under each head and any past adjustment considered by the Commission.",
+        ),
+    ]
+
+    paragraph_no = 3
+    for heading, canonical_ids, verification_note in issue_specs:
+        section = _make_sbu_d_issue_section(
+            heading,
+            canonical_ids,
+            rows,
+            financial_year,
+            prefix,
+            paragraph_no,
+            verification_note,
+        )
+        if section is None:
+            continue
+        sections.append(section)
+        paragraph_no += 4
+
+    observations = _make_section(
+        "Chapter observations",
+        [
+            _numbered(
+                f"{prefix}.{paragraph_no}",
+                (
+                    "The SBU-D values above are drawn only from mapped canonical comparison "
+                    "rows. The treatment of each item shall depend on officer review of "
+                    "supporting records, audited accounts, reconciliation statements and "
+                    "the applicable provisions of the KSERC Tariff Regulations, 2021."
+                ),
+            ),
+            _numbered(
+                f"{prefix}.{paragraph_no + 1}",
+                (
+                    "Items with material deviations or incomplete supporting linkage should "
+                    "be placed before authorized officers before the draft is converted into "
+                    "any regulatory decision."
+                ),
+            ),
+        ],
+    )
+    observations["page_break_before"] = True
+    sections.append(observations)
+
+    return {
+        "chapter_no": "CHAPTER-5",
+        "chapter_index": 5,
+        "title": "TRUING UP OF ACCOUNTS OF STRATEGIC BUSINESS UNIT DISTRIBUTION (SBU-D)",
+        "toc_title": _SECTION_TOC_TITLES[SECTION_SBU_D],
+        "sbu_name": "SBU-D",
+        "table_no": "Table 5.1",
+        "table_caption": "Summary of ARR, ERC and Revenue gap claimed for SBU-D",
+        "rows": rows,
+        "summary": _section_summary(rows),
+        "unit_label": "Rs. Cr.",
+        "sections": sections,
+        "is_empty_chapter": False,
+        "page_estimate": min(15, max(8, 2 + len(sections))),
     }
 
 
 def _make_consolidated_chapter(rows: List[Dict], summary: Dict, financial_year: str) -> Dict:
-    summary_rows = [
-        _summary_as_row(1, "Aggregate mapped ARR / expenditure items", summary),
+    section_labels = [
+        (SECTION_SBU_G, "SBU-G"),
+        (SECTION_SBU_T, "SBU-T"),
+        (SECTION_ENERGY, "Energy/T&D"),
+        (SECTION_SBU_D, "SBU-D"),
+        (SECTION_COMMON, "Common expenses"),
     ]
+    by_section: Dict[str, List[Dict]] = {}
+    for row in rows:
+        by_section.setdefault(row.get("section"), []).append(row)
+
+    summary_rows = []
+    missing_chapters = 0
+    for section, label in section_labels:
+        section_rows = by_section.get(section, [])
+        if section_rows:
+            summary_rows.append(_summary_as_row(len(summary_rows) + 1, label, _section_summary(section_rows)))
+        else:
+            missing_chapters += 1
+    summary_rows.append(_summary_as_row(len(summary_rows) + 1, "Consolidated position", summary))
+
     return {
         "chapter_no": "CHAPTER-7",
         "chapter_index": 7,
-        "title": "CONSOLIDATED TRUING UP",
+        "title": "CONSOLIDATED TRUING UP OF ACCOUNTS",
         "toc_title": _SECTION_TOC_TITLES[SECTION_CONSOLIDATED] + f" for the year {financial_year}",
         "sbu_name": "Consolidated Truing up",
         "table_no": "Table 7.1",
         "table_caption": "Consolidated truing-up summary",
         "rows": summary_rows,
-        "all_rows": rows,
         "summary": summary,
         "unit_label": "Rs. Cr.",
+        "page_estimate": 4,
+        "missing_chapters": missing_chapters,
         "sections": [
             _make_section(
                 "Consolidated Truing up",
@@ -915,29 +1424,37 @@ def _make_consolidated_chapter(rows: List[Dict], summary: Dict, financial_year: 
                     _numbered(
                         "7.1",
                         (
-                            "The consolidated truing-up position based on mapped canonical line "
-                            "items is summarized below."
+                            "The consolidated position has been prepared based on the canonical "
+                            "comparison rows available after extraction and filtering."
+                        ),
+                    ),
+                    _numbered(
+                        "7.2",
+                        (
+                            "The consolidated summary of approved values, actuals, amount sought "
+                            "for truing up and deviation is given below."
                         ),
                     ),
                 ],
                 table="primary",
             ),
             _make_section(
-                "Analysis and decision of the Commission",
+                "Draft review note",
                 [
-                    _numbered(
-                        "7.2",
-                        (
-                            "The consolidated summary is computed only from mapped canonical "
-                            "comparison rows and excludes tariff slabs, consumer category rows "
-                            "and extraction audit data."
-                        ),
-                    ),
                     _numbered(
                         "7.3",
                         (
-                            "Items marked for review or having incomplete mapped data shall be "
-                            "verified by authorized officers before any final order is issued."
+                            f"The draft includes {summary.get('total_items', 0)} mapped canonical "
+                            f"items. {missing_chapters} chapter(s) did not have mapped values in "
+                            "the current extracted dataset."
+                        ),
+                    ),
+                    _numbered(
+                        "7.4",
+                        (
+                            "The draft does not record final approval or disallowance. Items with "
+                            "incomplete mappings or material deviations shall be placed before "
+                            "authorized officers for review."
                         ),
                     ),
                 ],
@@ -955,22 +1472,29 @@ def _ordinal_day(day: int) -> str:
 
 
 def _toc_entries(chapters: Dict[str, Dict], financial_year: str) -> List[Dict]:
-    return [
-        {"sl_no": 1, "particulars": chapters["introduction"]["toc_title"], "pages": 3},
-        {"sl_no": 2, "particulars": chapters[SECTION_SBU_G]["toc_title"], "pages": 19},
-        {"sl_no": 3, "particulars": chapters[SECTION_SBU_T]["toc_title"], "pages": 37},
-        {"sl_no": 4, "particulars": chapters[SECTION_ENERGY]["toc_title"], "pages": 59},
-        {"sl_no": 5, "particulars": chapters[SECTION_SBU_D]["toc_title"], "pages": 72},
-        {"sl_no": 6, "particulars": chapters[SECTION_COMMON]["toc_title"], "pages": 148},
-        {
-            "sl_no": 7,
-            "particulars": (
-                f"Chapter-7. Consolidated Truing up of accounts of KSEB Ltd for the year {financial_year}"
-            ),
-            "pages": 197,
-        },
-        {"sl_no": 8, "particulars": "Annexures", "pages": 201},
+    sequence = [
+        "introduction",
+        SECTION_SBU_G,
+        SECTION_SBU_T,
+        SECTION_ENERGY,
+        SECTION_SBU_D,
+        SECTION_COMMON,
+        SECTION_CONSOLIDATED,
     ]
+    entries: List[Dict] = []
+    # Page numbers removed from TOC for MVP to avoid inaccurate estimates.
+    # The document is short; readers should refer to the actual flow.
+    for index, key in enumerate(sequence, 1):
+        chapter = chapters[key]
+        entries.append(
+            {
+                "sl_no": index,
+                "particulars": chapter["toc_title"],
+                "pages": "-",
+            }
+        )
+    entries.append({"sl_no": len(entries) + 1, "particulars": "Final Order", "pages": "-"})
+    return entries
 
 
 def build_report_context(
@@ -998,25 +1522,41 @@ def build_report_context(
     for section_rows in by_section.values():
         _sort_rows(section_rows)
 
-    sbu_g_rows = by_section.get(SECTION_SBU_G, [])
-    sbu_t_rows = by_section.get(SECTION_SBU_T, [])
-    energy_rows = by_section.get(SECTION_ENERGY, [])
-    sbu_d_rows = by_section.get(SECTION_SBU_D, [])
-    common_rows = by_section.get(SECTION_COMMON, [])
+    sbu_g_all_rows = by_section.get(SECTION_SBU_G, [])
+    sbu_t_all_rows = by_section.get(SECTION_SBU_T, [])
+    energy_all_rows = by_section.get(SECTION_ENERGY, [])
+    sbu_d_all_rows = by_section.get(SECTION_SBU_D, [])
+    common_all_rows = by_section.get(SECTION_COMMON, [])
 
-    all_amount_rows = [row for row in rows if row.get("unit") == "Rs. Cr." and not row.get("is_total")]
+    sbu_g_rows = _report_rows_for_section(sbu_g_all_rows)
+    sbu_t_rows = _report_rows_for_section(sbu_t_all_rows)
+    energy_rows = _report_rows_for_section(energy_all_rows)
+    sbu_d_rows = _report_rows_for_section(sbu_d_all_rows)
+    common_rows = _report_rows_for_section(common_all_rows)
+    report_rows = sbu_g_rows + sbu_t_rows + energy_rows + sbu_d_rows + common_rows
+    _sort_rows(report_rows)
+
+    extraction_coverage = [
+        _coverage_entry(SECTION_SBU_G, "SBU-G", sbu_g_all_rows),
+        _coverage_entry(SECTION_SBU_T, "SBU-T", sbu_t_all_rows),
+        _coverage_entry(SECTION_ENERGY, "Energy/T&D", energy_all_rows),
+        _coverage_entry(SECTION_SBU_D, "SBU-D", sbu_d_all_rows),
+        _coverage_entry(SECTION_COMMON, "Common expenses", common_all_rows),
+    ]
+
+    all_amount_rows = [row for row in report_rows if row.get("unit") == "Rs. Cr." and not row.get("is_total")]
     if not all_amount_rows:
-        all_amount_rows = [row for row in rows if row.get("unit") == "Rs. Cr."]
+        all_amount_rows = [row for row in report_rows if row.get("unit") == "Rs. Cr."]
 
     consolidated_summary = {
         "approved": _sum_rows(all_amount_rows, "arr_approved_value"),
         "actual": _sum_rows(all_amount_rows, "petition_actual_value"),
         "claimed": _sum_rows(all_amount_rows, "petition_claimed_value"),
         "deviation": _sum_rows(all_amount_rows, "deviation_value"),
-        "total_items": len(rows),
-        "review_required": sum(1 for row in rows if row.get("status") == "REVIEW_REQUIRED"),
-        "incomplete": sum(1 for row in rows if row.get("status") == "INCOMPLETE_DATA"),
-        "acceptable": sum(1 for row in rows if row.get("status") == "ACCEPTABLE_VARIANCE"),
+        "total_items": len(report_rows),
+        "review_required": sum(1 for row in report_rows if row.get("status") == "REVIEW_REQUIRED"),
+        "incomplete": sum(1 for row in report_rows if row.get("status") == "INCOMPLETE_DATA"),
+        "acceptable": sum(1 for row in report_rows if row.get("status") == "ACCEPTABLE_VARIANCE"),
     }
 
     high_level_summary_rows = [
@@ -1044,11 +1584,13 @@ def build_report_context(
             "KSEB Ltd.-Transfer Cost of SBU-G as per truing up petition",
             sbu_g_rows,
             [
+                ("Cost of generation", ("COST_OF_GENERATION",)),
                 ("O&M expenses", ("OM_EXPENSES_GENERATION",)),
                 ("Depreciation", ("DEPRECIATION_GENERATION",)),
                 ("Interest and finance charges", ("INTEREST_FINANCE_GENERATION",)),
+                ("Return on equity", ("ROE_GENERATION",)),
                 ("Non-tariff income", ("NON_TARIFF_INCOME_GENERATION",)),
-                ("Net ARR", ("NET_ARR_GENERATION",)),
+                ("Net ARR", ("ARR_GENERATION", "NET_ARR_GENERATION", "NET_ARR_GENERATION_TRANSFER_FALLBACK")),
             ],
         ),
         SECTION_SBU_T: _make_sbu_chapter(
@@ -1064,8 +1606,10 @@ def build_report_context(
                 ("O&M expenses", ("OM_EXPENSES_TRANSMISSION",)),
                 ("Depreciation", ("DEPRECIATION_TRANSMISSION",)),
                 ("Interest and finance charges", ("INTEREST_FINANCE_TRANSMISSION",)),
+                ("Return on equity", ("ROE_TRANSMISSION",)),
                 ("Non-tariff income", ("NON_TARIFF_INCOME_TRANSMISSION",)),
-                ("Net ARR", ("NET_ARR_TRANSMISSION",)),
+                ("Transmission availability / compensation", ("TRANSMISSION_COMPENSATION", "TRANSMISSION_AVAILABILITY_INCENTIVE")),
+                ("Net ARR", ("ARR_TRANSMISSION", "NET_ARR_TRANSMISSION", "NET_ARR_TRANSMISSION_TRANSFER_FALLBACK")),
             ],
         ),
         SECTION_ENERGY: _make_sbu_chapter(
@@ -1084,25 +1628,7 @@ def build_report_context(
                 ("T&D loss", ("T_D_LOSS",)),
             ],
         ),
-        SECTION_SBU_D: _make_sbu_chapter(
-            5,
-            "CHAPTER-5",
-            "TRUING UP OF ACCOUNTS OF STRATEGIC BUSINESS UNIT DISTRIBUTION (SBU-D)",
-            _SECTION_TOC_TITLES[SECTION_SBU_D],
-            "SBU-D",
-            "Table 5.1",
-            "Summary of ARR, ERC and Revenue gap claimed for SBU-D",
-            sbu_d_rows,
-            [
-                ("Purchase of power", ("PURCHASE_OF_POWER",)),
-                ("O&M expenses", ("OM_COST",)),
-                ("Depreciation", ("DEPRECIATION",)),
-                ("Interest and finance charges", ("INTEREST_FINANCE_CHARGES",)),
-                ("Non-tariff income", ("NON_TARIFF_INCOME",)),
-                ("Net ARR", ("NET_EXPENDITURE",)),
-                ("Revenue gap", ("REVENUE_SURPLUS_GAP",)),
-            ],
-        ),
+        SECTION_SBU_D: _make_sbu_d_chapter(financial_year, sbu_d_rows),
         SECTION_COMMON: _make_sbu_chapter(
             6,
             "CHAPTER-6",
@@ -1117,40 +1643,7 @@ def build_report_context(
             ],
         ),
     }
-    chapters[SECTION_CONSOLIDATED] = _make_consolidated_chapter(rows, consolidated_summary, financial_year)
-
-    order_chapters = {
-        "introduction": _make_introduction_order_chapter(
-            chapters["introduction"],
-            high_level_summary_rows,
-            financial_year,
-        ),
-        SECTION_SBU_G: _make_order_chapter(SECTION_SBU_G, chapters[SECTION_SBU_G], sbu_g_rows, financial_year),
-        SECTION_SBU_T: _make_order_chapter(SECTION_SBU_T, chapters[SECTION_SBU_T], sbu_t_rows, financial_year),
-        SECTION_ENERGY: _make_order_chapter(SECTION_ENERGY, chapters[SECTION_ENERGY], energy_rows, financial_year),
-        SECTION_SBU_D: _make_order_chapter(SECTION_SBU_D, chapters[SECTION_SBU_D], sbu_d_rows, financial_year),
-        SECTION_COMMON: _make_order_chapter(SECTION_COMMON, chapters[SECTION_COMMON], common_rows, financial_year),
-        SECTION_CONSOLIDATED: {
-            "key": SECTION_CONSOLIDATED,
-            "chapter_no": chapters[SECTION_CONSOLIDATED]["chapter_no"],
-            "chapter_index": 7,
-            "title": chapters[SECTION_CONSOLIDATED]["title"],
-            "toc_title": chapters[SECTION_CONSOLIDATED]["toc_title"],
-            "sbu_name": "Consolidated Truing up",
-            "intro": _chapter_intro(SECTION_CONSOLIDATED, financial_year),
-            "summary_table": chapters[SECTION_CONSOLIDATED]["rows"],
-            "summary_caption": "Table 7.1 Consolidated truing-up summary",
-            "unit_label": "Rs. Cr.",
-            "issue_blocks": [],
-            "stakeholder_placeholder": (
-                "The consolidated position is subject to verification of chapter-wise values and officer review."
-            ),
-            "chapter_decision": (
-                "The consolidated summary is computed only from mapped canonical rows and excludes tariff slabs, consumer category rows and extraction audit data."
-            ),
-            "page_range": {"start": 197, "end": 200},
-        },
-    }
+    chapters[SECTION_CONSOLIDATED] = _make_consolidated_chapter(report_rows, consolidated_summary, financial_year)
 
     chapter_sequence = [
         "introduction",
@@ -1188,16 +1681,39 @@ def build_report_context(
         },
         "toc_entries": _toc_entries(chapters, financial_year),
         "chapters": chapters,
-        "order_chapters": order_chapters,
+        "order_chapters": chapters,
         "chapter_sequence": chapter_sequence,
-        "comparison_tables": rows,
-        "target_page_count": FULL_ORDER_TARGET_PAGES,
+        "comparison_tables": report_rows,
+        "extraction_coverage": extraction_coverage,
+        "chapter_2_sbu_g": {
+            "source": chapters[SECTION_SBU_G].get("source"),
+            "summary_table": chapters[SECTION_SBU_G].get("rows") or [],
+            "issue_blocks": [
+                section for section in chapters[SECTION_SBU_G].get("sections", [])
+                if section.get("heading") not in {"Introduction", "Mapped value status"}
+            ],
+        },
+        "chapter_3_sbu_t": {
+            "source": chapters[SECTION_SBU_T].get("source"),
+            "summary_table": chapters[SECTION_SBU_T].get("rows") or [],
+            "issue_blocks": [
+                section for section in chapters[SECTION_SBU_T].get("sections", [])
+                if section.get("heading") not in {"Introduction", "Mapped value status"}
+            ],
+        },
+        "max_report_pages": MAX_MVP_REPORT_PAGES,
+        "estimated_page_count": 2 + sum(int(chapters[key].get("page_estimate") or 1) for key in chapter_sequence) + 1,
+        "chapter_length_rules": CHAPTER_LENGTH_RULES,
         "reviews": reviews or [],
         "final_summary": {
             **consolidated_summary,
-            "disclaimer": (
-                "This draft order is generated for internal review based on data extracted from uploaded documents. "
-                "Final approval, disallowance, or modification shall remain subject to review and decision by authorized officers."
-            ),
+            "paragraphs": [
+                "The Commission has considered the uploaded ARR Order, the uploaded Truing-Up Petition and the deterministic comparison generated by the KSERC Decision Support System.",
+                "The mapped financial items available in this draft are summarized in the SBU-wise chapters and the consolidated statement above. Items are classified as ACCEPTABLE_VARIANCE, REVIEW_REQUIRED or INCOMPLETE_DATA based on the 15% variance threshold and extraction confidence.",
+                "Items marked REVIEW_REQUIRED shall be placed before authorized officers along with supporting schedules and source traceability for detailed examination.",
+                "Chapters for which no mapped canonical rows were available (SBU-G, SBU-T, Energy/T&D and Common Expenses in the current run) are retained in the standard KSERC structure. These chapters shall be populated after expanding target table detection and officer validation of the petition.",
+                "This system-generated draft does not constitute final regulatory approval, disallowance or modification of any ARR component. All values remain subject to prudence check and Commission order.",
+                "The draft may be used as decision-support material for internal review and preparation of the final Truing-Up Order.",
+            ],
         },
     }

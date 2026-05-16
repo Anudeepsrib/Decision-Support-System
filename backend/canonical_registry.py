@@ -40,9 +40,11 @@ CANONICAL_REGISTRY: Tuple[CanonicalLineItem, ...] = (
         "Cost of Generation",
         "SBU-G",
         (
+            r"\bcost\s+of\s+generation\s+of\s+power\b",
             r"\bcost\s+of\s+generation\b",
             r"\bgeneration\s+cost\b",
             r"\bcost\s+of\s+own\s+generation\b",
+            r"\bgeneration\s+of\s+power\b",
         ),
         "Rs. Cr.",
         SECTION_SBU_G,
@@ -52,9 +54,14 @@ CANONICAL_REGISTRY: Tuple[CanonicalLineItem, ...] = (
         "O&M Expenses - Generation",
         "SBU-G",
         (
-            r"\bo\s*&?\s*m\s+expenses?.*\bgeneration\b",
+            r"\bo\s*(?:and|&)?\s*m\s+expenses?\b",
+            r"\bo\s*(?:and|&)?\s*m\s+expenses?\s+for\s+existing\s+stations\b",
+            r"\bo\s*(?:and|&)?\s*m\s+expenses?\s+for\s+new\s+stations\b",
+            r"\bo\s*(?:and|&)?\s*m\s+expenses?\s*[-:]\s*total\b",
+            r"\boperation\s+and\s+maintenance\s+expenses?\b",
+            r"\bo\s*(?:and|&)?\s*m\s+expenses?.*\bgeneration\b",
             r"\boperation\s+and\s+maintenance.*\bgeneration\b",
-            r"\bgeneration.*\bo\s*&?\s*m\b",
+            r"\bgeneration.*\bo\s*(?:and|&)?\s*m\b",
         ),
         "Rs. Cr.",
         SECTION_SBU_G,
@@ -64,6 +71,9 @@ CANONICAL_REGISTRY: Tuple[CanonicalLineItem, ...] = (
         "Interest and Finance Charges - Generation",
         "SBU-G",
         (
+            r"\binterest\s*&\s*finance\s+charges?\b",
+            r"\binterest\s+and\s+finance\s+charges?\b",
+            r"\binterest\s+and\s+finance\s+cost\b",
             r"\binterest.*finance.*\bgeneration\b",
             r"\bgeneration.*interest.*finance\b",
             r"\binterest\s+on\s+loan.*\bgeneration\b",
@@ -76,6 +86,7 @@ CANONICAL_REGISTRY: Tuple[CanonicalLineItem, ...] = (
         "Depreciation - Generation",
         "SBU-G",
         (
+            r"\bdepreciation\b",
             r"\bdepreciation.*\bgeneration\b",
             r"\bgeneration.*depreciation\b",
         ),
@@ -87,6 +98,8 @@ CANONICAL_REGISTRY: Tuple[CanonicalLineItem, ...] = (
         "Return on Equity - Generation",
         "SBU-G",
         (
+            r"\breturn\s+on\s+equity\b",
+            r"\broe\b",
             r"\breturn\s+on\s+equity.*\bgeneration\b",
             r"\broe.*\bgeneration\b",
             r"\bgeneration.*\broe\b",
@@ -99,6 +112,8 @@ CANONICAL_REGISTRY: Tuple[CanonicalLineItem, ...] = (
         "Non-Tariff Income - Generation",
         "SBU-G",
         (
+            r"\bless\s+non[-\s]?tariff\s+income\b",
+            r"\bnon[-\s]?tariff\s+income\b",
             r"\bnon[-\s]?tariff\s+income.*\bgeneration\b",
             r"\bgeneration.*non[-\s]?tariff\s+income\b",
         ),
@@ -106,13 +121,75 @@ CANONICAL_REGISTRY: Tuple[CanonicalLineItem, ...] = (
         SECTION_SBU_G,
     ),
     CanonicalLineItem(
+        "MASTER_TRUST_GENERATION",
+        "Repayment of Master Trust Bond - Generation",
+        "SBU-G",
+        (
+            r"\brepayment\s+of\s+master\s+trust\s+bond\b",
+            r"\brepayment\s+of\s+master\s+trust\b",
+        ),
+        "Rs. Cr.",
+        SECTION_SBU_G,
+    ),
+    CanonicalLineItem(
+        "ADDITIONAL_CONTRIBUTION_MASTER_TRUST_GENERATION",
+        "Additional Contribution to Master Trust - Generation",
+        "SBU-G",
+        (
+            r"\badditional\s+contribution\s+to\s+master\s+trust\b",
+            r"\badditional\s+contribution.*master\s+trust\b",
+        ),
+        "Rs. Cr.",
+        SECTION_SBU_G,
+    ),
+    CanonicalLineItem(
+        "AMORTIZATION_GENERATION",
+        "Amortisation of Intangible Assets - Generation",
+        "SBU-G",
+        (
+            r"\bamorti[sz]ation\s+of\s+intangible\s+assets?\b",
+            r"\bamorti[sz]ation.*intangible\s+assets?\b",
+        ),
+        "Rs. Cr.",
+        SECTION_SBU_G,
+    ),
+    CanonicalLineItem(
+        "ARR_GENERATION",
+        "ARR - Generation",
+        "SBU-G",
+        (
+            r"^arr$",
+            r"\baggregate\s+revenue\s+requirement\b",
+        ),
+        "Rs. Cr.",
+        SECTION_SBU_G,
+        is_total=True,
+    ),
+    CanonicalLineItem(
         "NET_ARR_GENERATION",
         "Net ARR - Generation",
         "SBU-G",
         (
+            r"\bnet\s+arr\b",
+            r"\bnet\s+arr\s+transferred\s+to\s+sbu[-\s]?d\b",
+            r"\btransfer\s+cost\s+to\s+sbu[-\s]?d\b",
+            r"\bnet\s+arr\s*\(?\s*transferred\s+to\s+sbu[-\s]?d\s*\)?\b",
             r"\bnet\s+arr.*\bgeneration\b",
             r"\bgeneration.*\bnet\s+arr\b",
             r"\btotal\s+arr.*\bsbu[-\s]?g\b",
+        ),
+        "Rs. Cr.",
+        SECTION_SBU_G,
+        is_total=True,
+    ),
+    CanonicalLineItem(
+        "NET_ARR_GENERATION_TRANSFER_FALLBACK",
+        "SBU-G Transfer Cost from SBU-D Summary",
+        "SBU-G",
+        (
+            r"\bcost\s+of\s+generation\s*\(?\s*sbu[-\s]?g\s*\)?\b",
+            r"\bcost\s+of\s+internal\s+generation\b",
+            r"\binternal\s+generation\s+transfer\s+cost\b",
         ),
         "Rs. Cr.",
         SECTION_SBU_G,
@@ -124,9 +201,12 @@ CANONICAL_REGISTRY: Tuple[CanonicalLineItem, ...] = (
         "O&M Expenses - Transmission",
         "SBU-T",
         (
-            r"\bo\s*&?\s*m\s+expenses?.*\btransmission\b",
+            r"\bo\s*(?:and|&)?\s*m\s+expenses?\b",
+            r"\boperation\s+and\s+maintenance\s+expenses?\b",
+            r"\bo\s*(?:and|&)?\s*m\s+expenses?\s*[-:]\s*total\b",
+            r"\bo\s*(?:and|&)?\s*m\s+expenses?.*\btransmission\b",
             r"\boperation\s+and\s+maintenance.*\btransmission\b",
-            r"\btransmission.*\bo\s*&?\s*m\b",
+            r"\btransmission.*\bo\s*(?:and|&)?\s*m\b",
         ),
         "Rs. Cr.",
         SECTION_SBU_T,
@@ -136,6 +216,8 @@ CANONICAL_REGISTRY: Tuple[CanonicalLineItem, ...] = (
         "Interest and Finance Charges - Transmission",
         "SBU-T",
         (
+            r"\binterest\s*&\s*finance\s+charges?\b",
+            r"\binterest\s+and\s+finance\s+charges?\b",
             r"\binterest.*finance.*\btransmission\b",
             r"\btransmission.*interest.*finance\b",
             r"\binterest\s+on\s+loan.*\btransmission\b",
@@ -148,6 +230,7 @@ CANONICAL_REGISTRY: Tuple[CanonicalLineItem, ...] = (
         "Depreciation - Transmission",
         "SBU-T",
         (
+            r"\bdepreciation\b",
             r"\bdepreciation.*\btransmission\b",
             r"\btransmission.*depreciation\b",
         ),
@@ -159,6 +242,8 @@ CANONICAL_REGISTRY: Tuple[CanonicalLineItem, ...] = (
         "Return on Equity - Transmission",
         "SBU-T",
         (
+            r"\breturn\s+on\s+equity\b",
+            r"\broe\b",
             r"\breturn\s+on\s+equity.*\btransmission\b",
             r"\broe.*\btransmission\b",
             r"\btransmission.*\broe\b",
@@ -171,6 +256,8 @@ CANONICAL_REGISTRY: Tuple[CanonicalLineItem, ...] = (
         "Non-Tariff Income - Transmission",
         "SBU-T",
         (
+            r"\bless\s+non[-\s]?tariff\s+income\b",
+            r"\bnon[-\s]?tariff\s+income\b",
             r"\bnon[-\s]?tariff\s+income.*\btransmission\b",
             r"\btransmission.*non[-\s]?tariff\s+income\b",
         ),
@@ -178,10 +265,27 @@ CANONICAL_REGISTRY: Tuple[CanonicalLineItem, ...] = (
         SECTION_SBU_T,
     ),
     CanonicalLineItem(
+        "ARR_TRANSMISSION",
+        "ARR - Transmission",
+        "SBU-T",
+        (
+            r"^arr$",
+            r"\baggregate\s+revenue\s+requirement\b",
+        ),
+        "Rs. Cr.",
+        SECTION_SBU_T,
+        is_total=True,
+    ),
+    CanonicalLineItem(
         "NET_ARR_TRANSMISSION",
         "Net ARR - Transmission",
         "SBU-T",
         (
+            r"\bnet\s+arr\b",
+            r"\btransmission\s+charges?\b",
+            r"\bintra[-\s]?state\s+transmission\s+charges?\b",
+            r"\bcost\s+of\s+intra[-\s]?state\s+transmission\b",
+            r"\bsbu[-\s]?t\s+transfer\s+cost\b",
             r"\bnet\s+arr.*\btransmission\b",
             r"\btransmission.*\bnet\s+arr\b",
             r"\btotal\s+arr.*\bsbu[-\s]?t\b",
@@ -189,6 +293,43 @@ CANONICAL_REGISTRY: Tuple[CanonicalLineItem, ...] = (
         "Rs. Cr.",
         SECTION_SBU_T,
         is_total=True,
+    ),
+    CanonicalLineItem(
+        "NET_ARR_TRANSMISSION_TRANSFER_FALLBACK",
+        "SBU-T Transmission Cost from SBU-D Summary",
+        "SBU-T",
+        (
+            r"\bcost\s+of\s+intra[-\s]?state\s+transmission\s*\(?\s*sbu[-\s]?t\s*\)?\b",
+            r"\bintra[-\s]?state\s+transmission\s+charges?\b",
+            r"\btransmission\s+charges?\b",
+        ),
+        "Rs. Cr.",
+        SECTION_SBU_T,
+        is_total=True,
+    ),
+    CanonicalLineItem(
+        "TRANSMISSION_COMPENSATION",
+        "Transmission Compensation",
+        "SBU-T",
+        (
+            r"\bedamon\s+kochi\s+compensation\b",
+            r"\bthrissur\s+pugalur\s+compensation\b",
+            r"\bcompensation\b",
+        ),
+        "Rs. Cr.",
+        SECTION_SBU_T,
+    ),
+    CanonicalLineItem(
+        "TRANSMISSION_AVAILABILITY_INCENTIVE",
+        "Transmission Availability Incentive",
+        "SBU-T",
+        (
+            r"\bincentive\s+for\s+excess\s+transmission\s+target\s+availability\b",
+            r"\btransmission\s+target\s+availability\b",
+            r"\bavailability\s+incentive\b",
+        ),
+        "Rs. Cr.",
+        SECTION_SBU_T,
     ),
     # Energy and loss
     CanonicalLineItem(
@@ -291,7 +432,7 @@ CANONICAL_REGISTRY: Tuple[CanonicalLineItem, ...] = (
         "O&M Cost",
         "SBU-D",
         (
-            r"\bo\s*&?\s*m\s+expenses?\b",
+            r"\bo\s*(?:and|&)?\s*m\s+expenses?\b",
             r"\boperation\s+and\s+maintenance\b",
             r"\bemployee\s+(cost|expenses?)\b",
             r"\bstaff\s+cost\b",
@@ -301,7 +442,7 @@ CANONICAL_REGISTRY: Tuple[CanonicalLineItem, ...] = (
             r"\badministration\s+and\s+general\b",
             r"\badmin.*general.*expenses?\b",
             r"\ba\s+(and\s+)?g\s+expenses?\b",
-            r"\btotal\s+o\s*&?\s*m\b",
+            r"\btotal\s+o\s*(?:and|&)?\s*m\b",
         ),
         "Rs. Cr.",
         SECTION_SBU_D,
@@ -511,20 +652,27 @@ _SBU_CONTEXT_PATTERNS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
 _CONTEXTUAL_RULES: Dict[str, Tuple[Tuple[str, str], ...]] = {
     "SBU-G": (
         (r"\b(cost\s+of\s+generation|generation\s+cost)\b", "COST_OF_GENERATION"),
-        (r"\b(o\s*&?\s*m|operation\s+and\s+maintenance|employee|repair|administration|a\s+(and\s+)?g)\b", "OM_EXPENSES_GENERATION"),
+        (r"\b(o\s*(?:and|&)?\s*m|operation\s+and\s+maintenance|employee|repair|administration|a\s+(and\s+)?g)\b", "OM_EXPENSES_GENERATION"),
         (r"\binterest|finance\s+charges?\b", "INTEREST_FINANCE_GENERATION"),
         (r"\bdepreciation\b", "DEPRECIATION_GENERATION"),
+        (r"\brepayment\s+of\s+master\s+trust\s+bond\b", "MASTER_TRUST_GENERATION"),
+        (r"\badditional\s+contribution.*master\s+trust\b", "ADDITIONAL_CONTRIBUTION_MASTER_TRUST_GENERATION"),
+        (r"\bamorti[sz]ation.*intangible\s+assets?\b", "AMORTIZATION_GENERATION"),
         (r"\breturn\s+on\s+equity|\broe\b", "ROE_GENERATION"),
         (r"\bnon[-\s]?tariff\s+income\b", "NON_TARIFF_INCOME_GENERATION"),
-        (r"\b(net\s+arr|total\s+arr|aggregate\s+revenue\s+requirement)\b", "NET_ARR_GENERATION"),
+        (r"\bnet\s+arr|\btransfer\s+cost\s+to\s+sbu[-\s]?d\b", "NET_ARR_GENERATION"),
+        (r"^arr$|\btotal\s+arr\b|\baggregate\s+revenue\s+requirement\b", "ARR_GENERATION"),
     ),
     "SBU-T": (
-        (r"\b(o\s*&?\s*m|operation\s+and\s+maintenance|employee|repair|administration|a\s+(and\s+)?g)\b", "OM_EXPENSES_TRANSMISSION"),
+        (r"\b(o\s*(?:and|&)?\s*m|operation\s+and\s+maintenance|employee|repair|administration|a\s+(and\s+)?g)\b", "OM_EXPENSES_TRANSMISSION"),
         (r"\binterest|finance\s+charges?\b", "INTEREST_FINANCE_TRANSMISSION"),
         (r"\bdepreciation\b", "DEPRECIATION_TRANSMISSION"),
         (r"\breturn\s+on\s+equity|\broe\b", "ROE_TRANSMISSION"),
         (r"\bnon[-\s]?tariff\s+income\b", "NON_TARIFF_INCOME_TRANSMISSION"),
-        (r"\b(net\s+arr|total\s+arr|aggregate\s+revenue\s+requirement)\b", "NET_ARR_TRANSMISSION"),
+        (r"\bedamon\s+kochi\s+compensation\b|\bthrissur\s+pugalur\s+compensation\b", "TRANSMISSION_COMPENSATION"),
+        (r"\bavailability\s+incentive\b|\btransmission\s+target\s+availability\b", "TRANSMISSION_AVAILABILITY_INCENTIVE"),
+        (r"\bnet\s+arr|\btransmission\s+charges?\b|\bintra[-\s]?state\s+transmission\s+charges?\b", "NET_ARR_TRANSMISSION"),
+        (r"^arr$|\btotal\s+arr\b|\baggregate\s+revenue\s+requirement\b", "ARR_TRANSMISSION"),
     ),
 }
 
@@ -544,6 +692,15 @@ _IRRELEVANT_LABEL_PATTERNS: Tuple[str, ...] = (
     r"\bpaise\s*/?\s*unit\b",
     r"\brs\s*/?\s*kwh\b",
     r"\brs\s*/?\s*kva\b",
+    r"\brs\.?\s*lakh\s*/\b",
+    r"\brs\.?\s*lakh\b",
+    r"\bin\s+rs\.?\s*lakhs?\b",
+    r"\blakhs?\s+per\b",
+    r"\breceivables?\b",
+    r"\bgfa\s+plants?\b",
+    r"\bhistorical\s+cost\s+of\s+plants?\b",
+    r"\btotal\s+requirement\s+of\s+working\s+capital\b",
+    r"\bworking\s+capital\s+requirement\b",
     r"\bht[-\s]?\d+\b",
     r"\blt[-\s]?\d+\b",
 )
@@ -647,6 +804,35 @@ def _record_text(record: Dict) -> Tuple[str, str, str, str]:
     return str(raw_label), str(normalized_label), str(table_name), str(raw_text)
 
 
+def _map_fallback_transfer_row(raw_label: str, table_name: str, raw_text: str) -> Optional[CanonicalLineItem]:
+    label = clean_label(raw_label)
+    combined = clean_label(" ".join([raw_label, table_name, raw_text]))
+
+    sbu_d_summary_context = bool(
+        re.search(r"\bsbu[-\s]?d\b|\bdistribution\b|\barr\b|\brevenue\s+gap\b|\bsummary\b", combined)
+    )
+    if not sbu_d_summary_context:
+        return None
+
+    if re.search(
+        r"\bcost\s+of\s+generation\s*\(?\s*sbu[-\s]?g\s*\)?\b|"
+        r"\bcost\s+of\s+internal\s+generation\b|"
+        r"\binternal\s+generation\s+transfer\s+cost\b",
+        label,
+    ):
+        return REGISTRY_BY_ID["NET_ARR_GENERATION_TRANSFER_FALLBACK"]
+
+    if re.search(
+        r"\bcost\s+of\s+intra[-\s]?state\s+transmission\s*\(?\s*sbu[-\s]?t\s*\)?\b|"
+        r"\bintra[-\s]?state\s+transmission\s+charges?\b|"
+        r"^transmission\s+charges?$",
+        label,
+    ):
+        return REGISTRY_BY_ID["NET_ARR_TRANSMISSION_TRANSFER_FALLBACK"]
+
+    return None
+
+
 def map_record_to_canonical(record: Dict) -> Optional[CanonicalLineItem]:
     """
     Map one extracted/normalized record to the MVP canonical registry.
@@ -657,6 +843,10 @@ def map_record_to_canonical(record: Dict) -> Optional[CanonicalLineItem]:
     raw_label, normalized_label, table_name, raw_text = _record_text(record)
     if is_irrelevant_extraction_row(raw_label, table_name, raw_text):
         return None
+
+    fallback_item = _map_fallback_transfer_row(raw_label, table_name, raw_text)
+    if fallback_item is not None:
+        return fallback_item
 
     context = infer_sbu(raw_label, normalized_label, table_name, raw_text)
     label_text = clean_label(" ".join([raw_label, normalized_label]))

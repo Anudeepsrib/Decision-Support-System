@@ -16,6 +16,7 @@ Endpoints:
 """
 
 import os
+import re
 import uuid
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -75,11 +76,32 @@ except ImportError:  # Support direct imports from the backend directory.
 
 router = APIRouter(prefix="/api", tags=["MVP API"])
 compat_router = APIRouter(tags=["Compatibility API"])
+DEFAULT_FINANCIAL_YEAR = "2024-25"
 
 # Upload directory
 settings = get_settings()
 UPLOAD_DIR = str(settings.upload_dir)
 settings.upload_dir.mkdir(parents=True, exist_ok=True)
+
+
+def infer_financial_year_from_filename(filename: str) -> Optional[str]:
+    """Infer FY like 2023-24 from deterministic filename markers."""
+    text = re.sub(r"[_/]+", " ", (filename or "").lower())
+    match = re.search(r"\b(20\d{2})\s*[-–—_/ ]\s*(\d{2})\b", text)
+    if not match:
+        return None
+    start_year = int(match.group(1))
+    end_year = int(f"20{match.group(2)}")
+    if end_year - start_year != 1:
+        return None
+    return f"{start_year}-{match.group(2)}"
+
+
+def _effective_financial_year(filename: str, doc_type: str, requested_year: Optional[str]) -> str:
+    inferred = infer_financial_year_from_filename(filename)
+    if doc_type == "truing_up_petition" and inferred:
+        return inferred
+    return requested_year or inferred or DEFAULT_FINANCIAL_YEAR
 
 
 def _case_id_for_year(financial_year: str) -> str:
@@ -124,7 +146,7 @@ def _latest_extracted_document(
     doc_type: str,
     financial_year: str,
 ) -> Optional[Document]:
-    return (
+    exact = (
         db.query(Document)
         .filter(
             Document.doc_type == doc_type,
@@ -134,6 +156,29 @@ def _latest_extracted_document(
         .order_by(Document.upload_timestamp.desc())
         .first()
     )
+    if exact:
+        return exact
+
+    candidates = (
+        db.query(Document)
+        .filter(
+            Document.doc_type == doc_type,
+            Document.status == "extracted",
+        )
+        .order_by(Document.upload_timestamp.desc())
+        .all()
+    )
+    for candidate in candidates:
+        if _effective_financial_year(candidate.filename, candidate.doc_type, candidate.financial_year) == financial_year:
+            return candidate
+
+    if doc_type == "arr_order":
+        # ARR/MYT orders often cover a control period rather than one FY. If a
+        # same-year ARR record is unavailable, use the latest extracted ARR
+        # order as the deterministic approved-value source.
+        substantive = [candidate for candidate in candidates if (candidate.page_count or 0) > 20]
+        return (substantive or candidates)[0] if candidates else None
+    return None
 
 
 def _delete_extraction_for_document(db: Session, document_id: str):
@@ -320,6 +365,7 @@ def _store_extraction(
     doc: Document,
     job: Optional[ExtractionJob] = None,
 ) -> List[ExtractedRow]:
+    doc.financial_year = _effective_financial_year(doc.filename, doc.doc_type, doc.financial_year)
     last_progress_commit = 0.0
 
     def progress_callback(stage: str, progress: float, processed_pages: int, total_pages: int):
@@ -362,8 +408,9 @@ def _store_extraction(
             row_label=row_data.row_label,
             value=row_data.value,
             value_type=row_data.value_type,
+            unit=row_data.unit,
             confidence=row_data.confidence,
-            extraction_method="pdfplumber",
+            extraction_method="targeted_table" if getattr(row_data, "target_id", None) else "pdfplumber",
             raw_text=row_data.raw_text,
         )
         rows.append(row)
@@ -499,12 +546,13 @@ def _best_by_canonical_id(records: List[Dict]) -> Dict[str, Dict]:
 
     best: Dict[str, Dict] = {}
     for name, group in grouped.items():
-        if name == "OM_COST":
+        if name in {"OM_COST", "OM_EXPENSES_GENERATION", "OM_EXPENSES_TRANSMISSION"}:
             total_like = [
                 record for record in group
                 if record.get("raw_label")
                 and record.get("value") is not None
                 and any(token in record["raw_label"].lower() for token in ("o&m", "o & m", "operation and maintenance", "total o"))
+                and "lakh" not in record["raw_label"].lower()
             ]
             if not total_like:
                 valued = [record for record in group if record.get("value") is not None]
@@ -517,7 +565,21 @@ def _best_by_canonical_id(records: List[Dict]) -> Dict[str, Dict]:
                     aggregate["source_table"] = "Aggregated from mapped O&M component rows"
                     best[name] = aggregate
                     continue
-            group = total_like or group
+            if total_like:
+                def om_score(record: Dict) -> tuple:
+                    label = (record.get("raw_label") or "").lower()
+                    return (
+                        4 if label.strip() in {"o&m expenses", "o & m expenses"} else 0,
+                        3 if "expenses - total" in label or "expenses total" in label else 0,
+                        -2 if "total normative" in label else (1 if "total" in label else 0),
+                        1 if not any(token in label for token in ("existing", "new", "one month", "rate")) else 0,
+                        record.get("mapping_confidence") or 0,
+                    )
+                group = sorted(total_like, key=om_score, reverse=True)
+                best[name] = group[0]
+                continue
+            else:
+                group = group
 
         selected = group[0]
         for record in group[1:]:
@@ -594,6 +656,7 @@ def _comparison_response(db: Session, case_id: str) -> ComparisonResponse:
     )
     if not comparisons:
         raise HTTPException(status_code=404, detail="Case not found.")
+    report_financial_year = comparisons[0].financial_year or req.financial_year
 
     latest_reviews = _latest_reviews_by_comparison(db, [c.id for c in comparisons])
     auto_count = sum(1 for c in comparisons if c.decision_class == "ACCEPTABLE_VARIANCE")
@@ -621,7 +684,7 @@ def _comparison_response(db: Session, case_id: str) -> ComparisonResponse:
 
 def _run_comparison_for_financial_year(
     db: Session,
-    financial_year: str = "2024-25",
+    financial_year: str = DEFAULT_FINANCIAL_YEAR,
 ) -> ComparisonResponse:
     arr_doc = _latest_extracted_document(db, "arr_order", financial_year)
     petition_doc = _latest_extracted_document(db, "truing_up_petition", financial_year)
@@ -638,12 +701,15 @@ def _run_comparison_for_financial_year(
         )
 
     arr_records = canonicalize_records(_load_normalized_records(db, arr_doc, "approved"))
+    petition_approved_records = canonicalize_records(_load_normalized_records(db, petition_doc, "approved"))
     actual_records = canonicalize_records(_load_normalized_records(db, petition_doc, "actual"))
     claimed_records = canonicalize_records(_load_normalized_records(db, petition_doc, "claimed"))
+    deviation_records = canonicalize_records(_load_normalized_records(db, petition_doc, "deviation"))
 
-    arr_lookup = _best_by_canonical_id(arr_records)
+    arr_lookup = _best_by_canonical_id(arr_records + petition_approved_records)
     actual_lookup = _best_by_canonical_id(actual_records)
     claimed_lookup = _best_by_canonical_id(claimed_records)
+    deviation_lookup = _best_by_canonical_id(deviation_records)
 
     if not arr_lookup:
         raise HTTPException(status_code=404, detail="No canonical ARR approved rows found after filtering.")
@@ -671,6 +737,7 @@ def _run_comparison_for_financial_year(
         arr_item = arr_lookup.get(name)
         actual_item = actual_lookup.get(name)
         claimed_item = claimed_lookup.get(name)
+        deviation_item = deviation_lookup.get(name)
         metadata_item = arr_item or actual_item or claimed_item or {}
 
         approved_val = arr_item.get("value") if arr_item else None
@@ -678,6 +745,12 @@ def _run_comparison_for_financial_year(
         claimed_val = claimed_item.get("value") if claimed_item else None
         comparison_val = claimed_val if claimed_val is not None else actual_val
         variance, variance_pct = calculate_variance(approved_val, comparison_val)
+        if deviation_item and approved_val is not None and comparison_val is not None:
+            extracted_deviation = deviation_item.get("value")
+            calculated_deviation = round(comparison_val - approved_val, 2)
+            if extracted_deviation is not None and abs(extracted_deviation - calculated_deviation) <= max(0.1, abs(calculated_deviation) * 0.02):
+                variance = round(extracted_deviation, 2)
+                variance_pct = round((variance / abs(approved_val)) * 100, 2) if approved_val else (0.0 if variance == 0 else None)
 
         confidences = [
             item.get("mapping_confidence")
@@ -747,6 +820,7 @@ async def _upload_document_of_type(
             status_code=400,
             detail="doc_type must be 'arr_order' or 'truing_up_petition'.",
         )
+    effective_year = _effective_financial_year(file.filename or "", doc_type, financial_year)
 
     doc_id = str(uuid.uuid4())
     file_path = os.path.join(UPLOAD_DIR, f"{doc_id}.pdf")
@@ -756,7 +830,7 @@ async def _upload_document_of_type(
         id=doc_id,
         filename=file.filename,
         doc_type=doc_type,
-        financial_year=financial_year,
+        financial_year=effective_year,
         file_path=file_path,
         file_size=file_size,
         page_count=None,
@@ -789,7 +863,7 @@ async def _upload_document_of_type(
 async def upload_arr_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    financial_year: str = Form("2024-25"),
+    financial_year: str = Form(DEFAULT_FINANCIAL_YEAR),
     db: Session = Depends(get_db),
 ):
     """Upload ARR Approval Order PDF and enqueue background extraction."""
@@ -800,7 +874,7 @@ async def upload_arr_document(
 async def upload_petition_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    financial_year: str = Form("2024-25"),
+    financial_year: str = Form(DEFAULT_FINANCIAL_YEAR),
     db: Session = Depends(get_db),
 ):
     """Upload Truing-Up Petition PDF and enqueue background extraction."""
@@ -812,7 +886,7 @@ async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     doc_type: str = Form("arr_order"),  # arr_order | truing_up_petition
-    financial_year: str = Form("2024-25"),
+    financial_year: str = Form(DEFAULT_FINANCIAL_YEAR),
     db: Session = Depends(get_db),
 ):
     """Legacy upload endpoint - use /upload/arr or /upload/petition instead."""
@@ -826,11 +900,12 @@ async def list_documents(db: Session = Depends(get_db)):
     items = []
     for d in docs:
         job = _latest_job_for_document(db, d.id)
+        effective_year = _effective_financial_year(d.filename, d.doc_type, d.financial_year)
         items.append(DocumentListItem(
             id=d.id,
             filename=d.filename,
             doc_type=d.doc_type,
-            financial_year=d.financial_year,
+            financial_year=effective_year,
             file_size=d.file_size,
             page_count=d.page_count,
             status=d.status,
@@ -888,7 +963,7 @@ async def get_extraction_results(doc_id: str, db: Session = Depends(get_db)):
 
 @router.post("/comparison/run", response_model=ComparisonResponse)
 async def run_comparison_endpoint(
-    financial_year: str = "2024-25",
+    financial_year: str = DEFAULT_FINANCIAL_YEAR,
     db: Session = Depends(get_db),
 ):
     """
@@ -900,7 +975,7 @@ async def run_comparison_endpoint(
 
 @router.get("/comparison/latest", response_model=ComparisonResponse)
 async def get_latest_comparison(
-    financial_year: str = "2024-25",
+    financial_year: str = DEFAULT_FINANCIAL_YEAR,
     db: Session = Depends(get_db),
 ):
     """Get the current deterministic comparison case for a financial year."""
@@ -909,7 +984,7 @@ async def get_latest_comparison(
 
 @router.get("/comparison/results", response_model=ComparisonResponse)
 async def get_comparison_results(
-    financial_year: str = "2024-25",
+    financial_year: str = DEFAULT_FINANCIAL_YEAR,
     db: Session = Depends(get_db),
 ):
     """Compatibility endpoint for the latest comparison results."""
@@ -1103,7 +1178,7 @@ async def generate_order(
     try:
         result = await generate_order_pdf(
             case_id=req.case_id,
-            financial_year=req.financial_year,
+            financial_year=report_financial_year,
             comparisons=comp_dicts,
             reviews=review_dicts,
             officer_name=req.officer_name,
@@ -1118,7 +1193,7 @@ async def generate_order(
     order = GeneratedOrder(
         id=str(uuid.uuid4()),
         case_id=req.case_id,
-        financial_year=req.financial_year,
+        financial_year=report_financial_year,
         file_path=result["file_path"],
         file_hash=result["file_hash"],
         file_size=result["file_size"],
@@ -1134,7 +1209,7 @@ async def generate_order(
     return GeneratedOrderResponse(
         id=order.id,
         case_id=req.case_id,
-        financial_year=req.financial_year,
+        financial_year=report_financial_year,
         file_path=result["file_path"],
         file_size=result["file_size"],
         is_draft=True,
@@ -1242,7 +1317,7 @@ async def get_audit_trail(
 @router.get("/normalized", response_model=List[NormalizedItemResponse])
 async def list_normalized_items(
     source_doc_type: Optional[str] = None,
-    financial_year: str = "2024-25",
+    financial_year: str = DEFAULT_FINANCIAL_YEAR,
     db: Session = Depends(get_db),
 ):
     """List normalized line items."""
@@ -1281,7 +1356,7 @@ async def list_normalized_items(
 async def compat_upload_arr_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    financial_year: str = Form("2024-25"),
+    financial_year: str = Form(DEFAULT_FINANCIAL_YEAR),
     db: Session = Depends(get_db),
 ):
     return await _upload_document_of_type(file, financial_year, "arr_order", db, background_tasks)
@@ -1291,7 +1366,7 @@ async def compat_upload_arr_document(
 async def compat_upload_petition_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    financial_year: str = Form("2024-25"),
+    financial_year: str = Form(DEFAULT_FINANCIAL_YEAR),
     db: Session = Depends(get_db),
 ):
     return await _upload_document_of_type(
@@ -1301,7 +1376,7 @@ async def compat_upload_petition_document(
 
 @compat_router.post("/comparison/run", response_model=ComparisonResponse)
 async def compat_run_comparison(
-    financial_year: str = "2024-25",
+    financial_year: str = DEFAULT_FINANCIAL_YEAR,
     db: Session = Depends(get_db),
 ):
     return _run_comparison_for_financial_year(db, financial_year)
@@ -1309,7 +1384,7 @@ async def compat_run_comparison(
 
 @compat_router.get("/comparison/results", response_model=ComparisonResponse)
 async def compat_get_comparison_results(
-    financial_year: str = "2024-25",
+    financial_year: str = DEFAULT_FINANCIAL_YEAR,
     db: Session = Depends(get_db),
 ):
     return _comparison_response(db, _case_id_for_year(financial_year))

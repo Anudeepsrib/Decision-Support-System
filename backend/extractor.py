@@ -8,8 +8,9 @@ metadata (page, table index, confidence).
 No LangGraph, no complex AI agents — just deterministic extraction.
 """
 
-import re
 import io
+import logging
+import re
 import time
 from typing import Callable, List, Dict, Optional, Sequence, Set, Tuple
 from dataclasses import dataclass
@@ -26,6 +27,42 @@ try:
 except ImportError:
     CAMELOT_AVAILABLE = False
 
+try:
+    from .table_targets import (
+        CHAPTER_CONSOLIDATED,
+        CHAPTER_ENERGY_TD,
+        CHAPTER_SBU_D,
+        CHAPTER_SBU_G,
+        CHAPTER_SBU_T,
+        TARGET_TABLE_CATALOG,
+        TargetTable,
+        caption_matches,
+        clean_text as clean_target_text,
+        find_header_row,
+        normalize_columns,
+        table_has_required_shape,
+        target_applies_to_document,
+    )
+except ImportError:  # Support direct imports from the backend directory.
+    from table_targets import (
+        CHAPTER_CONSOLIDATED,
+        CHAPTER_ENERGY_TD,
+        CHAPTER_SBU_D,
+        CHAPTER_SBU_G,
+        CHAPTER_SBU_T,
+        TARGET_TABLE_CATALOG,
+        TargetTable,
+        caption_matches,
+        clean_text as clean_target_text,
+        find_header_row,
+        normalize_columns,
+        table_has_required_shape,
+        target_applies_to_document,
+    )
+
+
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class ExtractedTableRow:
@@ -40,6 +77,25 @@ class ExtractedTableRow:
     unit: str = "Rs. Cr."
     confidence: float = 0.0
     raw_text: str = ""
+    target_id: Optional[str] = None
+    chapter: Optional[str] = None
+    table_caption: Optional[str] = None
+    normalized_columns: Tuple[str, ...] = ()
+    source_type: str = "chapter_table"
+
+
+@dataclass
+class ExtractedTargetTable:
+    """A target table found during deterministic chapter-bound extraction."""
+    target_id: str
+    chapter: str
+    document_type: str
+    page_number: int
+    table_caption: str
+    raw_columns: Tuple[str, ...]
+    normalized_columns: Tuple[str, ...]
+    rows: List[ExtractedTableRow]
+    confidence: float
 
 
 # ─── Financial Value Parser ───
@@ -198,13 +254,26 @@ def _infer_document_type(filename: str) -> str:
 
 def _column_value_type(header: str) -> Optional[str]:
     """Map a table column heading to the value type it carries."""
-    h = (header or "").lower()
-    if any(token in h for token in ("approved", "approval", "allowed", "arr order")):
+    h = clean_target_text(header or "")
+    if re.search(r"\bkserc\s+approval\b|\bcommission\s+approval\b|\bapproved\s+by\s+commission\b", h):
+        return "kserc_approval"
+    if re.search(
+        r"\bmyt\s+order\b|\bmyt\b|\barr\s+approval\b|\barr\s+and\s+erc\s+order\b|"
+        r"\barr\s+erc\s+order\b|\bapproved\b|\bapproval\b|\ballowed\b|\barr\s+order\b",
+        h,
+    ):
         return "approved"
-    if any(token in h for token in ("actual", "audited", "audit")):
+    if re.search(r"\bactuals?\b|\baudited\b|\baudit\b|\bas\s+per\s+accounts\b|\baccounts\b", h):
         return "actual"
-    if any(token in h for token in ("claimed", "claim", "petition", "proposed")):
+    if re.search(
+        r"\btu\s+sought\b|\bsought\s+for\s+tu\b|\bsought\b|\btruing\s+up\s+petition\b|"
+        r"\btruing\s+up\s+claim\b|\btrue\s+up\s+claim\b|\bclaimed\b|\bclaim\b|"
+        r"\bpetition\s+claim\b|\bpetition\b|\bproposed\b",
+        h,
+    ):
         return "claimed"
+    if re.search(r"\bdifference\s+over\s+approval\b|\bdeviation\s+from\s+approval\b|\bdifference\b|\bvariation\b|\bdeviation\b", h):
+        return "deviation"
     return None
 
 
@@ -237,7 +306,7 @@ def _select_value_columns(
         selected = [
             (idx, value, "approved")
             for idx, value, value_type in parsed_values
-            if value_type == "approved"
+            if value_type in ("approved", "kserc_approval")
         ]
         if selected:
             return selected
@@ -246,7 +315,7 @@ def _select_value_columns(
         selected = [
             (idx, value, value_type or "actual")
             for idx, value, value_type in parsed_values
-            if value_type in ("actual", "claimed")
+            if value_type in ("approved", "actual", "claimed", "deviation")
         ]
         if selected:
             return selected
@@ -298,6 +367,102 @@ def _neighbor_pages(page_numbers: Sequence[int], total_pages: int, radius: int =
             if 1 <= candidate <= total_pages:
                 pages.add(candidate)
     return pages
+
+
+_CHAPTER_MARKERS: Dict[str, Tuple[str, ...]] = {
+    CHAPTER_SBU_G: (
+        "truing up of accounts of strategic business unit generation",
+        "strategic business unit generation",
+        "sbu-g",
+        "sbu g",
+        "generation",
+    ),
+    CHAPTER_SBU_T: (
+        "truing up of accounts of strategic business unit transmission",
+        "strategic business unit transmission",
+        "sbu-t",
+        "sbu t",
+        "transmission",
+    ),
+    CHAPTER_ENERGY_TD: (
+        "energy sales",
+        "t and d loss",
+        "t d loss",
+        "transmission loss",
+        "distribution loss",
+    ),
+    CHAPTER_SBU_D: (
+        "arr erc and revenue gap",
+        "arr and erc and revenue gap",
+        "strategic business unit distribution",
+        "sbu-d",
+        "sbu d",
+        "distribution",
+    ),
+    CHAPTER_CONSOLIDATED: (
+        "consolidated truing up",
+        "consolidated",
+    ),
+}
+
+
+def _chapter_page_score(text: str, chapter: str) -> int:
+    normalized = clean_target_text(text)
+    if not normalized:
+        return 0
+
+    markers = _CHAPTER_MARKERS.get(chapter, ())
+    score = 0
+    for marker in markers:
+        marker_text = clean_target_text(marker)
+        if marker_text and marker_text in normalized:
+            score += 4 if len(marker_text.split()) > 3 else 2
+
+    if "chapter" in normalized:
+        score += 3
+    if "truing up of accounts" in normalized:
+        score += 2
+    if "table of contents" in normalized or re.search(r"\bcontents\b", normalized):
+        score -= 6
+    return max(score, 0)
+
+
+def detect_chapter_ranges_from_text(page_texts: Sequence[str]) -> Dict[str, Tuple[int, int]]:
+    """
+    Detect deterministic chapter page ranges from extracted page text.
+
+    Returns one-indexed inclusive page ranges:
+    {"SBU_G": (start_page, end_page), ...}
+    """
+    candidates: Dict[str, int] = {}
+    for chapter in (CHAPTER_SBU_G, CHAPTER_SBU_T, CHAPTER_ENERGY_TD, CHAPTER_SBU_D, CHAPTER_CONSOLIDATED):
+        scored_pages: List[Tuple[int, int]] = []
+        for index, text in enumerate(page_texts, 1):
+            score = _chapter_page_score(text, chapter)
+            if score > 0:
+                scored_pages.append((index, score))
+        if not scored_pages:
+            continue
+
+        # Prefer the earliest strong chapter page after front matter, while
+        # avoiding TOC-only hits that merely list every chapter.
+        max_score = max(score for _, score in scored_pages)
+        threshold = max(3, max_score - 2)
+        strong = [page for page, score in scored_pages if score >= threshold]
+        non_front_matter = [page for page in strong if page > 3]
+        candidates[chapter] = min(non_front_matter or strong)
+
+    sorted_starts = sorted((start, chapter) for chapter, start in candidates.items())
+    ranges: Dict[str, Tuple[int, int]] = {}
+    total_pages = len(page_texts)
+    for index, (start_page, chapter) in enumerate(sorted_starts):
+        next_start = sorted_starts[index + 1][0] if index + 1 < len(sorted_starts) else total_pages + 1
+        end_page = max(start_page, next_start - 1)
+        ranges[chapter] = (start_page, min(end_page, total_pages))
+
+    if ranges:
+        logger.info("Detected chapter_ranges=%s", ranges)
+    return ranges
 
 
 def _select_target_pages(
@@ -418,6 +583,444 @@ def _extract_rows_from_table(
     return rows
 
 
+def _cell_text(cell: object) -> str:
+    return str(cell or "").strip()
+
+
+def _row_is_probable_header(row: Sequence[object]) -> bool:
+    normalized_columns = normalize_columns(row)
+    return "particulars" in normalized_columns and bool(
+        set(normalized_columns) & {"approved", "actual", "claimed", "deviation", "kserc_approval"}
+    )
+
+
+def _target_value_type(column_key: str, document_type: str, normalized_columns: Sequence[Optional[str]]) -> str:
+    if column_key == "kserc_approval":
+        if document_type == "arr_order" and "approved" not in normalized_columns:
+            return "approved"
+        return "kserc_approval"
+    return column_key
+
+
+def _repair_shifted_claim_column(normalized_columns: Sequence[Optional[str]]) -> List[Optional[str]]:
+    repaired = list(normalized_columns)
+    if "actual" not in repaired or "claimed" not in repaired:
+        return repaired
+    actual_idx = repaired.index("actual")
+    claimed_idx = repaired.index("claimed")
+    shifted_idx = actual_idx + 1
+    if claimed_idx == shifted_idx + 1 and shifted_idx < len(repaired) and repaired[shifted_idx] is None:
+        repaired[shifted_idx] = "claimed"
+        repaired[claimed_idx] = None
+    return repaired
+
+
+def _extract_rows_from_continuation_table(
+    table,
+    page_num: int,
+    table_idx: int,
+    target: TargetTable,
+    table_caption: str,
+    document_type: str,
+) -> Optional[ExtractedTargetTable]:
+    if not table or len(table) < 2:
+        return None
+    first_row = table[0]
+    if len(first_row) < 5:
+        return None
+    if not re.fullmatch(r"\d+", _cell_text(first_row[0] or "")):
+        return None
+
+    normalized_tuple = ("serial", "particulars", "approved", "actual", "claimed")
+    rows: List[ExtractedTableRow] = []
+    for row in table:
+        if len(row) < 5:
+            continue
+        row_label = _cell_text(row[1])
+        if not row_label or len(row_label) < 2:
+            continue
+        raw_text = " | ".join(_cell_text(cell) for cell in row)
+        for col_idx, value_type in ((2, "approved"), (3, "actual"), (4, "claimed")):
+            parsed_value = _parse_financial_value(_cell_text(row[col_idx]))
+            if parsed_value is None:
+                continue
+            contextual_table_name = (
+                f"{target.target_id} | {target.chapter} | {table_caption or 'Target table continuation'}"
+            )[:200]
+            rows.append(
+                ExtractedTableRow(
+                    page_number=page_num,
+                    table_index=table_idx,
+                    table_name=contextual_table_name,
+                    row_label=row_label,
+                    value=parsed_value,
+                    value_type=value_type,
+                    document_type=document_type,
+                    unit=target.unit,
+                    confidence=0.88,
+                    raw_text=(
+                        f"target_id={target.target_id}; chapter={target.chapter}; "
+                        f"columns={'/'.join(normalized_tuple)}; row={raw_text}"
+                    ),
+                    target_id=target.target_id,
+                    chapter=target.chapter,
+                    table_caption=table_caption,
+                    normalized_columns=normalized_tuple,
+                    source_type="chapter_table",
+                )
+            )
+
+    if not rows:
+        return None
+    return ExtractedTargetTable(
+        target_id=target.target_id,
+        chapter=target.chapter,
+        document_type=document_type,
+        page_number=page_num,
+        table_caption=table_caption,
+        raw_columns=(),
+        normalized_columns=normalized_tuple,
+        rows=rows,
+        confidence=0.88,
+    )
+
+
+def _parse_value_near_column(
+    row: Sequence[object],
+    col_idx: int,
+    normalized_columns: Sequence[Optional[str]],
+    column_key: str,
+) -> Optional[float]:
+    if col_idx < len(row):
+        parsed = _parse_financial_value(_cell_text(row[col_idx]))
+        if parsed is not None:
+            return parsed
+
+    next_indices = [
+        index for index in range(col_idx + 1, len(normalized_columns))
+        if normalized_columns[index]
+    ]
+    next_idx = next_indices[0] if next_indices else min(len(row), col_idx + 4)
+    for scan_idx in range(col_idx + 1, min(next_idx, len(row))):
+        parsed = _parse_financial_value(_cell_text(row[scan_idx]))
+        if parsed is not None:
+            return parsed
+
+    if column_key == "deviation":
+        previous_indices = [
+            index for index in range(0, col_idx)
+            if normalized_columns[index]
+        ]
+        previous_idx = previous_indices[-1] if previous_indices else max(-1, col_idx - 4)
+        for scan_idx in range(col_idx - 1, max(previous_idx, -1), -1):
+            parsed = _parse_financial_value(_cell_text(row[scan_idx]))
+            if parsed is not None:
+                return parsed
+    return None
+
+
+def _extract_rows_from_target_table(
+    table,
+    page_num: int,
+    table_idx: int,
+    target: TargetTable,
+    table_caption: str,
+    document_type: str,
+) -> ExtractedTargetTable:
+    if not table or len(table) < 2 or not table_has_required_shape(table):
+        continuation = _extract_rows_from_continuation_table(
+            table,
+            page_num,
+            table_idx,
+            target,
+            table_caption,
+            document_type,
+        )
+        if continuation is not None:
+            return continuation
+        return ExtractedTargetTable(
+            target_id=target.target_id,
+            chapter=target.chapter,
+            document_type=document_type,
+            page_number=page_num,
+            table_caption=table_caption,
+            raw_columns=(),
+            normalized_columns=(),
+            rows=[],
+            confidence=0.0,
+        )
+
+    header_idx, normalized_columns = find_header_row(table)
+    normalized_columns = _repair_shifted_claim_column(normalized_columns)
+    raw_columns = tuple(_cell_text(cell) for cell in table[header_idx])
+    normalized_tuple = tuple(column or "" for column in normalized_columns)
+    try:
+        particulars_idx = normalized_columns.index("particulars")
+    except ValueError:
+        particulars_idx = 0
+
+    rows: List[ExtractedTableRow] = []
+    for row in table[header_idx + 1:]:
+        if not row or _row_is_probable_header(row):
+            continue
+        if particulars_idx >= len(row):
+            continue
+        row_label = _cell_text(row[particulars_idx])
+        if not row_label or len(row_label) < 2:
+            continue
+
+        raw_text = " | ".join(_cell_text(cell) for cell in row)
+        for col_idx, column_key in enumerate(normalized_columns):
+            if not column_key or column_key == "particulars" or col_idx >= len(row):
+                continue
+            value_type = _target_value_type(column_key, document_type, normalized_columns)
+            if value_type not in {"approved", "actual", "claimed", "deviation", "kserc_approval"}:
+                continue
+            parsed_value = _parse_value_near_column(row, col_idx, normalized_columns, column_key)
+            if parsed_value is None:
+                continue
+
+            contextual_table_name = (
+                f"{target.target_id} | {target.chapter} | {table_caption or 'Target table'}"
+            )[:200]
+            row_confidence = max(
+                _calculate_confidence(row_label, parsed_value, contextual_table_name),
+                0.9 if value_type in {"approved", "actual", "claimed"} else 0.82,
+            )
+            rows.append(
+                ExtractedTableRow(
+                    page_number=page_num,
+                    table_index=table_idx,
+                    table_name=contextual_table_name,
+                    row_label=row_label,
+                    value=parsed_value,
+                    value_type=value_type,
+                    document_type=document_type,
+                    unit=target.unit,
+                    confidence=min(row_confidence, 0.99),
+                    raw_text=(
+                        f"target_id={target.target_id}; chapter={target.chapter}; "
+                        f"columns={'/'.join(normalized_tuple)}; row={raw_text}"
+                    ),
+                    target_id=target.target_id,
+                    chapter=target.chapter,
+                    table_caption=table_caption,
+                    normalized_columns=normalized_tuple,
+                    source_type="chapter_table",
+                )
+            )
+
+    confidence = 0.95 if rows else 0.0
+    return ExtractedTargetTable(
+        target_id=target.target_id,
+        chapter=target.chapter,
+        document_type=document_type,
+        page_number=page_num,
+        table_caption=table_caption,
+        raw_columns=raw_columns,
+        normalized_columns=normalized_tuple,
+        rows=rows,
+        confidence=confidence,
+    )
+
+
+def _candidate_pages_for_target(
+    page_texts: Sequence[str],
+    target: TargetTable,
+    chapter_ranges: Dict[str, Tuple[int, int]],
+) -> List[Tuple[int, str]]:
+    total_pages = len(page_texts)
+    if target.chapter in chapter_ranges:
+        start_page, end_page = chapter_ranges[target.chapter]
+        page_numbers = range(max(1, start_page), min(total_pages, end_page) + 1)
+    else:
+        page_numbers = range(1, total_pages + 1)
+
+    candidates: List[Tuple[int, str]] = []
+    candidate_map: Dict[int, str] = {}
+    for page_num in page_numbers:
+        text = page_texts[page_num - 1] if page_num - 1 < len(page_texts) else ""
+        matched_caption = caption_matches(text, target.caption_patterns)
+        if matched_caption:
+            candidate_map[page_num] = matched_caption
+            if page_num + 1 <= total_pages:
+                candidate_map.setdefault(page_num + 1, matched_caption)
+    return sorted(candidate_map.items())
+
+
+def extract_target_tables_from_open_pdf(
+    pdf,
+    document_type: str,
+    page_texts: Sequence[str],
+    chapter_ranges: Optional[Dict[str, Tuple[int, int]]] = None,
+) -> List[ExtractedTargetTable]:
+    """Extract target catalog tables within detected chapter ranges."""
+    chapter_ranges = chapter_ranges or {}
+    found_tables: List[ExtractedTargetTable] = []
+    seen: Set[Tuple[str, int, int]] = set()
+
+    for target in sorted(TARGET_TABLE_CATALOG, key=lambda item: item.priority):
+        if not target_applies_to_document(target, document_type):
+            continue
+        candidates = _candidate_pages_for_target(page_texts, target, chapter_ranges)
+        for page_num, matched_caption in candidates:
+            if page_num < 1 or page_num > len(pdf.pages):
+                continue
+            page_has_target_rows = False
+            try:
+                page = pdf.pages[page_num - 1]
+                tables = page.extract_tables()
+            except Exception:
+                tables = []
+
+            for table_idx, table in enumerate(tables):
+                dedupe_key = (target.target_id, page_num, table_idx)
+                if dedupe_key in seen:
+                    continue
+                table_text = " ".join(
+                    " ".join(_cell_text(cell) for cell in row)
+                    for row in (table or [])[:5]
+                )
+                table_caption = caption_matches(table_text, target.caption_patterns) or matched_caption
+                target_table = _extract_rows_from_target_table(
+                    table=table,
+                    page_num=page_num,
+                    table_idx=table_idx,
+                    target=target,
+                    table_caption=table_caption,
+                    document_type=document_type,
+                )
+                if target_table.rows:
+                    found_tables.append(target_table)
+                    seen.add(dedupe_key)
+                    page_has_target_rows = True
+
+            if not page_has_target_rows:
+                text_table = _extract_rows_from_target_text(
+                    page_texts[page_num - 1] if page_num - 1 < len(page_texts) else "",
+                    page_num,
+                    target,
+                    matched_caption,
+                    document_type,
+                )
+                if text_table.rows:
+                    found_tables.append(text_table)
+
+    return found_tables
+
+
+def _flatten_target_tables(target_tables: Sequence[ExtractedTargetTable]) -> List[ExtractedTableRow]:
+    rows: List[ExtractedTableRow] = []
+    for table in target_tables:
+        rows.extend(table.rows)
+    return rows
+
+
+def _dedupe_rows(rows: Sequence[ExtractedTableRow]) -> List[ExtractedTableRow]:
+    best: Dict[Tuple[int, str, str, Optional[float]], ExtractedTableRow] = {}
+    for row in rows:
+        key = (
+            row.page_number,
+            clean_target_text(row.row_label),
+            row.value_type,
+            row.value,
+        )
+        current = best.get(key)
+        if current is None or (row.confidence or 0) > (current.confidence or 0):
+            best[key] = row
+    return sorted(best.values(), key=lambda row: (row.page_number, row.table_index or 0, row.row_label, row.value_type))
+
+
+_TARGET_TEXT_ROW_KEYWORDS = (
+    "cost of generation",
+    "o&m expenses",
+    "o & m expenses",
+    "operation and maintenance",
+    "interest & finance",
+    "interest and finance",
+    "depreciation",
+    "return on equity",
+    "roe",
+    "less: non-tariff",
+    "non-tariff income",
+    "net arr",
+    "transmission charges",
+    "cost of intra-state transmission",
+    "edamon",
+    "pugalur",
+    "transmission availability",
+)
+
+
+def _extract_rows_from_target_text(
+    page_text: str,
+    page_num: int,
+    target: TargetTable,
+    table_caption: str,
+    document_type: str,
+) -> ExtractedTargetTable:
+    rows: List[ExtractedTableRow] = []
+    contextual_table_name = (
+        f"{target.target_id} | {target.chapter} | {table_caption or 'Target text rows'}"
+    )[:200]
+    for line_index, line in enumerate((page_text or "").splitlines()):
+        line_clean = " ".join(line.split())
+        if not line_clean:
+            continue
+        line_lower = line_clean.lower()
+        if not any(keyword in line_lower for keyword in _TARGET_TEXT_ROW_KEYWORDS):
+            continue
+        line_work = re.sub(r"^\s*(\d+|[ivxlcdm]+)[.)\s-]+", "", line_clean, flags=re.IGNORECASE).strip()
+        values = []
+        for match in _MONEY_PATTERN.finditer(line_work):
+            parsed = _parse_financial_value(match.group())
+            if parsed is not None:
+                values.append(parsed)
+        if len(values) < 3:
+            continue
+        first_number = _MONEY_PATTERN.search(line_work)
+        if not first_number:
+            continue
+        label = line_work[: first_number.start()].strip()
+        if not label or len(label) < 3:
+            continue
+        for value_type, parsed_value in zip(("approved", "actual", "claimed"), values[-3:]):
+            rows.append(
+                ExtractedTableRow(
+                    page_number=page_num,
+                    table_index=1000 + line_index,
+                    table_name=contextual_table_name,
+                    row_label=label,
+                    value=parsed_value,
+                    value_type=value_type,
+                    document_type=document_type,
+                    unit=target.unit,
+                    confidence=0.78,
+                    raw_text=(
+                        f"target_id={target.target_id}; chapter={target.chapter}; "
+                        f"source=text_line; row={line_clean}"
+                    ),
+                    target_id=target.target_id,
+                    chapter=target.chapter,
+                    table_caption=table_caption,
+                    normalized_columns=("particulars", "approved", "actual", "claimed"),
+                    source_type="chapter_table",
+                )
+            )
+
+    return ExtractedTargetTable(
+        target_id=target.target_id,
+        chapter=target.chapter,
+        document_type=document_type,
+        page_number=page_num,
+        table_caption=table_caption,
+        raw_columns=("text_line",),
+        normalized_columns=("particulars", "approved", "actual", "claimed"),
+        rows=rows,
+        confidence=0.78 if rows else 0.0,
+    )
+
+
 def _extract_with_camelot(
     pdf_path: str,
     page_numbers: Sequence[int],
@@ -520,13 +1123,45 @@ def _extract_from_open_pdf(
     max_target_pages: Optional[int],
     timeout_at: Optional[float],
 ) -> Tuple[List[ExtractedTableRow], List[int]]:
-    target_pages, total_pages = _select_target_pages(
+    total_pages = len(pdf.pages)
+    page_texts: List[str] = []
+    last_text_report = 0.0
+    for index, page in enumerate(pdf.pages, 1):
+        if timeout_at and time.monotonic() > timeout_at and page_texts:
+            break
+        try:
+            page_texts.append(page.extract_text() or "")
+        except Exception:
+            page_texts.append("")
+
+        now = time.monotonic()
+        if progress_callback and (now - last_text_report > 0.75 or index == total_pages):
+            progress_callback(
+                "Detecting chapter ranges for targeted extraction",
+                5 + (index / max(total_pages, 1)) * 18,
+                index,
+                total_pages,
+            )
+            last_text_report = now
+
+    chapter_ranges = detect_chapter_ranges_from_text(page_texts)
+    target_tables = extract_target_tables_from_open_pdf(
+        pdf=pdf,
+        document_type=document_type,
+        page_texts=page_texts,
+        chapter_ranges=chapter_ranges,
+    )
+    target_rows = _flatten_target_tables(target_tables)
+    catalog_pages = sorted({table.page_number for table in target_tables})
+
+    fallback_pages, _ = _select_target_pages(
         pdf=pdf,
         document_type=document_type,
         max_target_pages=max_target_pages,
         timeout_at=timeout_at,
         progress_callback=progress_callback,
     )
+    target_pages = sorted(set(catalog_pages) | set(fallback_pages)) if catalog_pages else fallback_pages
 
     if progress_callback:
         progress_callback(
@@ -536,11 +1171,27 @@ def _extract_from_open_pdf(
             total_pages,
         )
 
-    extracted_rows: List[ExtractedTableRow] = []
+    extracted_rows: List[ExtractedTableRow] = list(target_rows)
     last_report = 0.0
     for idx, page_num in enumerate(target_pages, 1):
         if timeout_at and time.monotonic() > timeout_at and extracted_rows:
             break
+
+        if catalog_pages and page_num in catalog_pages:
+            # Target tables on these pages have already been extracted with
+            # normalized columns and chapter context. Avoid re-adding broad
+            # duplicate rows from the same financial tables.
+            now = time.monotonic()
+            if progress_callback and (now - last_report > 0.75 or idx == len(target_pages)):
+                progress = 38 + (idx / max(len(target_pages), 1)) * 42
+                progress_callback(
+                    f"Extracting catalog target tables ({idx}/{len(target_pages)} target pages)",
+                    progress,
+                    page_num,
+                    total_pages,
+                )
+                last_report = now
+            continue
 
         page = pdf.pages[page_num - 1]
         try:
@@ -568,7 +1219,7 @@ def _extract_from_open_pdf(
             )
             last_report = now
 
-    return extracted_rows, target_pages
+    return _dedupe_rows(extracted_rows), target_pages
 
 
 def get_page_count(pdf_bytes: bytes) -> int:

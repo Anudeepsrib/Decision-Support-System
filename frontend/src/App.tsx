@@ -14,6 +14,8 @@ import {
 const RAW_API_BASE = (import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000/api').replace(/\/$/, '')
 const API_BASE = RAW_API_BASE.endsWith('/api') ? RAW_API_BASE : `${RAW_API_BASE}/api`
 const API_ORIGIN = API_BASE.slice(0, -4)
+const DEFAULT_FINANCIAL_YEAR = '2023-24'
+const FINANCIAL_YEAR_OPTIONS = ['2023-24', '2024-25']
 
 type Tab = 'arr-upload' | 'petition-upload' | 'extraction' | 'comparison' | 'generate'
 type DocType = 'arr_order' | 'truing_up_petition'
@@ -183,6 +185,83 @@ function confidenceClass(value: number | null | undefined) {
   return 'bg-red-100 text-red-800'
 }
 
+function inferFinancialYear(filename: string | null | undefined) {
+  const match = (filename ?? '').replace(/[_/]+/g, ' ').match(/\b(20\d{2})\s*[-–—_/\s]\s*(\d{2})\b/)
+  if (!match) return null
+  const startYear = Number(match[1])
+  const endYear = Number(`20${match[2]}`)
+  return endYear - startYear === 1 ? `${startYear}-${match[2]}` : null
+}
+
+const COVERAGE_SPECS = [
+  {
+    label: 'SBU-G',
+    fullIds: [
+      'COST_OF_GENERATION',
+      'OM_EXPENSES_GENERATION',
+      'INTEREST_FINANCE_GENERATION',
+      'DEPRECIATION_GENERATION',
+      'ROE_GENERATION',
+      'NON_TARIFF_INCOME_GENERATION',
+      'ARR_GENERATION',
+      'NET_ARR_GENERATION',
+    ],
+    fallbackIds: ['NET_ARR_GENERATION_TRANSFER_FALLBACK'],
+    expectedRows: 7,
+  },
+  {
+    label: 'SBU-T',
+    fullIds: [
+      'OM_EXPENSES_TRANSMISSION',
+      'INTEREST_FINANCE_TRANSMISSION',
+      'DEPRECIATION_TRANSMISSION',
+      'ROE_TRANSMISSION',
+      'NON_TARIFF_INCOME_TRANSMISSION',
+      'ARR_TRANSMISSION',
+      'NET_ARR_TRANSMISSION',
+      'TRANSMISSION_COMPENSATION',
+      'TRANSMISSION_AVAILABILITY_INCENTIVE',
+    ],
+    fallbackIds: ['NET_ARR_TRANSMISSION_TRANSFER_FALLBACK'],
+    expectedRows: 6,
+  },
+  {
+    label: 'Energy/T&D',
+    fullIds: ['ENERGY_SALES', 'TRANSMISSION_LOSS', 'DISTRIBUTION_LOSS', 'T_D_LOSS'],
+    fallbackIds: [],
+    expectedRows: 4,
+  },
+  {
+    label: 'SBU-D',
+    fullIds: ['PURCHASE_OF_POWER', 'OM_COST', 'INTEREST_FINANCE_CHARGES', 'DEPRECIATION', 'ROE', 'NET_EXPENDITURE'],
+    fallbackIds: [],
+    expectedRows: 6,
+  },
+]
+
+function extractionCoverage(items: ComparisonItem[]) {
+  return COVERAGE_SPECS.map((spec) => {
+    const fullRows = items.filter((item) => item.canonical_id && spec.fullIds.includes(item.canonical_id))
+    const fallbackRows = items.filter((item) => item.canonical_id && spec.fallbackIds.includes(item.canonical_id))
+    const mappedRows = fullRows.length ? fullRows : fallbackRows
+    const pages = mappedRows.flatMap((item) => [
+      item.approved_source_page,
+      item.actual_source_page,
+      item.claimed_source_page,
+    ]).filter((page): page is number => typeof page === 'number')
+    const status = fullRows.length ? 'Full' : fallbackRows.length ? 'Fallback' : 'Missing'
+    return {
+      ...spec,
+      status,
+      targetFound: fullRows.length > 0,
+      sourcePage: pages.length ? Math.min(...pages) : null,
+      rowsMapped: mappedRows.length,
+      unmappedRows: Math.max(spec.expectedRows - mappedRows.length, 0),
+      fallbackUsed: fallbackRows.length > 0 && fullRows.length === 0,
+    }
+  })
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('arr-upload')
   const [documents, setDocuments] = useState<Document[]>([])
@@ -193,18 +272,22 @@ function App() {
   const [order, setOrder] = useState<GeneratedOrder | null>(null)
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, ReviewDraft>>({})
   const [jobs, setJobs] = useState<Record<string, JobStatus>>({})
+  const [selectedFinancialYear, setSelectedFinancialYear] = useState(DEFAULT_FINANCIAL_YEAR)
   const activeJobPollers = useRef<Record<string, boolean>>({})
   const [loading, setLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
-  const latestArr = useMemo(
-    () => documents.find((doc) => doc.doc_type === 'arr_order'),
-    [documents],
-  )
   const latestPetition = useMemo(
-    () => documents.find((doc) => doc.doc_type === 'truing_up_petition'),
-    [documents],
+    () => documents.find((doc) => doc.doc_type === 'truing_up_petition' && doc.financial_year === selectedFinancialYear)
+      ?? documents.find((doc) => doc.doc_type === 'truing_up_petition'),
+    [documents, selectedFinancialYear],
+  )
+  const workflowFinancialYear = latestPetition?.financial_year ?? selectedFinancialYear
+  const latestArr = useMemo(
+    () => documents.find((doc) => doc.doc_type === 'arr_order' && doc.financial_year === workflowFinancialYear)
+      ?? documents.find((doc) => doc.doc_type === 'arr_order'),
+    [documents, workflowFinancialYear],
   )
   const arrExtraction = latestArr ? extractions[latestArr.id] : null
   const petitionExtraction = latestPetition ? extractions[latestPetition.id] : null
@@ -213,16 +296,20 @@ function App() {
 
   useEffect(() => {
     loadAll().catch((err) => setError((err as Error).message))
-  }, [])
+  }, [selectedFinancialYear])
 
   async function loadAll() {
     setError(null)
     const docs = await apiJson<Document[]>('/documents')
     setDocuments(docs)
 
+    const selectedPetition = docs.find((doc) => doc.doc_type === 'truing_up_petition' && doc.financial_year === selectedFinancialYear && doc.status === 'extracted')
+      ?? docs.find((doc) => doc.doc_type === 'truing_up_petition' && doc.status === 'extracted')
+    const selectedYear = selectedPetition?.financial_year ?? selectedFinancialYear
     const latestByType = [
-      docs.find((doc) => doc.doc_type === 'arr_order' && doc.status === 'extracted'),
-      docs.find((doc) => doc.doc_type === 'truing_up_petition' && doc.status === 'extracted'),
+      docs.find((doc) => doc.doc_type === 'arr_order' && doc.financial_year === selectedYear && doc.status === 'extracted')
+        ?? docs.find((doc) => doc.doc_type === 'arr_order' && doc.status === 'extracted'),
+      selectedPetition,
     ].filter(Boolean) as Document[]
 
     const loadedExtractions: Record<string, ExtractionResult> = {}
@@ -238,7 +325,7 @@ function App() {
     })
 
     try {
-      const latestComparison = await apiJson<ComparisonResult>('/comparison/latest?financial_year=2024-25')
+      const latestComparison = await apiJson<ComparisonResult>(`/comparison/latest?financial_year=${encodeURIComponent(selectedFinancialYear)}`)
       setComparison(latestComparison)
     } catch {
       setComparison(null)
@@ -295,7 +382,10 @@ function App() {
 
     const formData = new FormData()
     formData.append('file', file)
-    formData.append('financial_year', '2024-25')
+    const uploadYear = docType === 'truing_up_petition'
+      ? inferFinancialYear(file.name) ?? selectedFinancialYear
+      : selectedFinancialYear
+    formData.append('financial_year', uploadYear)
 
     setLoading(docType)
     setError(null)
@@ -311,7 +401,8 @@ function App() {
         setActiveTab('extraction')
       }
 
-      setNotice(`${result.filename} uploaded. Extraction started.`)
+      setSelectedFinancialYear(uploadYear)
+      setNotice(`${result.filename} uploaded for FY ${uploadYear}. Extraction started.`)
       await loadAll()
       if (result.extraction_job_id) {
         pollJobStatus(result.extraction_job_id, result.id)
@@ -350,7 +441,7 @@ function App() {
     setLoading('comparison')
     setError(null)
     try {
-      const result = await apiJson<ComparisonResult>('/comparison/run?financial_year=2024-25', {
+      const result = await apiJson<ComparisonResult>(`/comparison/run?financial_year=${encodeURIComponent(workflowFinancialYear)}`, {
         method: 'POST',
       })
       setComparison(result)
@@ -455,7 +546,7 @@ function App() {
               <div>
                 <p className="font-semibold text-slate-900">{doc.filename}</p>
                 <p className="text-sm text-slate-600">
-                  {(doc.file_size / 1024 / 1024).toFixed(2)} MB | {doc.page_count ?? '-'} pages | {statusText}
+                  FY {doc.financial_year} | {(doc.file_size / 1024 / 1024).toFixed(2)} MB | {doc.page_count ?? '-'} pages | {statusText}
                 </p>
                 {stageText && isInProgress && (
                   <div className="mt-2">
@@ -501,7 +592,7 @@ function App() {
     const isArr = docType === 'arr_order'
     const file = isArr ? arrFile : petitionFile
     const setFile = isArr ? setArrFile : setPetitionFile
-    const title = isArr ? 'Step 1: Upload ARR Approval Order' : 'Step 2: Upload 2024-25 Petition'
+    const title = isArr ? 'Step 1: Upload ARR Approval Order' : `Step 2: Upload ${selectedFinancialYear} Petition`
     const documentsTitle = isArr ? 'ARR Documents' : 'Petition Documents'
 
     return (
@@ -509,7 +600,15 @@ function App() {
         <div className="kserc-card">
           <div className="mb-6 flex items-center justify-between gap-4">
             <h2 className="text-2xl font-bold">{title}</h2>
-            <span className="rounded-md bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">FY 2024-25</span>
+            <select
+              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700"
+              value={selectedFinancialYear}
+              onChange={(event) => setSelectedFinancialYear(event.target.value)}
+            >
+              {FINANCIAL_YEAR_OPTIONS.map((year) => (
+                <option key={year} value={year}>FY {year}</option>
+              ))}
+            </select>
           </div>
           <div className="rounded-md border-2 border-dashed border-slate-300 bg-slate-50 p-8 text-center">
             <input
@@ -620,11 +719,13 @@ function App() {
   }
 
   function comparisonTab() {
+    const coverageRows = comparison ? extractionCoverage(comparison.items) : []
+
     return (
       <section className="mx-auto max-w-7xl px-6">
         <div className="kserc-card">
           <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <h2 className="text-2xl font-bold">Comparison and Review Workbench</h2>
+            <h2 className="text-2xl font-bold">Comparison and Review Workbench - FY {workflowFinancialYear}</h2>
             <button
               className="rounded-md bg-emerald-600 px-5 py-2 font-semibold text-white hover:bg-emerald-700 disabled:bg-slate-400"
               disabled={!comparison || loading === 'generate'}
@@ -648,6 +749,34 @@ function App() {
                 <Metric label="Acceptable" value={comparison.auto_approved} tone="green" />
                 <Metric label="Review Required" value={comparison.review_required} tone="amber" />
                 <Metric label="Total Variance" value={`${comparison.total_variance.toFixed(2)} Cr.`} tone="blue" />
+              </div>
+              <div className="mb-6 overflow-x-auto">
+                <table className="min-w-[980px] border-collapse text-sm">
+                  <thead className="bg-slate-100">
+                    <tr>
+                      <th className="border border-slate-200 px-3 py-2 text-left">Coverage</th>
+                      <th className="border border-slate-200 px-3 py-2 text-center">Status</th>
+                      <th className="border border-slate-200 px-3 py-2 text-center">Target Found</th>
+                      <th className="border border-slate-200 px-3 py-2 text-center">Source Page</th>
+                      <th className="border border-slate-200 px-3 py-2 text-right">Rows Mapped</th>
+                      <th className="border border-slate-200 px-3 py-2 text-right">Unmapped Rows</th>
+                      <th className="border border-slate-200 px-3 py-2 text-center">Fallback</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {coverageRows.map((row) => (
+                      <tr key={row.label} className={row.status === 'Full' ? 'bg-emerald-50' : row.status === 'Fallback' ? 'bg-amber-50' : 'bg-slate-50'}>
+                        <td className="border border-slate-200 px-3 py-2 font-semibold text-slate-900">{row.label}</td>
+                        <td className="border border-slate-200 px-3 py-2 text-center">{row.status}</td>
+                        <td className="border border-slate-200 px-3 py-2 text-center">{row.targetFound ? 'Yes' : 'No'}</td>
+                        <td className="border border-slate-200 px-3 py-2 text-center">{row.sourcePage ?? '-'}</td>
+                        <td className="border border-slate-200 px-3 py-2 text-right">{row.rowsMapped}</td>
+                        <td className="border border-slate-200 px-3 py-2 text-right">{row.unmappedRows}</td>
+                        <td className="border border-slate-200 px-3 py-2 text-center">{row.fallbackUsed ? 'Used' : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-[1400px] border-collapse text-sm">
@@ -774,6 +903,7 @@ function App() {
             <p className="text-sm text-slate-600">Demo MVP | ARR vs Petition truing-up workflow</p>
           </div>
           <div className="flex flex-wrap gap-2 text-xs font-semibold">
+            <StatusPill label="FY" ok={true} value={workflowFinancialYear} />
             <StatusPill label="ARR" ok={latestArr?.status === 'extracted'} />
             <StatusPill label="Petition" ok={latestPetition?.status === 'extracted'} />
             <StatusPill label="Comparison" ok={!!comparison} />
@@ -833,10 +963,10 @@ function Metric({ label, value, tone = 'slate' }: { label: string; value: string
   )
 }
 
-function StatusPill({ label, ok }: { label: string; ok: boolean }) {
+function StatusPill({ label, ok, value }: { label: string; ok: boolean; value?: string }) {
   return (
     <span className={`rounded-md px-3 py-1 ${ok ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
-      {label}: {ok ? 'Ready' : 'Pending'}
+      {label}: {value ?? (ok ? 'Ready' : 'Pending')}
     </span>
   )
 }

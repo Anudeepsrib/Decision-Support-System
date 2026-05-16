@@ -1,8 +1,35 @@
 # KSERC Decision Support System MVP
 
-Local-first FastAPI + React MVP for the KSERC ARR truing-up workflow. A developer should be able to clone this repo, create a local environment, upload the sample ARR and Petition PDFs, generate a comparison, and download a draft PDF report without guessing hidden setup steps.
+**Deterministic local MVP for generating KSERC-style truing-up draft orders from uploaded ARR Order and Truing-Up Petition PDFs.**
+
+This system performs **end-to-end deterministic processing**:
+- PDF upload (ARR Order + Petition)
+- pdfplumber-based table extraction with target table detection
+- Canonical mapping via rule-based registry (no LLM)
+- Variance comparison (15% threshold)
+- Officer review workflow
+- KSERC-style draft order PDF generation (ReportLab, templates, no LLM)
+
+**This MVP currently generates deterministic KSERC-style draft orders from mapped canonical comparison rows. LLM-based narrative generation is planned for Phase 2 and is not currently wired into the system.**
+
+SBU-D mapping is substantive for the included sample PDFs. SBU-G, SBU-T, Energy/T&D, and Common Expenses coverage depends on whether the uploaded PDFs contain tables whose captions match the deterministic `TARGET_TABLE_CATALOG`. Missing chapters are reported transparently.
 
 Docker is intentionally not part of this MVP setup. Run it directly on your computer.
+
+---
+
+## Full Documentation Suite
+
+All technical, setup, API, architecture, testing, demo, limitations, Phase 2 LLM safety plan, and roadmap details live in the `/docs` folder.
+
+**Start here:**
+- New developers → [docs/03_LOCAL_SETUP.md](docs/03_LOCAL_SETUP.md)
+- Architecture & reviewers → [docs/02_ARCHITECTURE.md](docs/02_ARCHITECTURE.md)
+- Demo presenters → [docs/15_DEMO_SCRIPT.md](docs/15_DEMO_SCRIPT.md)
+- Phase 2 engineers → [docs/17_PHASE_2_LLM_PLAN.md](docs/17_PHASE_2_LLM_PLAN.md)
+- Complete index → [docs/README.md](docs/README.md)
+
+---
 
 ## Prerequisites
 

@@ -18,62 +18,6 @@ from pdf_generator import BANNED_PDF_STRINGS, generate_order_pdf, score_referenc
 def _sample_comparisons():
     return [
         {
-            "id": "g1",
-            "canonical_id": "OM_EXPENSES_GENERATION",
-            "display_name": "O&M Expenses - Generation",
-            "sbu": "SBU-G",
-            "unit": "Rs. Cr.",
-            "section": "sbu_g",
-            "approved_value": 120.0,
-            "actual_value": 128.0,
-            "claimed_value": 128.0,
-            "variance": 8.0,
-            "variance_percent": 6.67,
-            "decision_class": "ACCEPTABLE_VARIANCE",
-        },
-        {
-            "id": "g2",
-            "canonical_id": "NET_ARR_GENERATION",
-            "display_name": "Net ARR - Generation",
-            "sbu": "SBU-G",
-            "unit": "Rs. Cr.",
-            "section": "sbu_g",
-            "approved_value": 500.0,
-            "actual_value": 530.0,
-            "claimed_value": 530.0,
-            "variance": 30.0,
-            "variance_percent": 6.0,
-            "decision_class": "ACCEPTABLE_VARIANCE",
-        },
-        {
-            "id": "t1",
-            "canonical_id": "DEPRECIATION_TRANSMISSION",
-            "display_name": "Depreciation - Transmission",
-            "sbu": "SBU-T",
-            "unit": "Rs. Cr.",
-            "section": "sbu_t",
-            "approved_value": 80.0,
-            "actual_value": 92.0,
-            "claimed_value": 92.0,
-            "variance": 12.0,
-            "variance_percent": 15.0,
-            "decision_class": "REVIEW_REQUIRED",
-        },
-        {
-            "id": "e1",
-            "canonical_id": "ENERGY_SALES",
-            "display_name": "Energy Sales",
-            "sbu": "ENERGY",
-            "unit": "MU",
-            "section": "energy_sales_td_loss",
-            "approved_value": 20000.0,
-            "actual_value": 20500.0,
-            "claimed_value": 20500.0,
-            "variance": 500.0,
-            "variance_percent": 2.5,
-            "decision_class": "ACCEPTABLE_VARIANCE",
-        },
-        {
             "id": "d1",
             "canonical_id": "PURCHASE_OF_POWER",
             "display_name": "Purchase of Power",
@@ -89,6 +33,92 @@ def _sample_comparisons():
         },
         {
             "id": "d2",
+            "canonical_id": "OM_COST",
+            "display_name": "O&M Cost",
+            "sbu": "SBU-D",
+            "unit": "Rs. Cr.",
+            "section": "sbu_d",
+            "approved_value": 500.0,
+            "actual_value": 475.0,
+            "claimed_value": 475.0,
+            "variance": -25.0,
+            "variance_percent": -5.0,
+            "decision_class": "ACCEPTABLE_VARIANCE",
+        },
+        {
+            "id": "d3",
+            "canonical_id": "INTEREST_FINANCE_CHARGES",
+            "display_name": "Interest and Finance Charges",
+            "sbu": "SBU-D",
+            "unit": "Rs. Cr.",
+            "section": "sbu_d",
+            "approved_value": 200.0,
+            "actual_value": 180.0,
+            "claimed_value": 180.0,
+            "variance": -20.0,
+            "variance_percent": -10.0,
+            "decision_class": "REVIEW_REQUIRED",
+        },
+        {
+            "id": "d4",
+            "canonical_id": "DEPRECIATION",
+            "display_name": "Depreciation",
+            "sbu": "SBU-D",
+            "unit": "Rs. Cr.",
+            "section": "sbu_d",
+            "approved_value": 150.0,
+            "actual_value": 165.0,
+            "claimed_value": 165.0,
+            "variance": 15.0,
+            "variance_percent": 10.0,
+            "decision_class": "ACCEPTABLE_VARIANCE",
+        },
+        {
+            "id": "d5",
+            "canonical_id": "ROE",
+            "display_name": "Return on Equity",
+            "sbu": "SBU-D",
+            "unit": "Rs. Cr.",
+            "section": "sbu_d",
+            "approved_value": 75.0,
+            "actual_value": 75.0,
+            "claimed_value": 75.0,
+            "variance": 0.0,
+            "variance_percent": 0.0,
+            "decision_class": "ACCEPTABLE_VARIANCE",
+        },
+        {
+            "id": "d6",
+            "canonical_id": "NET_EXPENDITURE",
+            "display_name": "Net Expenditure",
+            "sbu": "SBU-D",
+            "unit": "Rs. Cr.",
+            "section": "sbu_d",
+            "approved_value": 2000.0,
+            "actual_value": 2145.0,
+            "claimed_value": 2145.0,
+            "variance": 145.0,
+            "variance_percent": 7.25,
+            "decision_class": "REVIEW_REQUIRED",
+            "is_total": True,
+        },
+        {
+            "id": "d7",
+            "canonical_id": "REVENUE_SURPLUS_GAP",
+            "display_name": "Revenue Surplus / Gap",
+            "sbu": "SBU-D",
+            "unit": "Rs. Cr.",
+            "section": "sbu_d",
+            "approved_value": -50.0,
+            "actual_value": 120.0,
+            "claimed_value": 120.0,
+            "variance": 170.0,
+            "variance_percent": 340.0,
+            "decision_class": "REVIEW_REQUIRED",
+            "is_total": True,
+        },
+        {
+            "id": "d8",
             "canonical_id": "NON_TARIFF_INCOME",
             "display_name": "Non-Tariff Income",
             "sbu": "SBU-D",
@@ -100,20 +130,6 @@ def _sample_comparisons():
             "variance": 5.0,
             "variance_percent": 5.56,
             "decision_class": "ACCEPTABLE_VARIANCE",
-        },
-        {
-            "id": "c1",
-            "canonical_id": "OTHER_EXPENSES",
-            "display_name": "Other Expenses",
-            "sbu": "SBU-D",
-            "unit": "Rs. Cr.",
-            "section": "common_expenses",
-            "approved_value": 25.0,
-            "actual_value": 31.0,
-            "claimed_value": 31.0,
-            "variance": 6.0,
-            "variance_percent": 24.0,
-            "decision_class": "REVIEW_REQUIRED",
         },
         {
             "id": "noise1",
@@ -141,6 +157,16 @@ def _normalise(text: str) -> str:
     return re.sub(r"\s+", " ", text)
 
 
+def _chapter_page_count(page_texts, start_marker, end_marker):
+    start_pattern = re.compile(rf"(^|\n)\s*{re.escape(start_marker)}\s*(\n|$)", re.IGNORECASE)
+    end_pattern = re.compile(rf"(^|\n)\s*{re.escape(end_marker)}\s*(\n|$)", re.IGNORECASE)
+    start = next((i for i, page in enumerate(page_texts) if start_pattern.search(page)), None)
+    if start is None:
+        return 0
+    end = next((i for i in range(start + 1, len(page_texts)) if end_pattern.search(page_texts[i])), len(page_texts))
+    return max(1, end - start)
+
+
 def test_reference_pdf_fidelity():
     result = asyncio.run(
         generate_order_pdf(
@@ -152,11 +178,12 @@ def test_reference_pdf_fidelity():
         )
     )
     with pdfplumber.open(result["file_path"]) as pdf:
+        page_texts = [page.extract_text() or "" for page in pdf.pages]
         page_count = len(pdf.pages)
-        text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+        text = "\n".join(page_texts)
     normalised = _normalise(text)
 
-    assert page_count == 237
+    assert page_count <= 60
 
     required_markers = [
         "KERALA STATE ELECTRICITY REGULATORY COMMISSION",
@@ -176,11 +203,13 @@ def test_reference_pdf_fidelity():
         "CHAPTER-4",
         "ENERGY SALES AND T&D LOSS",
         "CHAPTER-5",
+        "CHAPTER-7",
         "STRATEGIC BUSINESS UNIT DISTRIBUTION",
         "Table-1.1",
-        "Analysis and decision of the Commission",
+        "Table 5.1",
         "Consolidated Truing up",
         "Final Order",
+        "ORDER OF THE COMMISSION",
         "Sd/-",
     ]
     for marker in required_markers:
@@ -189,7 +218,9 @@ def test_reference_pdf_fidelity():
     for banned in BANNED_PDF_STRINGS:
         assert banned not in normalised
     assert "draft regulatory order page" not in normalised
-    assert normalised.count("Statement of mapped claim and deviation for Purchase of Power") <= 1
+    assert not re.search(r"\bPart\s+\d+\b", normalised)
+    assert "Documents considered - Part" not in normalised
+    assert "No mapped canonical value" not in normalised
 
     sbu_g_text = normalised.split("CHAPTER-2", 1)[1].split("CHAPTER-3", 1)[0]
     sbu_t_text = normalised.split("CHAPTER-3", 1)[1].split("CHAPTER-4", 1)[0]
@@ -200,18 +231,19 @@ def test_reference_pdf_fidelity():
     assert "Purchase of Power" not in sbu_t_text
     assert "Purchase of Power" in sbu_d_text
     assert chapter_1_text.count("Purchase of Power") <= 1
+    assert _chapter_page_count(page_texts, "CHAPTER -1", "CHAPTER-2") <= 8
+    assert _chapter_page_count(page_texts, "CHAPTER-2", "CHAPTER-3") <= 2
+    assert _chapter_page_count(page_texts, "CHAPTER-3", "CHAPTER-4") <= 2
 
-    issue_expectations = {
-        sbu_g_text: ["O&M expenses", "Depreciation", "Interest and finance charges"],
-        sbu_t_text: ["Transmission O&M", "Transmission depreciation", "Interest and finance charges"],
-        sbu_d_text: ["Purchase of power", "Distribution O&M cost", "Revenue gap / surplus"],
-    }
-    for chapter_text, issue_titles in issue_expectations.items():
-        for title in issue_titles:
-            assert chapter_text.lower().count(title.lower()) <= 2, title
+    repeated_sentences = [
+        re.sub(r"\s+", " ", sentence).strip().lower()
+        for sentence in re.findall(r"[^.!?]+[.!?]", text)
+        if len(re.sub(r"\s+", " ", sentence).strip()) > 40
+    ]
+    assert not {sentence for sentence in repeated_sentences if repeated_sentences.count(sentence) > 3}
 
     score = score_reference_fidelity(text)
-    assert score["score"] >= 85, score
+    assert score["score"] >= 90, score
     assert not score["banned_strings_found"]
 
 

@@ -68,9 +68,9 @@ def test_pdf_structure_requirements():
         "KERALA STATE ELECTRICITY REGULATORY COMMISSION",
         "Table of Contents",
         "Statutory provisions",
-        "MYT framework provisions",
-        "Analysis and decision of the Commission",
-        "Order of the Commission",
+        "MYT framework",
+        "Scope of draft",
+        "ORDER OF THE COMMISSION",
     ]
     for section in required_sections:
         assert section in html_template
