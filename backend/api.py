@@ -1,5 +1,5 @@
 """
-MVP API Routes — All REST endpoints for the KSERC DSS MVP.
+MVP API Routes — All REST endpoints for the Regulatory DSS MVP.
 
 Endpoints:
   POST /api/documents/upload       — Upload a PDF
@@ -76,10 +76,10 @@ except ImportError:  # Support direct imports from the backend directory.
 
 router = APIRouter(prefix="/api", tags=["MVP API"])
 compat_router = APIRouter(tags=["Compatibility API"])
-DEFAULT_FINANCIAL_YEAR = "2024-25"
+settings = get_settings()
+DEFAULT_FINANCIAL_YEAR = settings.default_financial_year
 
 # Upload directory
-settings = get_settings()
 UPLOAD_DIR = str(settings.upload_dir)
 settings.upload_dir.mkdir(parents=True, exist_ok=True)
 
@@ -105,8 +105,8 @@ def _effective_financial_year(filename: str, doc_type: str, requested_year: Opti
 
 
 def _case_id_for_year(financial_year: str) -> str:
-    """Use one deterministic demo case per financial year."""
-    return f"kserc-{financial_year}"
+    """Use one deterministic case per financial year."""
+    return f"{settings.case_id_prefix}-{financial_year}"
 
 
 def _validate_pdf_upload(file: UploadFile):
@@ -1114,7 +1114,7 @@ async def generate_order(
     req: GenerateOrderRequest,
     db: Session = Depends(get_db),
 ):
-    """Generate a KSERC-style truing-up draft order PDF."""
+    """Generate a regulatory truing-up draft order PDF."""
     try:
         from .pdf_generator import generate_order_pdf
     except ImportError:

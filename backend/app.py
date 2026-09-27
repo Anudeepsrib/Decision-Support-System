@@ -1,5 +1,4 @@
-"""
-KSERC Decision Support System MVP application entry point.
+"""Regulatory decision-support application entry point.
 
 Documented local command:
     python -m uvicorn backend.app:app --reload --port 8000
@@ -37,12 +36,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="KSERC Decision Support System — MVP",
+    title=settings.app_name,
     description=(
-        "Demo-ready MVP for KSERC Truing-Up Order generation. "
+        f"Decision support for {settings.regulator_short_name} order generation. "
         "Upload ARR orders and petition PDFs, extract financial tables, "
         "compare approved vs actual values, review flagged items, "
-        "and generate KSERC-style draft orders."
+        "and generate draft orders."
     ),
     version="1.0.0-mvp",
     docs_url="/docs",
@@ -71,7 +70,8 @@ app.mount("/generated", StaticFiles(directory=settings.generated_reports_dir), n
 @app.get("/", tags=["Health"])
 async def root():
     return {
-        "service": "KSERC Decision Support System",
+        "service": settings.app_name,
+        "regulator": settings.regulator_name,
         "version": "1.0.0-mvp",
         "mode": "demo",
         "status": "operational",

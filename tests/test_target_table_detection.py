@@ -4,7 +4,7 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "backend"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend"))
 
 from extractor import detect_chapter_ranges_from_text, _extract_rows_from_target_table
 from table_targets import TARGETS_BY_ID

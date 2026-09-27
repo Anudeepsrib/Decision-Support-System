@@ -2,7 +2,7 @@
 import sqlite3
 import os
 
-db_path = os.path.join(os.path.dirname(__file__), 'kserc_dss.db')
+db_path = os.path.join(os.path.dirname(__file__), 'regulatory_dss.db')
 conn = sqlite3.connect(db_path)
 cursor = conn.cursor()
 

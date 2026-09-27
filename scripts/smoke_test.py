@@ -16,8 +16,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ENV_FILE = ROOT / ".env"
-DEFAULT_ARR = ROOT / "arr_order_test.pdf"
-DEFAULT_PETITION = ROOT / "petition_test.pdf"
+DEFAULT_ARR = ROOT / "samples" / "arr_order_test.pdf"
+DEFAULT_PETITION = ROOT / "samples" / "petition_test.pdf"
 
 
 def parse_env(path: Path) -> dict[str, str]:
@@ -74,7 +74,7 @@ def upload_pdf(path: Path, endpoint: str) -> dict:
     if not path.exists():
         raise RuntimeError(f"Missing smoke-test PDF: {path}")
 
-    boundary = f"----kserc-smoke-{uuid.uuid4().hex}"
+    boundary = f"----dss-smoke-{uuid.uuid4().hex}"
     mime = mimetypes.guess_type(path.name)[0] or "application/pdf"
     file_bytes = path.read_bytes()
     parts = [

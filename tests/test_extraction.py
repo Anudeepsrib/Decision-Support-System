@@ -4,13 +4,13 @@ Test extraction pipeline with sample PDFs
 """
 import os
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'backend'))
 
 from extractor import extract_tables_from_pdf, get_page_count
 
 def test_extraction():
     # Check if we have any PDFs in mvp_uploads directory
-    data_dir = os.path.join(os.path.dirname(__file__), 'mvp_uploads')
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'mvp_uploads')
     pdf_files = [f for f in os.listdir(data_dir) if f.lower().endswith('.pdf')]
     
     print(f"Found {len(pdf_files)} PDF files in data directory:")

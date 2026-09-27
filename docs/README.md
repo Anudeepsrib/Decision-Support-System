@@ -1,4 +1,4 @@
-# KSERC Decision Support System — Documentation Index
+# Regulatory Decision Support System — Documentation Index
 
 **MVP Version:** 1.0.0-mvp  
 **Status:** Local-first deterministic MVP (no LLM in runtime path)

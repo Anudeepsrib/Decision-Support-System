@@ -7,7 +7,7 @@ API_BASE = "http://localhost:8000/api"
 
 def assess_demo_readiness():
     print("=== DEMO READINESS ASSESSMENT ===")
-    print("KSERC Decision Support System MVP - Stakeholder Demo Evaluation")
+    print("Regulatory Decision Support System MVP - Stakeholder Demo Evaluation")
     print()
     
     # Scoring categories
@@ -217,10 +217,10 @@ def recommend_demo_script():
     print("\n=== RECOMMENDED DEMO SCRIPT ===")
     
     script = """
-DEMO SCRIPT FOR KSERC DSS MVP
+DEMO SCRIPT FOR Regulatory DSS MVP
 
 1. INTRODUCTION (2 minutes)
-   - Welcome to KSERC Decision Support System
+   - Welcome to Regulatory Decision Support System
    - Explain deterministic truing-up order generation
    - Highlight key benefits: efficiency, accuracy, auditability
 

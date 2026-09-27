@@ -1,6 +1,6 @@
-# KSERC Decision Support System MVP
+# Regulatory Decision Support System
 
-**Deterministic local MVP for generating KSERC-style truing-up draft orders from uploaded ARR Order and Truing-Up Petition PDFs.**
+**Configurable, deterministic system for generating regulatory truing-up draft orders from uploaded ARR Order and Truing-Up Petition PDFs.**
 
 This system performs **end-to-end deterministic processing**:
 - PDF upload (ARR Order + Petition)
@@ -11,6 +11,10 @@ This system performs **end-to-end deterministic processing**:
 - KSERC-style draft order PDF generation (ReportLab, templates, no LLM)
 
 **This MVP currently generates deterministic KSERC-style draft orders from mapped canonical comparison rows. LLM-based narrative generation is planned for Phase 2 and is not currently wired into the system.**
+
+KSERC remains the included reference profile. Application identity, regulator, utility,
+case prefix, reporting year, and output filename can be changed through environment
+variables without modifying Python or TypeScript code.
 
 SBU-D mapping is substantive for the included sample PDFs. SBU-G, SBU-T, Energy/T&D, and Common Expenses coverage depends on whether the uploaded PDFs contain tables whose captions match the deterministic `TARGET_TABLE_CATALOG`. Missing chapters are reported transparently.
 
@@ -118,7 +122,19 @@ Copy-Item .env.example .env
 Required variables:
 
 ```env
-DATABASE_URL=sqlite:///./data/kserc_dss.db
+APP_NAME=Regulatory Decision Support System
+REGULATOR_NAME=Kerala State Electricity Regulatory Commission
+REGULATOR_SHORT_NAME=KSERC
+UTILITY_NAME=Kerala State Electricity Board Limited
+UTILITY_ADDRESS=Vydhyuthi Bhavanam|Pattom, Thiruvananthapuram
+COMMISSION_PLACE=Thiruvananthapuram
+COMMISSION_MEMBERS=Shri T K Jose, Chairman|Adv. A.J Wilson, Member|Shri B Pradeep, Member
+CONDUCT_REGULATION_NAME=KSERC (Conduct of Business) Regulations, 2003
+REGULATION_NAME=KSERC (Terms and Conditions for Determination of Tariff) Regulations, 2021
+CASE_ID_PREFIX=regulatory
+DEFAULT_FINANCIAL_YEAR=2024-25
+REPORT_FILENAME_PREFIX=Regulatory_TruingUp
+DATABASE_URL=sqlite:///./data/regulatory_dss.db
 JWT_SECRET_KEY=local-dev-change-me-use-a-long-random-value
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=60
@@ -161,14 +177,14 @@ Required tables created:
 Clean reset:
 
 ```bash
-rm -f data/kserc_dss.db
+rm -f data/regulatory_dss.db
 python scripts/init_db.py
 ```
 
 Windows:
 
 ```powershell
-Remove-Item data\kserc_dss.db -ErrorAction SilentlyContinue
+Remove-Item data\regulatory_dss.db -ErrorAction SilentlyContinue
 python scripts\init_db.py
 ```
 
@@ -224,6 +240,9 @@ The frontend defaults to `http://127.0.0.1:8000/api`. To override it, create `fr
 
 ```env
 VITE_API_BASE_URL=http://127.0.0.1:8000/api
+VITE_APP_NAME=Regulatory Decision Support System
+VITE_REGULATOR_SHORT_NAME=KSERC
+VITE_DEFAULT_FINANCIAL_YEAR=2024-25
 ```
 
 Build check:
@@ -233,19 +252,26 @@ cd frontend
 npm run build
 ```
 
+Backend test setup and run:
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
 ## Demo Workflow
 
 Use the sample PDFs in the repository root:
 
-- `arr_order_test.pdf`
-- `petition_test.pdf`
+- `samples/arr_order_test.pdf`
+- `samples/petition_test.pdf`
 
 UI flow:
 
 1. Open http://127.0.0.1:5173.
-2. Upload `arr_order_test.pdf` on the ARR Upload tab.
+2. Upload `samples/arr_order_test.pdf` on the ARR Upload tab.
 3. Wait for extraction to complete.
-4. Upload `petition_test.pdf` on the Petition Upload tab.
+4. Upload `samples/petition_test.pdf` on the Petition Upload tab.
 5. Wait for extraction to complete.
 6. Open Extraction and click Run Comparison.
 7. Review the comparison rows.
@@ -274,6 +300,8 @@ The smoke test calls:
 backend/                FastAPI app, SQLAlchemy models, extraction, comparison, PDF generation
 frontend/               Vite + React + TypeScript UI
 scripts/                Local setup, env check, DB init, seed, smoke test scripts
+tests/                  Automated backend and report checks
+samples/                Example ARR and petition PDFs
 data/                   Local SQLite DB location
 mvp_uploads/            Uploaded PDFs, created automatically
 output/                 Generated PDF reports, created automatically

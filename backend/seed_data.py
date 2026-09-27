@@ -1,5 +1,5 @@
 """
-Local demo seed data for the KSERC DSS MVP.
+Local demo seed data for the Regulatory DSS MVP.
 
 This is optional. The primary workflow is still upload ARR and Petition PDFs,
 but seed data gives developers a quick way to verify comparison and report
@@ -32,7 +32,7 @@ except ImportError:  # Support direct imports from the backend directory.
     )
 
 
-CASE_ID = "kserc-2024-25"
+CASE_ID = "regulatory-2024-25"
 
 SEED_ARR_DATA = [
     {"canonical_id": "PURCHASE_OF_POWER", "canonical": "Purchase of Power", "cost_head": "SBU-D", "section": "sbu_d", "approved": 12456.78, "actual": 14123.45},

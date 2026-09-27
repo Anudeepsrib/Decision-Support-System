@@ -4,7 +4,7 @@ PYTHON ?= python
 VENV_PYTHON := .venv/bin/python
 
 help:
-	@echo "KSERC DSS MVP local commands"
+	@echo "Regulatory DSS MVP local commands"
 	@echo "  make setup     Install backend/frontend dependencies and initialize DB"
 	@echo "  make backend   Start FastAPI on http://127.0.0.1:8000"
 	@echo "  make frontend  Start Vite on http://127.0.0.1:5173"
@@ -38,5 +38,5 @@ test:
 	cd frontend && npm run build
 
 clean:
-	rm -rf .venv frontend/node_modules frontend/dist data/kserc_dss.db
+	rm -rf .venv frontend/node_modules frontend/dist data/regulatory_dss.db
 	rm -rf output/* mvp_uploads/*

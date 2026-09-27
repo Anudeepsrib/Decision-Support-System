@@ -1,4 +1,4 @@
-# KSERC DSS Frontend
+# Regulatory DSS Frontend
 
 Vite + React UI for the local MVP.
 

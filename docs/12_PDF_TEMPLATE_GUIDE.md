@@ -1,4 +1,4 @@
-# KSERC Decision Support System — PDF Template Guide
+# Regulatory Decision Support System — PDF Template Guide
 
 **Purpose:** How the KSERC-style draft order PDF is actually produced, and how to modify formatting safely.
 
@@ -9,7 +9,7 @@
 | Engine | `PDF_ENGINE` value | Implementation | When to use |
 |--------|--------------------|----------------|-------------|
 | **ReportLab** (default) | `reportlab` | `SimpleDocTemplate`, `Paragraph`, `Table`, `TableStyle` in `pdf_generator.py` | Local demos, CI, most reliable |
-| **Playwright** | `playwright` | `kserc_order.html` + `kserc_order.css` rendered via headless Chromium | Pixel-perfect HTML fidelity, future Phase 2 narrative work |
+| **Playwright** | `playwright` | `regulatory_order.html` + `regulatory_order.css` rendered via headless Chromium | Pixel-perfect HTML fidelity, future Phase 2 narrative work |
 
 Both paths are required to produce **identical regulatory content** — only the layout engine differs.
 
@@ -31,8 +31,8 @@ The visual goal is "Commission order" rather than "modern web dashboard".
 ## HTML + CSS Path (Playwright)
 
 Files:
-- `backend/templates/kserc_order.html`
-- `backend/templates/kserc_order.css`
+- `backend/templates/regulatory_order.html`
+- `backend/templates/regulatory_order.css`
 - `backend/templates/components/*.html`
 
 The HTML is semantic:
@@ -86,7 +86,7 @@ If banned content is detected, the generator either drops the element or raises 
 
 ### Changing Table Styling
 
-- Edit `kserc_order.css` (for Playwright)
+- Edit `regulatory_order.css` (for Playwright)
 - Edit the `TableStyle` list in `pdf_generator.py` (for ReportLab)
 - Keep colors muted (blues, grays) — avoid bright modern palettes
 

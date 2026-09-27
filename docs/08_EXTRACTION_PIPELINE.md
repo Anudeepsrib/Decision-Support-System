@@ -1,4 +1,4 @@
-# KSERC Decision Support System — Extraction Pipeline
+# Regulatory Decision Support System — Extraction Pipeline
 
 **Core file:** `backend/extractor.py`  
 **Target catalog:** `backend/table_targets.py`  
@@ -118,7 +118,7 @@ From `test_report_context_sbu_coverage.py` and `test_target_table_detection.py`:
 - When only fallback rows from SBU-D summary exist → status = "Fallback", `fallback_used: true`
 - When neither exists → status = "Missing", `failed_extraction_reason` populated with attempted target IDs
 
-**In the included sample PDFs (`arr_order_test.pdf` + `petition_test.pdf`):**
+**In the included sample PDFs (`samples/arr_order_test.pdf` + `samples/petition_test.pdf`):**
 - SBU-D: Substantive / Full coverage
 - SBU-G: Usually Full or Fallback (some targets match)
 - SBU-T: Often Fallback or Missing

@@ -1,4 +1,4 @@
-# KSERC Decision Support System — Frontend Workflow
+# Regulatory Decision Support System — Frontend Workflow
 
 **Main file:** `frontend/src/App.tsx`  
 **Tech:** Vite + React 18 + TypeScript + Tailwind + lucide-react icons + axios

@@ -4,7 +4,7 @@ Test deterministic narrative generation
 """
 import os
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'backend'))
 
 from prompts import generate_variance_explanation
 

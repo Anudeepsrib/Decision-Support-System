@@ -1,4 +1,4 @@
-# KSERC Decision Support System — Security and Auditability (Current Posture)
+# Regulatory Decision Support System — Security and Auditability (Current Posture)
 
 **Honest assessment for an MVP:** Security is "local-demo appropriate," not "production enterprise grade."
 

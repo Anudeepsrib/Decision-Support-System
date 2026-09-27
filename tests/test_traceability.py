@@ -5,12 +5,12 @@ Test traceability and audit trail functionality
 import os
 import sys
 import sqlite3
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'backend'))
 
 def test_database_traceability():
     print("=== Testing Database Traceability ===")
     
-    db_path = os.path.join(os.path.dirname(__file__), 'kserc_dss.db')
+    db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'regulatory_dss.db')
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
@@ -80,7 +80,7 @@ def test_database_traceability():
 def test_provenance_tracking():
     print("\n=== Testing Provenance Tracking ===")
     
-    db_path = os.path.join(os.path.dirname(__file__), 'kserc_dss.db')
+    db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'regulatory_dss.db')
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
@@ -110,7 +110,7 @@ def test_provenance_tracking():
 def test_audit_trail_completeness():
     print("\n=== Testing Audit Trail Completeness ===")
     
-    db_path = os.path.join(os.path.dirname(__file__), 'kserc_dss.db')
+    db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'regulatory_dss.db')
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
@@ -156,7 +156,7 @@ def test_audit_trail_completeness():
 def test_end_to_end_traceability():
     print("\n=== Testing End-to-End Traceability ===")
     
-    db_path = os.path.join(os.path.dirname(__file__), 'kserc_dss.db')
+    db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'regulatory_dss.db')
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     

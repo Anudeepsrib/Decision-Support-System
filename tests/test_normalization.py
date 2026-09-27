@@ -4,14 +4,14 @@ Test normalization pipeline with extracted rows
 """
 import os
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'backend'))
 
 from normalizer import normalize_row_label, normalize_batch
 from extractor import extract_tables_from_pdf
 
 def test_normalization():
     # Load extracted data from existing PDF
-    data_dir = os.path.join(os.path.dirname(__file__), 'mvp_uploads')
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'mvp_uploads')
     pdf_files = [f for f in os.listdir(data_dir) if f.lower().endswith('.pdf')]
     
     if not pdf_files:

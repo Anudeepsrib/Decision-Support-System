@@ -1,4 +1,4 @@
-# KSERC Decision Support System — Canonical Mapping
+# Regulatory Decision Support System — Canonical Mapping
 
 **Core file:** `backend/canonical_registry.py`  
 **Functions:** `map_record_to_canonical()`, `canonicalize_records()`, `REGISTRY_BY_ID`

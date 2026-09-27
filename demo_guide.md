@@ -1,4 +1,4 @@
-# Quick Demo Guide: KSERC Truing-Up AI Decision Support System
+# Quick Demo Guide: Regulatory Decision Support System
 
 *Quick-start scenarios for demonstrating the Human-in-the-Loop regulatory decision platform with Demo Mode support.*
 
@@ -434,7 +434,7 @@ sed -i 's/REACT_APP_DEMO_MODE=true/REACT_APP_DEMO_MODE=false/' frontend/.env
 
 **Demo Script Version 3.1.0 - With Demo Mode Support**
 
-*For questions: support@kserc-dss.gov.in*
+*For questions: support@regulatory-dss.example*
 
 **🎬 Demo Mode: Enable frictionless demonstrations**
 **🏭 Production Mode: Full regulatory compliance**

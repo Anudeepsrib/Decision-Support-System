@@ -1,4 +1,4 @@
-# KSERC Decision Support System — Project Overview
+# Regulatory Decision Support System — Project Overview
 
 **Audience:** Stakeholders, regulatory officers, new developers, demo presenters
 

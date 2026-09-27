@@ -1,16 +1,17 @@
-# KSERC Decision Support System — Testing Guide
+# Regulatory Decision Support System — Testing Guide
 
 ---
 
 ## Backend Tests (pytest)
 
-All test files live in the project root and follow `test_*.py`.
+All test files live in `tests/` and follow `test_*.py`.
 
 ### Run All Tests
 
 ```bash
 # With venv activated
-pytest -v
+python -m pip install -r requirements-dev.txt
+python -m pytest -v
 ```
 
 ### Individual Test Suites (Important Ones)
@@ -33,7 +34,7 @@ pytest -v
 ### Fast Safety Net (Recommended Before Every Commit)
 
 ```bash
-pytest test_canonical_registry.py test_variance.py test_ai_safety.py test_security.py -q
+python -m pytest tests/test_canonical_registry.py tests/test_variance.py tests/test_ai_safety.py tests/test_security.py -q
 ```
 
 ---
@@ -60,8 +61,8 @@ python scripts/smoke_test.py
 ```
 
 It performs:
-1. Upload ARR (`arr_order_test.pdf`)
-2. Upload Petition (`petition_test.pdf`)
+1. Upload ARR (`samples/arr_order_test.pdf`)
+2. Upload Petition (`samples/petition_test.pdf`)
 3. Run comparison
 4. Generate report
 5. Download PDF bytes and assert size > 0

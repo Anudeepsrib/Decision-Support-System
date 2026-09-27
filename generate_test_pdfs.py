@@ -62,5 +62,5 @@ petition_rows = [
 ]
 
 if __name__ == "__main__":
-    generate_pdf("arr_order_test.pdf", "ARR Approval Order for 2024-25", arr_rows)
-    generate_pdf("petition_test.pdf", "Truing-Up Petition for 2024-25", petition_rows)
+    generate_pdf("samples/arr_order_test.pdf", "ARR Approval Order for 2024-25", arr_rows)
+    generate_pdf("samples/petition_test.pdf", "Truing-Up Petition for 2024-25", petition_rows)

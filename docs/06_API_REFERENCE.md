@@ -1,4 +1,4 @@
-# KSERC Decision Support System — API Reference (MVP)
+# Regulatory Decision Support System — API Reference (MVP)
 
 **Base URL (local):** `http://127.0.0.1:8000`
 
@@ -80,7 +80,7 @@ All endpoints are defined in `backend/api.py`.
 
 | Method | Path | Purpose | Body | Response |
 |--------|------|---------|------|----------|
-| POST | `/api/generate` (primary)<br>`/report/generate` (compat) | Generate KSERC-style draft order PDF | `GenerateOrderRequest` (`case_id`, `financial_year`, optional `title`) | `GeneratedOrderResponse` |
+| POST | `/api/generate` (primary)<br>`/report/generate` (compat) | Generate regulatory draft order PDF | `GenerateOrderRequest` (`case_id`, `financial_year`, optional `title`) | `GeneratedOrderResponse` |
 | GET | `/api/generate/{order_id}/download` (primary)<br>`/report/{order_id}` (compat) | Download the generated PDF (binary) | — | `FileResponse` (application/pdf) |
 | GET | `/api/generate` | List all generated orders | — | `List[GeneratedOrderResponse]` |
 
@@ -104,7 +104,7 @@ The PDF is written to `GENERATED_REPORTS_DIR` (default `output/`) and served via
 ### Upload ARR
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/upload/arr" \
-  -F "file=@arr_order_test.pdf"
+  -F "file=@samples/arr_order_test.pdf"
 ```
 
 ### Run Comparison
@@ -121,9 +121,9 @@ curl -X POST "http://127.0.0.1:8000/api/generate" \
 
 ### Download
 ```bash
-curl -o KSERC_Draft.pdf "http://127.0.0.1:8000/api/generate/<order_id>/download"
+curl -o Regulatory_Draft.pdf "http://127.0.0.1:8000/api/generate/<order_id>/download"
 # or via static mount
-curl -o KSERC_Draft.pdf "http://127.0.0.1:8000/generated/KSERC_TruingUp_2024-25_....pdf"
+curl -o Regulatory_Draft.pdf "http://127.0.0.1:8000/generated/Regulatory_TruingUp_2024-25_....pdf"
 ```
 
 ---

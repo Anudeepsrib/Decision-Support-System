@@ -1,8 +1,8 @@
-# KSERC Decision Support System — Data Model
+# Regulatory Decision Support System — Data Model
 
 **Source:** `backend/models.py` (SQLAlchemy declarative)
 
-**Database:** SQLite by default (`data/kserc_dss.db`). Other SQLAlchemy-compatible engines are accepted via `DATABASE_URL` but have not been validated in the MVP.
+**Database:** SQLite by default (`data/regulatory_dss.db`). Other SQLAlchemy-compatible engines are accepted via `DATABASE_URL` but have not been validated in the MVP.
 
 ---
 

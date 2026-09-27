@@ -4,7 +4,7 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "backend"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend"))
 
 from api import _best_by_canonical_id, _effective_financial_year, infer_financial_year_from_filename
 

@@ -1,4 +1,4 @@
-# KSERC Decision Support System — Troubleshooting Guide
+# Regulatory Decision Support System — Troubleshooting Guide
 
 ---
 
@@ -73,7 +73,7 @@ This runs `Base.metadata.create_all` + SQLite schema guards.
 
 **Cause:** Another process (perhaps a previous crashed uvicorn) still holds the file.
 
-**Fix:** Kill all Python processes, delete `data/kserc_dss.db`, run `python scripts/init_db.py` again.
+**Fix:** Kill all Python processes, delete `data/regulatory_dss.db`, run `python scripts/init_db.py` again.
 
 ---
 
@@ -153,7 +153,7 @@ python scripts/smoke_test.py
 ```
 
 If it fails:
-1. Check that both sample PDFs (`arr_order_test.pdf`, `petition_test.pdf`) still exist in the repo root.
+1. Check that both sample PDFs (`samples/arr_order_test.pdf`, `samples/petition_test.pdf`) still exist in the `samples` directory.
 2. Confirm the backend is healthy.
 3. Look at the detailed exception — it usually tells you which step (upload, comparison, generate) failed.
 
@@ -170,7 +170,7 @@ If it fails:
 ## Getting More Debug Information
 
 - Backend logs: everything prints to the uvicorn terminal.
-- Database inspection: open `data/kserc_dss.db` with DB Browser for SQLite or `sqlite3` CLI.
+- Database inspection: open `data/regulatory_dss.db` with DB Browser for SQLite or `sqlite3` CLI.
 - Extraction diagnostics: the Extraction tab in the UI shows raw row counts before/after mapping.
 - PDF content check: use `pdftotext` (if installed) or the fidelity test to extract text from the generated PDF and grep for expected canonical names.
 

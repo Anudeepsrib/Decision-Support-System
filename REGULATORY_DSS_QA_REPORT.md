@@ -1,8 +1,8 @@
-# KSERC Decision Support System MVP - Integration Validation Report
+# Regulatory Decision Support System MVP - Integration Validation Report
 
 **Report Date:** May 12, 2026  
 **Auditor:** Integration Engineer & Systems Debugger  
-**System:** KSERC DSS MVP Branch  
+**System:** Regulatory DSS MVP Branch  
 **Scope:** Frontend ↔ Backend Integration Validation  
 
 ---

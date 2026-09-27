@@ -1,9 +1,9 @@
-# KSERC Decision Support System — Report Generation
+# Regulatory Decision Support System — Report Generation
 
 **Core files:**
 - `backend/report_context.py` — builds the data contract
 - `backend/pdf_generator.py` — renders to PDF (ReportLab or Playwright)
-- `backend/templates/` — HTML fragments + `kserc_order.css`
+- `backend/templates/` — HTML fragments + `regulatory_order.css`
 
 ---
 
@@ -81,12 +81,12 @@ The generated PDF appendix ("Extraction Coverage Summary") explicitly lists ever
 
 1. `POST /api/generate` (or `/report/generate`)
 2. `build_report_context(case_id, financial_year)` — heavy lifting in `report_context.py`
-3. `generate_kserc_order_pdf(context)` in `pdf_generator.py`
+3. `generate_regulatory_order_pdf(context)` in `pdf_generator.py`
 4. Choose engine:
    - `PDF_ENGINE=reportlab` (default) → `SimpleDocTemplate` + `Paragraph` + `Table` + custom styles
-   - `PDF_ENGINE=playwright` → render `kserc_order.html` template via headless Chromium → PDF
+   - `PDF_ENGINE=playwright` → render `regulatory_order.html` template via headless Chromium → PDF
 5. Compute SHA-256 of the bytes
-6. Write to `output/KSERC_TruingUp_<FY>_<timestamp>.pdf`
+6. Write to `output/Regulatory_TruingUp_<FY>_<timestamp>.pdf`
 7. Store `GeneratedOrder` row with hash and metadata
 8. Return download URL
 
@@ -96,14 +96,14 @@ The generated PDF appendix ("Extraction Coverage Summary") explicitly lists ever
 
 Located in `backend/templates/`:
 
-- `kserc_order.html` — master document (used by Playwright path)
+- `regulatory_order.html` — master document (used by Playwright path)
 - `components/`:
   - `title_page.html`
   - `toc.html`
   - `chapter.html`
   - `regulatory_table.html`
   - `signature_block.html`
-- `kserc_order.css` — KSERC-like styling (serif headings, table borders, page numbers, watermark)
+- `regulatory_order.css` — KSERC-like styling (serif headings, table borders, page numbers, watermark)
 
 ReportLab path does **not** use the HTML files directly; it uses equivalent `ParagraphStyle` and `TableStyle` definitions that mimic the CSS.
 

@@ -5,7 +5,7 @@ Test PDF generation functionality
 import os
 import sys
 import asyncio
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'backend'))
 
 from pdf_generator import BANNED_PDF_STRINGS, generate_order_html, generate_order_pdf
 

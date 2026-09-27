@@ -1,5 +1,5 @@
 """
-Runtime configuration for the local KSERC DSS MVP.
+Runtime configuration for the local regulatory decision-support system.
 
 The app is intentionally local-first: SQLite is the default database and
 all file paths resolve from the repository root unless an absolute path is
@@ -9,6 +9,7 @@ provided in the environment.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -53,6 +54,12 @@ def _csv(value: str | None) -> list[str]:
     return [part.strip() for part in value.split(",") if part.strip()]
 
 
+def _pipe_list(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [part.strip() for part in value.split("|") if part.strip()]
+
+
 def _resolve_path(value: str | None, default: str) -> Path:
     raw = value or default
     path = Path(raw)
@@ -66,7 +73,7 @@ def _sqlite_url_from_path(path: Path) -> str:
 
 
 def _resolve_database_url(value: str | None) -> str:
-    raw = value or "sqlite:///./data/kserc_dss.db"
+    raw = value or "sqlite:///./data/regulatory_dss.db"
     if raw == "sqlite:///:memory:":
         return raw
     if not raw.startswith("sqlite:///"):
@@ -77,6 +84,12 @@ def _resolve_database_url(value: str | None) -> str:
     if not path.is_absolute():
         path = PROJECT_ROOT / path
     return _sqlite_url_from_path(path.resolve())
+
+
+def _safe_identifier(value: str | None, default: str) -> str:
+    """Keep configured IDs and filenames portable and path-safe."""
+    identifier = re.sub(r"[^a-zA-Z0-9_-]+", "-", value or default).strip("-_")
+    return identifier or default
 
 
 def _configured_values() -> dict[str, str | None]:
@@ -110,6 +123,18 @@ def _normalize_pdf_engine(value: str | None) -> str:
 
 @dataclass(frozen=True)
 class Settings:
+    app_name: str
+    regulator_name: str
+    regulator_short_name: str
+    utility_name: str
+    utility_address: list[str]
+    commission_place: str
+    commission_members: list[str]
+    conduct_regulation_name: str
+    regulation_name: str
+    case_id_prefix: str
+    default_financial_year: str
+    report_filename_prefix: str
     database_url: str
     jwt_secret_key: str
     jwt_algorithm: str
@@ -138,6 +163,34 @@ def _build_settings() -> Settings:
     ]
 
     return Settings(
+        app_name=os.getenv("APP_NAME", "Regulatory Decision Support System"),
+        regulator_name=os.getenv(
+            "REGULATOR_NAME", "Kerala State Electricity Regulatory Commission"
+        ),
+        regulator_short_name=os.getenv("REGULATOR_SHORT_NAME", "KSERC"),
+        utility_name=os.getenv("UTILITY_NAME", "Kerala State Electricity Board Limited"),
+        utility_address=_pipe_list(os.getenv("UTILITY_ADDRESS")) or [
+            "Vydhyuthi Bhavanam",
+            "Pattom, Thiruvananthapuram",
+        ],
+        commission_place=os.getenv("COMMISSION_PLACE", "Thiruvananthapuram"),
+        commission_members=_pipe_list(os.getenv("COMMISSION_MEMBERS")) or [
+            "Shri T K Jose, Chairman",
+            "Adv. A.J Wilson, Member",
+            "Shri B Pradeep, Member",
+        ],
+        conduct_regulation_name=os.getenv(
+            "CONDUCT_REGULATION_NAME", "KSERC (Conduct of Business) Regulations, 2003"
+        ),
+        regulation_name=os.getenv(
+            "REGULATION_NAME",
+            "KSERC (Terms and Conditions for Determination of Tariff) Regulations, 2021",
+        ),
+        case_id_prefix=_safe_identifier(os.getenv("CASE_ID_PREFIX"), "regulatory"),
+        default_financial_year=os.getenv("DEFAULT_FINANCIAL_YEAR", "2024-25"),
+        report_filename_prefix=_safe_identifier(
+            os.getenv("REPORT_FILENAME_PREFIX"), "Regulatory_TruingUp"
+        ),
         database_url=_resolve_database_url(os.getenv("DATABASE_URL")),
         jwt_secret_key=os.getenv("JWT_SECRET_KEY", "local-dev-change-me"),
         jwt_algorithm=os.getenv("JWT_ALGORITHM", "HS256"),

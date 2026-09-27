@@ -1,4 +1,4 @@
-# KSERC Decision Support System — Architecture
+# Regulatory Decision Support System — Architecture
 
 **Version:** 1.0.0-mvp (deterministic, no LLM in runtime)
 
@@ -42,8 +42,8 @@
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              Filesystem                                     │
 │  mvp_uploads/  (source PDFs)                                                │
-│  output/       (generated KSERC draft orders + .html previews)              │
-│  data/kserc_dss.db (SQLite)                                                 │
+│  output/       (generated regulatory draft orders + .html previews)         │
+│  data/regulatory_dss.db (SQLite)                                                 │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -78,7 +78,7 @@
   - `prompts.py` — **deterministic template strings only** (no OpenAI call)
 
 ### 3. Database (SQLite by default)
-- Engine: SQLAlchemy, `data/kserc_dss.db`
+- Engine: SQLAlchemy, `data/regulatory_dss.db`
 - Tables (see [07_DATA_MODEL.md](07_DATA_MODEL.md) for full schema):
   - `documents`
   - `extraction_jobs`
@@ -92,7 +92,7 @@
 
 ### 4. Storage
 - Uploaded PDFs: `mvp_uploads/<uuid>.pdf`
-- Generated PDFs: `output/KSERC_TruingUp_<FY>_<timestamp>.pdf`
+- Generated PDFs: `output/Regulatory_TruingUp_<FY>_<timestamp>.pdf`
 - Static mount: `/generated/<filename>` → `output/`
 
 ---
@@ -138,7 +138,7 @@ sequenceDiagram
     B->>R: build_report_context(case_id, financial_year)
     R->>C: Pull registry metadata + chapter ownership
     R-->>B: ReportContext dict (chapters, coverage[], tables, totals)
-    B->>P: generate_kserc_order_pdf(context)
+    B->>P: generate_regulatory_order_pdf(context)
     P->>P: Render title_page.html + toc.html + chapter.html via ReportLab
     P->>P: Write PDF to output/
     B->>DB: INSERT GeneratedOrder (file_path, file_hash, is_draft)

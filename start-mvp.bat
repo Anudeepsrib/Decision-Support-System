@@ -11,8 +11,8 @@ if not exist "frontend\node_modules" (
     powershell -ExecutionPolicy Bypass -File scripts\setup_frontend.ps1
 )
 
-start "KSERC Backend" .venv\Scripts\python.exe -m uvicorn backend.app:app --reload --port 8000
-start "KSERC Frontend" cmd /k "cd frontend && npm start"
+start "Regulatory DSS Backend" .venv\Scripts\python.exe -m uvicorn backend.app:app --reload --port 8000
+start "Regulatory DSS Frontend" cmd /k "cd frontend && npm start"
 
 echo Backend:  http://127.0.0.1:8000
 echo Frontend: http://127.0.0.1:5173

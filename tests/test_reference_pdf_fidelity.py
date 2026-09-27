@@ -10,7 +10,7 @@ import sys
 
 import pdfplumber
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "backend"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend"))
 
 from pdf_generator import BANNED_PDF_STRINGS, generate_order_pdf, score_reference_fidelity
 

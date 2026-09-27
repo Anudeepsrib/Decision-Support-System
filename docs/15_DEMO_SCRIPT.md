@@ -1,4 +1,4 @@
-# KSERC Decision Support System — Stakeholder Demo Script (Honest Version)
+# Regulatory Decision Support System — Stakeholder Demo Script (Honest Version)
 
 **Duration:** 8–12 minutes for a full walk-through  
 **Audience:** Commission members, utility officers, IT leadership, regulators
@@ -15,7 +15,7 @@ This is a **Minimum Viable Product**. It performs the mechanical work of extract
 
 ## Step 1: Problem Statement (1 minute)
 
-- Show two sample PDFs on screen: `arr_order_test.pdf` (ARR Order) and `petition_test.pdf` (Truing-Up Petition).
+- Show two sample PDFs on screen: `samples/arr_order_test.pdf` (ARR Order) and `samples/petition_test.pdf` (Truing-Up Petition).
 - "An officer today must manually locate 50–80 financial line items across 200+ pages, reconcile different wording, calculate variances, classify which need review, and then draft a 30–100 page order."
 - "This MVP automates the first 80% of that work deterministically."
 
@@ -25,7 +25,7 @@ This is a **Minimum Viable Product**. It performs the mechanical work of extract
 
 1. Open http://127.0.0.1:5173
 2. Go to **ARR Upload** tab
-3. Drag `arr_order_test.pdf`
+3. Drag `samples/arr_order_test.pdf`
 4. Watch the job status poll until "Extraction completed — X rows"
 5. "Notice: the system used pdfplumber to find tables, matched them against our target catalog, and mapped the rows to our canonical KSERC line-item registry. Everything is logged with page and table provenance."
 
@@ -34,7 +34,7 @@ This is a **Minimum Viable Product**. It performs the mechanical work of extract
 ## Step 3: Upload Petition (1 minute)
 
 1. Switch to **Petition Upload** tab
-2. Upload `petition_test.pdf`
+2. Upload `samples/petition_test.pdf`
 3. Same extraction flow
 4. "Now we have both the approved values (from the ARR Order) and the actual/claimed values (from the Petition)."
 

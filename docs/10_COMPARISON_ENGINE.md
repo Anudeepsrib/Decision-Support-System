@@ -1,4 +1,4 @@
-# KSERC Decision Support System — Comparison Engine
+# Regulatory Decision Support System — Comparison Engine
 
 **Core file:** `backend/comparison.py`  
 **Constants:**

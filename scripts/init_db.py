@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Create/update the local SQLite schema for the KSERC DSS MVP."""
+"""Create/update the local SQLite schema for the Regulatory DSS MVP."""
 
 from __future__ import annotations
 

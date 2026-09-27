@@ -1,4 +1,4 @@
-# KSERC Decision Support System — Docker Setup
+# Regulatory Decision Support System — Docker Setup
 
 **Status:** Docker support is **intentionally not provided** for this MVP.
 
@@ -41,7 +41,7 @@ This is left as an exercise for Phase 3 (production deployment).
 
 | Aspect | MVP State | Docker Impact |
 |--------|-----------|---------------|
-| Database | SQLite file at `data/kserc_dss.db` | Would require volume + permissions |
+| Database | SQLite file at `data/regulatory_dss.db` | Would require volume + permissions |
 | PDF storage | `mvp_uploads/` and `output/` | Volume mounts required |
 | PDF engines | ReportLab (easy) vs Playwright (needs Chromium in container) | Playwright container is heavy |
 | Demo Mode | `DEMO_MODE=true` in .env | Easy to inject but not the point |

@@ -1,4 +1,4 @@
-# KSERC Decision Support System — Phase 2 LLM Integration Plan (Safe Architecture)
+# Regulatory Decision Support System — Phase 2 LLM Integration Plan (Safe Architecture)
 
 **Status:** Planning document only. Zero LLM code exists in the current MVP.
 

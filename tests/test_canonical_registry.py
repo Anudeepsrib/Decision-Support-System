@@ -6,7 +6,7 @@ Test canonical registry mapping and tariff/noise filtering.
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "backend"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend"))
 
 from canonical_registry import canonicalize_records, map_record_to_canonical
 

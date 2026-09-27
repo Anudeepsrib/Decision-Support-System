@@ -1,4 +1,4 @@
-# KSERC Decision Support System — Current Limitations (Honest Assessment)
+# Regulatory Decision Support System — Current Limitations (Honest Assessment)
 
 **Date of this assessment:** Current `mvp-demo` branch  
 **Purpose:** Prevent over-promising to stakeholders, regulators, or Phase 2 engineers.

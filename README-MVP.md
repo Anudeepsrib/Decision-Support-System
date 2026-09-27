@@ -1,4 +1,4 @@
-# KSERC DSS MVP Local Setup
+# Regulatory DSS MVP Local Setup
 
 The MVP setup is local-only. Docker files were removed so developers have one supported path:
 

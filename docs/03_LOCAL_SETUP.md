@@ -1,4 +1,4 @@
-# KSERC Decision Support System — Local Setup (Verified Commands)
+# Regulatory Decision Support System — Local Setup (Verified Commands)
 
 **Target:** Fresh clone → running instance in < 10 minutes on Windows/macOS/Linux
 
@@ -85,7 +85,7 @@ All required environment variables are present.
 
 **Expected output from `init_db.py`:**
 ```
-[MVP] Database initialized at sqlite:///./data/kserc_dss.db
+[MVP] Database initialized at sqlite:///./data/regulatory_dss.db
 ```
 
 ---
@@ -139,8 +139,8 @@ python scripts/smoke_test.py
 ```
 
 The smoke test performs the full workflow against the sample PDFs:
-- `arr_order_test.pdf`
-- `petition_test.pdf`
+- `samples/arr_order_test.pdf`
+- `samples/petition_test.pdf`
 
 It exercises:
 1. `POST /upload/arr`
@@ -170,11 +170,11 @@ It exercises:
 
 ```bash
 # Windows PowerShell
-Remove-Item data\kserc_dss.db -ErrorAction SilentlyContinue
+Remove-Item data\regulatory_dss.db -ErrorAction SilentlyContinue
 python scripts\init_db.py
 
 # macOS/Linux
-rm -f data/kserc_dss.db
+rm -f data/regulatory_dss.db
 python scripts/init_db.py
 ```
 
@@ -219,8 +219,8 @@ The frontend code in `App.tsx` automatically strips trailing slashes and ensures
 ## Next Steps After Successful Start
 
 1. Open http://127.0.0.1:5173
-2. Upload `arr_order_test.pdf` (ARR tab)
-3. Upload `petition_test.pdf` (Petition tab)
+2. Upload `samples/arr_order_test.pdf` (ARR tab)
+3. Upload `samples/petition_test.pdf` (Petition tab)
 4. Go to Extraction tab → Run Comparison
 5. Review the comparison table (SBU-D items should be populated)
 6. Click Generate PDF

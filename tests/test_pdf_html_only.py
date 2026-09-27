@@ -6,7 +6,7 @@ Test deterministic KSERC order HTML generation without rendering a PDF.
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "backend"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend"))
 
 from pdf_generator import BANNED_PDF_STRINGS, generate_order_html
 
@@ -50,7 +50,7 @@ def test_pdf_html_generation():
     for banned in BANNED_PDF_STRINGS:
         assert banned not in html_template
 
-    output_file = os.path.join(os.path.dirname(__file__), "output", "test_order_output.html")
+    output_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "output", "test_order_output.html")
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(html_template)

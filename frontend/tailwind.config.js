@@ -19,7 +19,7 @@ export default {
           800: '#1e40af',
           900: '#1e3a8a',
         },
-        kserc: {
+        regulatory: {
           blue: '#1e40af',
           green: '#059669',
           orange: '#ea580c',

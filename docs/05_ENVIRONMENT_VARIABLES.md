@@ -1,4 +1,4 @@
-# KSERC Decision Support System — Environment Variables
+# Regulatory Decision Support System — Environment Variables
 
 **Source of truth:** `backend/config.py` (`REQUIRED_ENV_VARS` tuple + `_build_settings()`)
 
@@ -10,7 +10,7 @@ All variables are **required** for the application to start. The backend calls `
 
 | Variable | Required | Default (if any) | Used By | Description |
 |----------|----------|------------------|---------|-------------|
-| `DATABASE_URL` | Yes | `sqlite:///./data/kserc_dss.db` | `database.py`, SQLAlchemy | Full SQLAlchemy URL. SQLite is the only tested path in MVP. Other DBs (Postgres) are possible but unvalidated. |
+| `DATABASE_URL` | Yes | `sqlite:///./data/regulatory_dss.db` | `database.py`, SQLAlchemy | Full SQLAlchemy URL. SQLite is the only tested path in MVP. Other DBs (Postgres) are possible but unvalidated. |
 | `JWT_SECRET_KEY` | Yes | (no secure default) | `config.py` (auth not fully wired in MVP) | Long random string for JWT signing. Change for any non-local use. |
 | `JWT_ALGORITHM` | Yes | `HS256` | JWT handling | Standard HMAC algorithm. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Yes | `60` | Token lifetime | Currently not heavily enforced in the demo UI. |
@@ -18,7 +18,7 @@ All variables are **required** for the application to start. The backend calls `
 | `FRONTEND_URL` | Yes | `http://127.0.0.1:5173` | `config.py`, CORS | Base URL of the Vite dev server. |
 | `CORS_ORIGINS` | Yes | Derived from FRONTEND_URL + localhost:5173 | FastAPI CORSMiddleware | Comma-separated list. Must include the exact origin the browser uses (including `http://127.0.0.1:5173`). |
 | `UPLOAD_DIR` | Yes | `mvp_uploads` | `api.py`, `config.py` | Relative or absolute path for uploaded PDFs. Created automatically. |
-| `GENERATED_REPORTS_DIR` | Yes | `output` | `pdf_generator.py`, `config.py`, StaticFiles mount | Where generated KSERC draft orders are written. Served at `/generated/`. |
+| `GENERATED_REPORTS_DIR` | Yes | `output` | `pdf_generator.py`, `config.py`, StaticFiles mount | Where generated regulatory draft orders are written. Served at `/generated/`. |
 | `DEMO_MODE` | Yes | `true` | `app.py`, health endpoint, UI banners | When `true`, the app runs in frictionless demo mode (auto-demo user, relaxed validations). Set `false` for stricter production-like behavior. |
 | `PDF_ENGINE` | Yes | `reportlab` | `pdf_generator.py` | `reportlab` (default, reliable) or `playwright`. Playwright requires `python -m playwright install chromium` first. |
 | `OCR_ENABLED` | Yes | `false` | `extractor.py` (future path) | Tesseract OCR for scanned PDFs. Only enable after installing Tesseract and adding to PATH. Most sample PDFs are text-extractable. |
@@ -28,13 +28,13 @@ All variables are **required** for the application to start. The backend calls `
 ## .env.example (Exact Content)
 
 ```env
-# KSERC DSS MVP local environment
+# Regulatory DSS MVP local environment
 # Copy to .env before starting the backend:
 #   Windows PowerShell: Copy-Item .env.example .env
 #   macOS/Linux:        cp .env.example .env
 
 # Required backend settings
-DATABASE_URL=sqlite:///./data/kserc_dss.db
+DATABASE_URL=sqlite:///./data/regulatory_dss.db
 JWT_SECRET_KEY=local-dev-change-me-use-a-long-random-value
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=60

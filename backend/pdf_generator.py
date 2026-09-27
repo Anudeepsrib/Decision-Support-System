@@ -1,5 +1,5 @@
 """
-Deterministic KSERC-style truing-up order PDF generator.
+Deterministic regulatory truing-up order PDF generator.
 
 The generator consumes only report_context built from canonical comparison rows.
 It does not render raw extraction rows and does not call an LLM or external
@@ -220,6 +220,10 @@ def _render_html_title_page(context: Dict, officer_name: str) -> str:
             "order_date": html.escape(meta["order_date"]),
             "financial_year": html.escape(meta["financial_year"]),
             "dated_this": html.escape(meta["dated_this"]),
+            "regulator_short_name": html.escape(meta["regulator_short_name"]),
+            "regulator_name": html.escape(meta["regulator_name"]),
+            "conduct_regulation_name": html.escape(meta["conduct_regulation_name"]),
+            "regulation_name": html.escape(meta["regulation_name"]),
         },
     )
 
@@ -248,10 +252,10 @@ def generate_order_html(
     reviews: List[Dict],
     officer_name: str = "Demo Officer",
 ) -> str:
-    """Generate deterministic KSERC order HTML from report_context."""
+    """Generate deterministic regulatory order HTML from report_context."""
     context = build_report_context(case_id, financial_year, comparisons, reviews, officer_name)
-    css = _template("kserc_order.css")
-    shell = _template("kserc_order.html")
+    css = _template("regulatory_order.css")
+    shell = _template("regulatory_order.html")
 
     chapters = "".join(
         _render_html_chapter(context["chapters"][key]) for key in context["chapter_sequence"]
@@ -273,7 +277,7 @@ def generate_order_html(
     return _render_template(
         shell,
         {
-            "title": f"KSERC Truing-Up Order - FY {html.escape(financial_year)}",
+            "title": f"{html.escape(settings.regulator_short_name)} Truing-Up Order - FY {html.escape(financial_year)}",
             "css": css,
             "title_page": _render_html_title_page(context, officer_name),
             "toc": _render_html_toc(context),
@@ -648,11 +652,11 @@ def _build_title_page(story: List, context: Dict, styles: Dict[str, ParagraphSty
     story.append(
         _p(
             (
-                "In compliance to Regulation 27(6) of KSERC (Conduct of Business) "
-                "Regulations, 2003, the Kerala State Electricity Regulatory Commission "
+                f"In compliance to Regulation 27(6) of {meta['conduct_regulation_name']}, "
+                f"the {meta['regulator_name']} "
                 f"having considered the petition for approval of the Truing up of Accounts "
-                f"for the year {meta['financial_year']} filed by Kerala State Electricity "
-                "Board Limited, has prepared the following draft order for internal review."
+                f"for the year {meta['financial_year']} filed by {meta['petitioner']}, "
+                "has prepared the following draft order for internal review."
             ),
             styles["body"],
         )
@@ -662,8 +666,8 @@ def _build_title_page(story: List, context: Dict, styles: Dict[str, ParagraphSty
             (
                 "After having carefully considered the submissions and documents on record "
                 "and in exercise of the powers vested in the Commission under Sections 62 "
-                "and 64 of the Electricity Act, 2003 and KSERC (Terms and Conditions for "
-                "Determination of Tariff) Regulations, 2021, the Commission may pass the "
+                f"and 64 of the Electricity Act, 2003 and {meta['regulation_name']}, "
+                "the Commission may pass the "
                 "following Order after due review."
             ),
             styles["body"],
@@ -913,7 +917,7 @@ def _generate_order_pdf_reportlab(
     styles = _styles()
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    filename = f"KSERC_TruingUp_{financial_year}_{timestamp}.pdf"
+    filename = f"{settings.report_filename_prefix}_{financial_year}_{timestamp}.pdf"
     file_path = os.path.join(OUTPUT_DIR, filename)
 
     doc = SimpleDocTemplate(
@@ -1053,7 +1057,7 @@ def validate_report_context(context: Dict) -> None:
             errors.append("SBU-D rows lack source page metadata for traceability appendix.")
 
     if errors:
-        raise ValueError("Invalid report_context for KSERC order: " + " ".join(errors))
+        raise ValueError("Invalid report_context for regulatory order: " + " ".join(errors))
 
 
 def _read_pdf_pages(file_path: str) -> Optional[List[str]]:
@@ -1262,7 +1266,7 @@ async def generate_order_pdf(
     reviews: List[Dict],
     officer_name: str = "Demo Officer",
 ) -> Dict:
-    """Generate a deterministic KSERC-style draft order PDF."""
+    """Generate a deterministic regulatory draft order PDF."""
     if REPORTLAB_AVAILABLE:
         return _generate_order_pdf_reportlab(case_id, financial_year, comparisons, reviews, officer_name)
 
@@ -1271,7 +1275,7 @@ async def generate_order_pdf(
 
     html_content = generate_order_html(case_id, financial_year, comparisons, reviews, officer_name)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    filename = f"KSERC_TruingUp_{financial_year}_{timestamp}.pdf"
+    filename = f"{settings.report_filename_prefix}_{financial_year}_{timestamp}.pdf"
     file_path = os.path.join(OUTPUT_DIR, filename)
 
     try:

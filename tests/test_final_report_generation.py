@@ -1,5 +1,5 @@
 """
-Final Report Generation Validation Test for KSERC DSS MVP.
+Final Report Generation Validation Test for Regulatory DSS MVP.
 
 Validates that the deterministic pipeline produces a demo-ready, audit-friendly
 KSERC-style draft order with:

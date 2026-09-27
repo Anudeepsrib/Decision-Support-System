@@ -1,1 +1,1 @@
-# KSERC Decision Support System — MVP Module
+# Regulatory Decision Support System — MVP Module

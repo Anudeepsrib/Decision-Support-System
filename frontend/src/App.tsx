@@ -14,8 +14,10 @@ import {
 const RAW_API_BASE = (import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000/api').replace(/\/$/, '')
 const API_BASE = RAW_API_BASE.endsWith('/api') ? RAW_API_BASE : `${RAW_API_BASE}/api`
 const API_ORIGIN = API_BASE.slice(0, -4)
-const DEFAULT_FINANCIAL_YEAR = '2023-24'
-const FINANCIAL_YEAR_OPTIONS = ['2023-24', '2024-25']
+const APP_NAME = import.meta.env.VITE_APP_NAME ?? 'Regulatory Decision Support System'
+const REGULATOR_SHORT_NAME = import.meta.env.VITE_REGULATOR_SHORT_NAME ?? 'KSERC'
+const DEFAULT_FINANCIAL_YEAR = import.meta.env.VITE_DEFAULT_FINANCIAL_YEAR ?? '2024-25'
+const FINANCIAL_YEAR_OPTIONS = Array.from(new Set(['2023-24', '2024-25', DEFAULT_FINANCIAL_YEAR])).sort()
 
 type Tab = 'arr-upload' | 'petition-upload' | 'extraction' | 'comparison' | 'generate'
 type DocType = 'arr_order' | 'truing_up_petition'
@@ -561,7 +563,7 @@ function App() {
               </div>
               <div className="flex flex-wrap gap-2">
                 <button
-                  className="kserc-button-secondary inline-flex items-center gap-2"
+                  className="dss-button-secondary inline-flex items-center gap-2"
                   onClick={async () => {
                     await loadExtraction(doc.id)
                     setActiveTab('extraction')
@@ -570,7 +572,7 @@ function App() {
                   <Eye size={16} /> View Extraction
                 </button>
                 <button
-                  className="kserc-button inline-flex items-center gap-2 disabled:bg-slate-400"
+                  className="dss-button inline-flex items-center gap-2 disabled:bg-slate-400"
                   disabled={loading === `extract-${doc.id}`}
                   onClick={() => runExtraction(doc.id)}
                 >
@@ -597,7 +599,7 @@ function App() {
 
     return (
       <section className="mx-auto max-w-5xl px-6">
-        <div className="kserc-card">
+        <div className="dss-card">
           <div className="mb-6 flex items-center justify-between gap-4">
             <h2 className="text-2xl font-bold">{title}</h2>
             <select
@@ -702,7 +704,7 @@ function App() {
         <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <h2 className="text-2xl font-bold">Extraction Results</h2>
           <button
-            className="kserc-button inline-flex items-center justify-center gap-2 disabled:bg-slate-400"
+            className="dss-button inline-flex items-center justify-center gap-2 disabled:bg-slate-400"
             disabled={!canCompare || loading === 'comparison'}
             onClick={runComparison}
           >
@@ -723,7 +725,7 @@ function App() {
 
     return (
       <section className="mx-auto max-w-7xl px-6">
-        <div className="kserc-card">
+        <div className="dss-card">
           <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <h2 className="text-2xl font-bold">Comparison and Review Workbench - FY {workflowFinancialYear}</h2>
             <button
@@ -740,7 +742,7 @@ function App() {
           {!comparison ? (
             <div className="rounded-md border border-slate-200 bg-slate-50 p-8 text-center">
               <p className="mb-4 text-slate-600">Upload and extract both documents, then run comparison.</p>
-              <button className="kserc-button" disabled={!canCompare} onClick={runComparison}>Run Comparison</button>
+              <button className="dss-button" disabled={!canCompare} onClick={runComparison}>Run Comparison</button>
             </div>
           ) : (
             <>
@@ -865,9 +867,9 @@ function App() {
   function generateTab() {
     return (
       <section className="mx-auto max-w-6xl px-6">
-        <div className="kserc-card">
+        <div className="dss-card">
           <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <h2 className="text-2xl font-bold">Generated KSERC Draft Order</h2>
+            <h2 className="text-2xl font-bold">Generated {REGULATOR_SHORT_NAME} Draft Order</h2>
             {reportUrl && (
               <a className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 font-semibold text-white hover:bg-emerald-700" href={reportUrl} target="_blank" rel="noreferrer">
                 <Download size={18} /> Download PDF
@@ -877,7 +879,7 @@ function App() {
           {!order ? (
             <div className="rounded-md border border-slate-200 bg-slate-50 p-8 text-center">
               <p className="mb-4 text-slate-600">Generate a draft after comparison review.</p>
-              <button className="kserc-button" disabled={!comparison || loading === 'generate'} onClick={generateOrder}>
+              <button className="dss-button" disabled={!comparison || loading === 'generate'} onClick={generateOrder}>
                 {loading === 'generate' ? 'Generating...' : 'Generate Draft PDF'}
               </button>
             </div>
@@ -886,7 +888,7 @@ function App() {
               <div className="rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
                 Draft generated for case {order.case_id}. File size: {(order.file_size / 1024).toFixed(1)} KB.
               </div>
-              {reportUrl && <iframe title="KSERC Draft PDF Preview" src={reportUrl} className="h-[760px] w-full rounded-md border border-slate-300" />}
+              {reportUrl && <iframe title={`${REGULATOR_SHORT_NAME} Draft PDF Preview`} src={reportUrl} className="h-[760px] w-full rounded-md border border-slate-300" />}
             </div>
           )}
         </div>
@@ -899,7 +901,7 @@ function App() {
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-6 py-5 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-950">KSERC Decision Support System</h1>
+            <h1 className="text-2xl font-bold text-slate-950">{APP_NAME}</h1>
             <p className="text-sm text-slate-600">Demo MVP | ARR vs Petition truing-up workflow</p>
           </div>
           <div className="flex flex-wrap gap-2 text-xs font-semibold">
