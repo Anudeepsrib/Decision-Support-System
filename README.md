@@ -1,76 +1,96 @@
 <div align="center">
   <img src="frontend/public/compass-logo.png" alt="Compass logo" width="104" />
   <h1>Compass</h1>
-  <p><strong>Open-source decision infrastructure for teams that want fewer opinions and better reasons.</strong></p>
-  <p>Frame a decision, compare options, attach evidence, gather review, and keep the reasoning.</p>
+  <p><strong>Open-source decision records for teams.</strong></p>
+  <p>Compare options, weigh evidence, share a workspace, and preserve why a decision was made.</p>
 </div>
 
-## Why Compass?
+## Why Compass
 
-Important decisions often disappear into meetings, spreadsheets, and chat threads. Compass gives teams one durable place to record:
+Important decisions disappear into meetings, spreadsheets, and chat threads. Compass gives product, engineering, operations, and leadership teams a durable record of the options considered, evidence reviewed, scorecard used, and final rationale.
 
-- what is being decided;
-- which options are available;
-- which criteria matter;
-- what evidence supports each option;
-- who reviewed the proposal; and
-- why the final choice was made.
+Start locally without an account. When a team is ready, create a bearer-protected shared workspace and sync explicitly. Optional Jev review checks whether the record is ready for human judgment. It never chooses an option.
 
-Use it for product bets, vendor selection, hiring plans, policy reviews, budget allocation, grants, procurement, and operational changes.
+## What it does
 
-## Features
+- Configurable weighted criteria with honest 1 to 5 scoring
+- Build vs. Buy, Vendor, Technology, Hiring, and Market templates
+- Evidence links, final rationale, review dates, search, and mobile layouts
+- Validated JSON import plus JSON and Markdown export
+- Shared workspaces with hashed access tokens and conflict-safe revisions
+- LangGraph persistence for review runs
+- One typed Jev call for readiness, review focus, and unsupported-evidence probability
+- Docker image serving the React app and Python API together
 
-- Searchable decision inbox
-- Draft, review, and approved workflows
-- Ranked option comparisons
-- Weighted impact, confidence, and feasibility scores
-- Evidence capture and reviewer tracking
-- Local browser persistence
-- Responsive desktop and mobile layouts
+## Run locally
 
-## Quick start
+Requirements: Node 22 and Python 3.10 or newer.
 
-```bash
-git clone https://github.com/Anudeepsrib/Decision-Support-System.git
-cd Decision-Support-System/frontend
+```powershell
+py -m venv .venv
+.venv\Scripts\pip install -r backend\requirements.txt
+.venv\Scripts\uvicorn backend.app:app --reload --port 8000
+```
+
+In another terminal:
+
+```powershell
+cd frontend
 npm install
 npm run dev
 ```
 
-Open the URL printed by Vite. The current MVP uses seeded local data and requires no account or backend.
+Open the URL printed by Vite. Sharing works immediately. Add `TYPESAFE_API_KEY` to your environment to enable Jev readiness checks. The default model is `jev-latest` and can be changed with `TYPESAFE_DEFAULT_MODEL`.
 
-## Commands
+## Docker
+
+Copy `.env.example` to `.env`, add the TypeSafe key if wanted, then run:
 
 ```bash
-npm run dev      # local development
-npm run build    # type-check and production build
-npm run preview  # preview the production build
+docker compose up --build
 ```
 
-## Structure
+Open `http://localhost:8000`. Workspace and LangGraph SQLite data persist in the `compass-data` volume.
 
-```text
-frontend/
-  public/       Brand assets and app metadata
-  src/          React application and styles
-  Dockerfile    Static production container
+## How the backend works
+
+The FastAPI service stores workspaces in SQLite. A workspace token is returned once, stored only as a hash on the server, and required as a bearer token for reads and writes. Every update includes its last seen revision; stale writes receive HTTP 409 instead of overwriting a teammate's work.
+
+The review graph has two deliberately small nodes:
+
+1. Compute completion facts such as scored cells and evidence count.
+2. Ask Jev typed `Score`, `Choice`, and `Noul` questions in one `system_one` call.
+
+LangGraph checkpoints each run under a unique thread ID. The response always states that a human decision is required. Jev receives the full selected decision record, so enable it only when that data may be sent to the configured TypeSafe endpoint.
+
+API documentation is available at `http://localhost:8000/docs` while the server is running. Configuration is documented in `.env.example`.
+
+## Checks
+
+```powershell
+cd frontend
+npm test
+npm run build
+
+cd ..
+.venv\Scripts\python -m unittest backend.test_app
 ```
 
-## Roadmap
+The backend check covers authenticated create, read, update, stale-write rejection, deterministic graph preparation, and the human-decision guard without spending a Jev API call.
 
-- [x] General-purpose decision workspace
-- [x] Weighted option comparison
-- [x] Evidence capture and local persistence
-- [ ] Configurable criteria and weights
-- [ ] Shared workspaces and server persistence
-- [ ] Import and export in JSON and CSV
+## Deployment boundary
 
-The roadmap stays intentionally small. Open an issue with a real workflow before proposing a new abstraction.
+The included SQLite storage is a simple self-hosted setup for one application instance. Move workspaces and LangGraph checkpoints to PostgreSQL before running multiple instances or serving large organizations. Put the service behind TLS and rate limiting for public deployments.
+
+## Project layout
+
+- `frontend/`: React and TypeScript product UI
+- `backend/app.py`: FastAPI, SQLite storage, LangGraph, and Jev integration
+- `backend/test_app.py`: focused backend and workflow check
+- `Dockerfile` and `compose.yaml`: one-command deployment
 
 ## Contributing
 
-Bug reports, focused pull requests, and examples from real organizational decisions are welcome. Include the workflow your change improves and a short way to verify it.
+Read [CONTRIBUTING.md](CONTRIBUTING.md). Security reports belong in private GitHub advisories as described in [SECURITY.md](SECURITY.md).
 
-## License
-
-No license has been selected yet. Add one before accepting external contributions.
+Apache-2.0 licensed. If Compass helps your team make better decisions, star the repository and share the workflow you use it for.

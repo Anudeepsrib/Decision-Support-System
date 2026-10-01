@@ -1,7 +1,10 @@
 {
   "name": "compass-decision-workspace",
   "version": "0.1.0",
+  "description": "Open-source decision records for teams.",
   "private": true,
+  "license": "Apache-2.0",
+  "repository": "github:Anudeepsrib/Compass",
   "type": "module",
   "scripts": {
     "dev": "vite",

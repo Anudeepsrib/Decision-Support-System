@@ -1,0 +1,19 @@
+name: Bug report
+description: Report a reproducible problem in Compass
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: What happened?
+      description: Include the steps, expected result, and actual result.
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Browser and version
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Additional context

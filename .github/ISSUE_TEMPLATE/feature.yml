@@ -1,0 +1,16 @@
+name: Product improvement
+description: Propose a focused decision workflow improvement
+title: "[Product]: "
+labels: [product]
+body:
+  - type: textarea
+    attributes:
+      label: User problem
+      description: What decision workflow is difficult today?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Smallest useful change
+    validations:
+      required: true
