@@ -1,74 +1,20 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-*.egg-info/
-.installed.cfg
-*.egg
-.pytest_cache/
-.coverage
-htmlcov/
-pytest_out*.txt
-
-# Virtual Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Node / React Frontend
+# Dependencies and builds
 node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-frontend/build/
-.pnp.*
-.pnp.js
+dist/
+frontend/node_modules/
+frontend/dist/
 
-# Database / Local Storage
-*.db
-*.sqlite3
-kserc_truing_up.db
+# Local configuration
+.env
+.env.*
+!.env.example
 
-# System Files
+# Editors and operating systems
+.vscode/
+.idea/
 .DS_Store
 Thumbs.db
-ehthumbs.db
-desktop.ini
 
-# IDEs and Editors
-.idea/
-.vscode/
-*.swp
-*.swo
-.project
-.classpath
-.settings/
-
-# Testing/Coverage
-.tox/
-coverage.xml
-*.cover
-.hypothesis/
-.pytest_cache/
-
-# Logs
-logs/
+# Logs and test output
 *.log
+coverage/
